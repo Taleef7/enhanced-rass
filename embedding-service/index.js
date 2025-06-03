@@ -2,6 +2,7 @@
  *  embeddingService - Node.js OpenAI-based Embedding Microservice
  *********************************************************************/
 const pdf = require("pdf-parse"); // Add this line
+const mammoth = require("mammoth"); // Add this line
 const fsPromises = require("fs").promises; // Add this for cleaner async file read
 const express = require("express");
 const multer = require("multer");
@@ -149,6 +150,15 @@ async function readFileText(filePath, fileType) {
       }
       const data = await pdf(dataBuffer);
       textContent = data.text;
+    } else if (fileType === "docx") {
+      const result = await mammoth.extractRawText({ path: filePath });
+      textContent = result.value;
+      if (result.messages && result.messages.length > 0) {
+        console.warn(`[readFileText] Mammoth messages for ${filePath}:`);
+        result.messages.forEach((message) =>
+          console.warn(`  - ${message.type}: ${message.message}`)
+        );
+      }
     } else if (fileType === "txt" || fileType === "json") {
       textContent = await fsPromises.readFile(filePath, "utf8");
     } else {
@@ -217,7 +227,7 @@ app.post(
         const ext = path.extname(originalFileName).toLowerCase();
 
         // Updated to include '.pdf'
-        if (![".txt", ".md", ".json", ".pdf"].includes(ext)) {
+        if (![".txt", ".md", ".json", ".pdf", ".docx"].includes(ext)) {
           console.warn(
             `Unsupported file type '${ext}' skipped:`,
             originalFileName
