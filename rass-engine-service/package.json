@@ -1,0 +1,37 @@
+{
+  "name": "rass-engine",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@langchain/openai": "^0.0.7",
+    "@opensearch-project/opensearch": "^2.13.0",
+    "@prisma/client": "^5.22.0",
+    "cookie": "^1.0.2",
+    "dotenv": "^16.5.0",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "langchain": "^0.0.209",
+    "openai": "^4.96.0",
+    "prisma": "^6.6.0",
+    "uuid": "^9.0.1",
+    "vector-tools": "^0.1.0",
+    "ws": "^8.18.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NeuralRevenant/rass-engine.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/NeuralRevenant/rass-engine/issues"
+  },
+  "homepage": "https://github.com/NeuralRevenant/rass-engine#readme"
+}
