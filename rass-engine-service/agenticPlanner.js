@@ -24,7 +24,7 @@ async function buildPlan(
 You are an expert OpenSearch strategist. Return exactly a single JSON object matching the function signature 'build_plan'.
 Do not add any commentary before or after the JSON object.
 
-### Output format
+### Output JSON Structure
 \`\`\`json
 {
   "intent": ["find documents relating to specified entities"],
@@ -36,7 +36,16 @@ Do not add any commentary before or after the JSON object.
 }
 \`\`\`
 
-### Examples
+### Task
+Generate a search plan for the "Current Query".
+
+### Iterative Refinement Based on History
+The "History" array shows previous attempts for the current query. Each entry includes:
+- "iteration": The iteration number.
+- "plan_attempted": The plan that was tried.
+- "outcome": Feedback on the plan. **If this feedback states "0 hits" or asks for a "significantly different plan", you MUST generate a NEW plan with DIFFERENT search terms and/or a different strategy.** Do NOT repeat search terms from previously failed plans. Analyze the "plan_attempted" from history to avoid repetition and to inspire new search avenues. Expand your thinking to synonyms, related concepts, or alternative phrasings.
+
+### Examples of Plans (Illustrative)
 Query: "get me records for Juli and the documents having the mention of terms containing Borne"
 Output:
 {
@@ -58,18 +67,9 @@ Output:
   ]
 }
 
-Query: "COVID-19 cases in Seattle 2021"
-Output:
-{
-  "intent": ["find documents relating to specified entities"],
-  "plan": [
-    {"step_id": "e1", "search_term": "COVID-19 cases in Seattle 2021", "knn_k": ${DEFAULT_K_FALLBACK}},
-    {"step_id": "e2", "search_term": "COVID-19 Seattle", "knn_k": ${DEFAULT_K_FALLBACK}},
-    {"step_id": "e3", "search_term": "coronavirus cases in Seattle 2021", "knn_k": ${DEFAULT_K_FALLBACK}}
-  ]
-}
+### Current Context
 Current Query: ${query}
-History: ${JSON.stringify(history)}
+History: ${JSON.stringify(history, null, 2)} 
 `.trim();
 
   // Simplified prompt for Gemini, asking for direct JSON output (no function calling yet)
@@ -207,24 +207,23 @@ Provide the JSON plan:
 }
 
 // planAndExecute function remains largely the same, but receives llmClient and provider info
+// Inside rass-engine-service/agenticPlanner.js
+// Within the planAndExecute function:
+
 async function planAndExecute({
   query,
-  llmClient, // Now receives the initialized client
-  llmProvider, // Receives "openai" or "gemini"
-  openaiPlannerModel, // Specific model name if OpenAI
-  // geminiPlannerModel is implicit in the gemini llmClient instance
+  llmClient,
+  llmProvider,
+  openaiPlannerModel,
   osClient,
   indexName,
-  // mappings = null, // Mappings check moved to service startup
-  embedTextFn, // Renamed for clarity, this is the provider-aware embedText from index.js
+  embedTextFn,
   runStepsFn,
 }) {
-  // Optional: Mappings check can be added here if needed, but better at service start
-  // if (mappings) { ... }
-
   const history = [];
   for (let iter = 0; iter < MAX_ITER; ++iter) {
     console.log(`[PlanAndExecute] Iteration: ${iter + 1}, Query: "${query}"`);
+    // Pass the openaiPlannerModel explicitly to buildPlan if llmProvider is openai
     const planObj = await buildPlan(
       llmClient,
       llmProvider,
@@ -240,17 +239,16 @@ async function planAndExecute({
       planObj.plan.length === 0
     ) {
       console.warn(
-        "[PlanAndExecute] Invalid or empty plan received from buildPlan. Using fallback query."
+        "[PlanAndExecute] Invalid or empty plan received from buildPlan. Using fallback query for this iteration."
       );
-      // Use original query as a single search term if plan is bad
       const fallbackPlan = [
         {
-          step_id: "fallback_e1",
+          step_id: `fallback_iter${iter + 1}_e1`,
           search_term: query,
           knn_k: DEFAULT_K_FALLBACK,
         },
       ];
-      planObj.plan = fallbackPlan; // Corrected this line
+      planObj.plan = fallbackPlan; // Use fallback for this iteration if plan is bad
     }
     console.log(
       "[PlanAndExecute] Generated plan:",
@@ -259,18 +257,30 @@ async function planAndExecute({
 
     const hits = await runStepsFn({
       plan: planObj.plan,
-      embed: embedTextFn, // Pass the correctly named function
+      embed: embedTextFn,
       os: osClient,
       index: indexName,
-      // Pass EMBED_DIM from .env to runSteps if it needs it for validation (your current runSteps uses it from its own process.env)
-      // embedDim: Number(process.env.EMBED_DIM) // Or pass it explicitly
     });
+
+    // --- MODIFICATION START ---
+    let iteration_feedback = "";
+    if (hits.length === 0) {
+      iteration_feedback = `Iteration ${
+        iter + 1
+      } using the plan above resulted in 0 hits. Please generate a new plan with significantly different search terms or a new strategy. Do not repeat previously failed search terms.`;
+    } else {
+      iteration_feedback = `Iteration ${
+        iter + 1
+      } using the plan above resulted in ${hits.length} hits.`;
+    }
 
     history.push({
       iteration: iter + 1,
-      plan_generated: planObj.plan,
-      retrieved_hit_count: hits.length,
+      plan_attempted: planObj.plan, // Renamed for clarity
+      outcome: iteration_feedback, // More descriptive outcome
+      retrieved_hit_count: hits.length, // Keep this for other potential uses
     });
+    // --- MODIFICATION END ---
 
     if (hits.length) {
       console.log(
@@ -283,12 +293,16 @@ async function planAndExecute({
     console.log(
       `[PlanAndExecute] No hits found in iteration ${
         iter + 1
-      }. Continuing if MAX_ITER not reached.`
-    );
+      }. History for next iteration: ${JSON.stringify(
+        history[history.length - 1]
+      )}`
+    ); // Log last history item
+    if (iter === MAX_ITER - 1) {
+      // Check if it's the last iteration
+      console.warn("[PlanAndExecute] Max iterations reached with no hits.");
+    }
   }
-
-  console.warn("[PlanAndExecute] Max iterations reached with no hits.");
-  return []; // Return empty array if no hits after max iterations
+  return [];
 }
 
 module.exports = { buildPlan, planAndExecute };
