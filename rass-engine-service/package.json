@@ -8,6 +8,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@langchain/openai": "^0.0.7",
     "@opensearch-project/opensearch": "^2.13.0",
     "@prisma/client": "^5.22.0",
@@ -16,7 +17,7 @@
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "langchain": "^0.0.209",
-    "openai": "^4.96.0",
+    "openai": "^4.104.0",
     "prisma": "^6.6.0",
     "uuid": "^9.0.1",
     "vector-tools": "^0.1.0",
