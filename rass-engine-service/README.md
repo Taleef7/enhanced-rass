@@ -1,238 +1,125 @@
-# 🧠 RASS Engine Backend
+# 🧠 RASS Engine Service
 
-A dynamic, LLM-based Retrieval-Augmented Generation (RAG) or Retrieval-Augmented Semantic Search (RASS) engine backend for intelligent search over files/documents. This system interprets natural language queries, generates multi-hop embedding search plans, and retrieves semantically relevant documents via OpenSearch and OpenAI embeddings.
+This is the querying backend of the `enhanced-rass` project. It provides an intelligent, agentic search layer over a vector database. The service interprets natural language queries, uses a configurable LLM to generate a multi-step search plan, executes that plan against a specified OpenSearch index, and returns the most relevant documents.
+
+This service is intended to be run as part of the Docker Compose environment defined in the root of the `enhanced-rass` repository.
 
 ---
-
 ```mermaid
 graph TD
-    A[User Query via REST or WebSocket] --> B[Planner using GPT-4o]
-    B --> C[Intent and Entity Extraction]
-    C --> D[ANN Plan Generation]
-    D --> E[Plan and Execute Loop]
-    E --> F[Embed Search Terms via OpenAI]
-    F --> G[Run ANN Search with OpenSearch]
-    G --> H[Filter Hits by Score Threshold]
-    H --> I[Group Hits Round-Robin]
-    I --> J[Check Coverage via LLM]
-    J --> K{Is Coverage Sufficient?}
-    K -->|Yes| L[Return Top-k Grouped Results]
-    K -->|No| E
-    L --> M[Send JSON or WebSocket Response]
+    subgraph RASS Engine Service
+        A[User Query via API] --> B{LLM Planner};
+        B -->|1. Generate Plan| C[Search Plan];
+        C --> D{Plan Executor};
+        D -->|2. Embed Search Terms| E[Embedding Model];
+        E -->|3. KNN Vector Search| F[(OpenSearch Index)];
+        D -->|4. Interleave & Rank| G[Ranked Document Chunks];
+        G --> H[Return Top K Results];
+    end
+    
+    subgraph External
+        I(embedding-service) -->|Populates| F;
+    end
+
+    A --> H;
 
 ```
 
 ## ⚙️ Core Features
 
-- **Agentic/LLM-based Planner + Executor Loop**
-  Leverages GPT-4o to extract entities, expand terms, and build a multi-step ANN plan from natural queries.
-
-- **ANN Search via OpenSearch (HNSW)**
-  Efficient vector search over document embeddings using 'knn_vector' with score threshold filtering.
-
-- **Interleaved Multi-Entity Result Retrieval**
-  Returns top-k interleaved results across query entities (X1, Y1, Z1, X2 ...) to ensure balanced relevance.
-
-- **WebSocket + REST API Support**
-  Real-time and stateless access methods for seamless front-end integration.
+-   **Agentic LLM Planner:** Leverages a configurable LLM provider (**OpenAI** or **Google Gemini**) to decompose user queries into a series of precise vector search terms.
+-   **Provider-Aware Search:** Dynamically uses the correct embedding model (OpenAI or Gemini) to embed search terms, ensuring compatibility with the target OpenSearch index.
+-   **Interleaved Multi-Entity Retrieval:** Executes a multi-step search plan and interleaves the results to ensure balanced relevance across different facets of the original query.
+-   **Configurable and Containerized:** All models, providers, and search parameters are configurable via environment variables, and the service is designed to run within the main project's Docker Compose setup.
 
 ---
 
 ## 🧰 Tech Stack
 
-| Component      | Technology                      |
-| -------------- | ------------------------------- |
-| API Server     | Node.js + Express.js            |
-| Embeddings     | OpenAI (text-embedding-ada-002) |
-| Search Engine  | OpenSearch (HNSW, KNN)          |
-| Planner Model  | GPT-4o                          |
-| Socket Support | WebSocket Server (WSS)          |
-| Auth           | JWT                             |
+| Component                | Technology                                         |
+| ------------------------ | -------------------------------------------------- |
+| API Server               | Node.js + Express.js                               |
+| LLM Planner              | Configurable (OpenAI GPT-4o, Gemini Flash, etc.)   |
+| Search Term Embeddings   | Configurable (OpenAI, Gemini)                      |
+| Search Engine            | OpenSearch (HNSW, KNN)                             |
+| API                      | REST (`/ask`) & WebSocket (`/ws/ask`)               |
 
 ---
 
-## System Overview & Document Ingestion
+## 🌱 Environment Configuration
 
-The `rass-engine` is the querying backend of a Retrieval Augmented Semantic Search system. It is designed to interpret natural language queries, generate search plans, and retrieve relevant documents from an OpenSearch index.
+This service is configured via a `.env` file located in its directory (`rass-engine-service/.env`).
 
-**Important Note on Document Ingestion:** This `rass-engine` **does not handle document ingestion** (uploading, chunking, embedding, and indexing into OpenSearch). This process is managed by a separate service.
+Key variables:
 
-For the intended workflow, you will need to use the **[embedding-service](https://github.com/NeuralRevenant/embedding-service)** (or your own compatible ingestion pipeline) to populate your OpenSearch index (`redmine_index` by default) with document embeddings. Once documents are ingested into OpenSearch by the `embedding-service`, the `rass-engine` can then query them.
+-   `LLM_PLANNER_PROVIDER`: Set to `openai` or `gemini` to select the provider for the agentic planner.
+-   `OPENAI_PLANNER_MODEL` / `GEMINI_PLANNER_MODEL`: The specific planner model to use.
+-   `SEARCH_TERM_EMBED_PROVIDER`: Set to `openai` or `gemini`. **Must match the provider used by the `embedding-service` to populate your target index.**
+-   `OPENAI_API_KEY` / `GEMINI_API_KEY`: API keys for your chosen providers.
+-   `OPENSEARCH_HOST`: Should be set to `opensearch`.
+-   `OPENSEARCH_INDEX_NAME`: **Crucially, this must match the full index name created by the `embedding-service`** (e.g., `knowledge_base_gemini_text-embedding-004`).
+-   `EMBED_DIM`: The vector dimension. **Must match the dimension of the target index.**
+-   `OPENSEARCH_SCORE_THRESHOLD`: The minimum similarity score (0.0-1.0) for a document to be considered a match.
 
----
+**Example `.env`:**
+```ini
+# --- Provider Selection ---
+# "openai" or "gemini"
+LLM_PLANNER_PROVIDER=openai
+SEARCH_TERM_EMBED_PROVIDER=gemini # Must match the provider used for ingestion
 
-## Prerequisites
+# --- Model & API Key Configuration ---
+OPENAI_API_KEY=sk-...
+OPENAI_PLANNER_MODEL=gpt-4o-mini
 
-- **OpenSearch:** This engine requires a running OpenSearch (or Elasticsearch compatible) instance. For local development, Docker is a convenient way to run OpenSearch.
+GEMINI_API_KEY=...
+GEMINI_PLANNER_MODEL=gemini-1.5-flash-latest
+# Note: The GEMINI_EMBED_MODEL is not needed here; it's determined by SEARCH_TERM_EMBED_PROVIDER
 
-  ```bash
-  # Example Docker command for OpenSearch (adjust memory as needed, e.g., -Xms1g -Xmx1g for 1GB)
-  docker run -p 9200:9200 -p 9600:9600 -e "discovery.type=single-node" -e "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m" --name opensearch-node -d opensearchproject/opensearch:latest
-  ```
+# --- OpenSearch Configuration ---
+OPENSEARCH_HOST=opensearch
+OPENSEARCH_PORT=9200
+OPENSEARCH_INDEX_NAME=knowledge_base_gemini_text-embedding-004 # IMPORTANT: Target the correct index!
+EMBED_DIM=768 # IMPORTANT: Must match the target index's dimension
 
-- **WSL Users:** If running Docker Desktop on WSL (Windows Subsystem for Linux) for OpenSearch, you will likely need to increase the vm.max_map_count setting on your WSL distribution. To set this temporarily (resets on WSL restart):
-
-  ```bash
-  sudo sysctl -w vm.max_map_count=262144
-  ```
-
-  For a permanent change, add the following line to `/etc/sysctl.conf`:
-
-  ```bash
-  vm.max_map_count=262144
-  ```
-
-- **Node.js and npm:** Ensure you have Node.js (v18 or later) and npm installed. You can check your versions with:
-  ```bash
-  node -v
-  npm -v
-  ```
-
-## 🚀 Getting Started
-
-### 1. Install Dependencies
-
-```bash
-git clone https://github.com/NeuralRevenant/rass-engine.git
-cd rass-engine
-npm install
+# --- RASS Engine Configuration ---
+DEFAULT_K=25
+OPENSEARCH_SCORE_THRESHOLD=0.7
 ```
 
-### 2. Configure Environment Variables
+---
 
-Create a `.env` file:
+## 🚀 Running the Service
 
-Create a `.env` file in the project root by copying the `.env.example` template (if available) or by creating a new file. Populate it with the following variables:
-
-```dotenv
-# OpenAI Configuration
-OPENAI_API_KEY=sk-YOUR_OPENAI_API_KEY_HERE
-OPENAI_API_URL=[https://api.openai.com/v1](https://api.openai.com/v1)        # Default, change if using a proxy
-OPENAI_EMBED_MODEL=text-embedding-ada-002 # Model used for generating embeddings
-
-# OpenSearch Configuration
-OPENSEARCH_HOST=localhost                     # Hostname for your OpenSearch instance
-OPENSEARCH_PORT=9200                          # Port for your OpenSearch instance
-OPENSEARCH_INDEX_NAME=redmine_index           # Target index in OpenSearch (should match index used by embedding-service)
-EMBED_DIM=1536                                # Embedding dimension for the specified OpenAI model
-
-# RASS Engine Configuration
-DEFAULT_K=25                                  # Default number of K nearest neighbors to retrieve if not specified in query
-OPENSEARCH_SCORE_THRESHOLD=0.75               # Minimum similarity score (0.0-1.0) for KNN results to be considered.
-                                              # The code uses a fallback (e.g., 0.78) if this is not set or invalid.
-
-```
-
-Ensure the OPENSEARCH_SCORE_THRESHOLD default mentioned in the comment matches the fallback in your executePlan.js
+This service is not intended to be run standalone. Please refer to the **main `README.md`** in the root of the `enhanced-rass` repository for instructions on how to start the entire application stack using `docker-compose up`.
 
 ---
 
-### 3. Start the Server
+## 🔌 API Endpoint: `POST /ask`
 
-```bash
-npm run start
-# or alternatively
-# node index.js
-```
+Accepts a natural language query and returns the most relevant document chunks. The service is accessible at `http://localhost:8000` when running via Docker Compose.
 
-Server runs on: [http://localhost:8000](http://localhost:8000)
-
----
-
-## 🧠 How It Works
-
-- **Natural Language Input** → `"get me records for Julian140 and documents with Borne"`
-- **LLM Planner** → Extracts entities ('Julian140', 'Borneo Elephants'), expands them (if needed), and plans vector queries
-- **Embedding Search** → Each entity/term is searched via HNSW-based ANN
-- **Results** → Interleaved top results returned, preserving per-entity relevance
-
----
-
-## 🔌 REST API
-
-### `POST /ask`
-
-**Request**
+### Request
 
 ```json
 {
-  "query": "get me records having the term Julian140 and the documents containing the term Borne",
+  "query": "Describe the Martians as they are described in the War of the Worlds.",
   "top_k": 5
 }
 ```
 
-**Response**
+### ✅ Success Response
 
 ```json
 {
   "documents": [
     {
-      "doc_id": "09a34661-e7c6-44b6-b068-303dd8df8b1b_000bdad9-dc9a-49ba-b1ac-980d4e18ca08.json-0",
-      "file_path": "/.../uploads/...ca08.json",
-      "file_type": "json",
-      "score": 0.8682902
-    },
-    {
-      "doc_id": "aebcce94-8bff-4058-85c6-9371e92f35ad_PMC176546.txt-1",
-      "file_path": "/.../uploads/...546.txt",
+      "doc_id": "....txt-chunk235",
+      "file_path": "uploads/....txt",
       "file_type": "txt",
-      "score": 0.88842297
-    },
-    {
-      "doc_id": "2abd50c3-4483-4ad4-a9f9-70d509c506e8_000d4013-e5e1-441b-bdc4-5fca55dbe565.json-0",
-      "file_path": "/.../uploads/...6565.json",
-      "file_type": "json",
-      "score": 0.8680167
-    },
-    {
-      "doc_id": "aebcce94-8bff-4058-85c6-9371e92f35ad_PMC176546.txt-0",
-      "file_path": "/.../uploads/...546.txt",
-      "file_type": "txt",
-      "score": 0.88662094
-    },
-    {
-      "doc_id": "0bd0a0ad-b520-420a-b66a-c5dfc0217468_000e1a87-e036-42bc-9cbe-e5ffcf61acb4.json-1",
-      "file_path": "/.../uploads/...acb4.json",
-      "file_type": "json",
-      "score": 0.86678123
+      "text_chunk": "...",
+      "score": 0.76525956
     }
   ]
 }
 ```
-
----
-
-## 🌐 WebSocket API
-
-### `ws://localhost:8000/ws/ask`
-
-**Request Message**
-
-```json
-{
-  "query": "heart disease and asthma in California",
-  "top_k": 5
-}
-```
-
-**Response Message**
-
-Same structure as the REST `/ask` response. Connection auto-closes post-response.
-
----
-
-## 🧼 Notes
-
-- Score threshold for filtering KNN results is configurable via the `OPENSEARCH_SCORE_THRESHOLD` environment variable (e.g., default set to `0.75` in `.env.example`). This is applied per KNN step.
-- ANN results are interleaved by entity, not globally sorted, to preserve diverse entity coverage.
-- Embeddings are cached per query step to avoid recomputation.
-- Planner auto-retries up to 6 times if no adequate coverage is achieved.
-
----
-
-## 📌 Future Enhancements for medical EHR document search
-
-- Improve the accuracy for EHR patient and medical data - FHIR, plain-text medical notes with hybrid search and proper file parsing.
-- Add a more powerful agentic AI design to enhance the retrieval accuracy like above for EHR medical documents.
-- Enable hybrid KNN + text-based search (BM25, etc. used in OpenSearch)
-- Visual result explorer (timeline or graph)
