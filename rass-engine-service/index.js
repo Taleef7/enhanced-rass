@@ -307,7 +307,7 @@ wss.on("connection", (ws) => {
 
 async function startServer() {
   try {
-    await checkIndexExists(); // Check if target index exists on startup
+    // await checkIndexExists(); // Check if target index exists on startup
     const srv = app.listen(RASS_ENGINE_PORT, () =>
       console.log(
         `RASS Engine API running on http://localhost:${RASS_ENGINE_PORT}`
@@ -323,7 +323,7 @@ async function startServer() {
       }
     });
   } catch (e) {
-    console.error("[Startup] Failed to start RASS Engine server:", e);
+    console.error('Failed to start server:', e);
     process.exit(1);
   }
 }
