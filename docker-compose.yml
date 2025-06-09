@@ -80,6 +80,8 @@ services:
     container_name: mcp_server_app
     ports:
       - "8080:8080"
+    volumes:
+      - ./embedding-service/uploads:/usr/src/app/uploads:ro
     networks:
       - rass_network
     depends_on:
