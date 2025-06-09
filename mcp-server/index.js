@@ -1,116 +1,109 @@
 // mcp-server/index.js
 const express = require("express");
+const { McpServer } = require("@modelcontextprotocol/sdk/server/mcp.js");
+const {
+  StreamableHTTPServerTransport,
+} = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
+const { z } = require("zod");
 const axios = require("axios");
-const FormData = require("form-data"); // Import FormData
-const fs = require("fs"); // Import Node.js File System module
-const path = require("path"); // Import path module
+const FormData = require("form-data");
+const fs = require("fs");
+const path = require("path");
+
+const server = new McpServer({
+  name: "RASS-MCP-Server",
+  version: "1.0.0",
+});
+
+// Define the 'queryRASS' tool
+server.tool(
+  "queryRASS",
+  {
+    query: z
+      .string()
+      .describe("The natural language question to ask the knowledge base."),
+    top_k: z
+      .optional(z.number())
+      .describe("Optional. The maximum number of document chunks to return."),
+  },
+  async (tool_args) => {
+    console.log(`[MCP Tool 'queryRASS'] Executing with args:`, tool_args);
+    const rassEngineUrl = "http://rass-engine-service:8000/ask";
+    const response = await axios.post(rassEngineUrl, tool_args);
+    // CORRECTED RETURN: The content type must be 'text', and the data is stringified.
+    return {
+      content: [{ type: "text", text: JSON.stringify(response.data, null, 2) }],
+    };
+  }
+);
+
+// Define the 'addDocumentToRASS' tool
+server.tool(
+  "addDocumentToRASS",
+  {
+    source_uri: z
+      .string()
+      .describe(
+        "The filename of the document to add, located in the shared uploads volume."
+      ),
+  },
+  async ({ source_uri }) => {
+    console.log(
+      `[MCP Tool 'addDocumentToRASS'] Executing with uri:`,
+      source_uri
+    );
+    const UPLOAD_DIR_MCP = "/usr/src/app/uploads";
+    const fullPath = path.join(UPLOAD_DIR_MCP, source_uri);
+
+    if (!fs.existsSync(fullPath)) {
+      throw new Error(`File not found at source_uri: ${source_uri}`);
+    }
+
+    const form = new FormData();
+    form.append(
+      "files",
+      fs.createReadStream(fullPath),
+      path.basename(fullPath)
+    );
+
+    const embeddingServiceUrl = "http://embedding-service:8001/upload";
+    const response = await axios.post(embeddingServiceUrl, form, {
+      headers: { ...form.getHeaders() },
+    });
+
+    // CORRECTED RETURN: The content type must be 'text', and the data is stringified.
+    return {
+      content: [{ type: "text", text: JSON.stringify(response.data, null, 2) }],
+    };
+  }
+);
+
+// --- Set up the Express App and MCP Transport ---
+
 const app = express();
-
+app.use(express.json({ limit: "10mb" }));
 const PORT = process.env.MCP_SERVER_PORT || 8080;
-
-app.use(express.json());
 
 app.get("/", (req, res) => {
   res.status(200).send("MCP Server is running.");
 });
 
-app.post("/invoke_tool", async (req, res) => {
-  const { tool_name, arguments: tool_args } = req.body;
-
-  console.log(`[MCP Server] Received tool call for: '${tool_name}'`);
-  console.log(`[MCP Server] Arguments:`, tool_args);
-
-  if (tool_name === "queryRASS") {
-    try {
-      const rassEngineUrl = "http://rass-engine-service:8000/ask";
-      console.log(
-        `[MCP Server] Forwarding query to RASS Engine at ${rassEngineUrl}`
-      );
-
-      const response = await axios.post(rassEngineUrl, {
-        query: tool_args.query,
-        top_k: tool_args.top_k,
-      });
-
-      res.status(200).json({
-        tool_name: "queryRASS",
-        status: "success",
-        result: response.data,
-      });
-    } catch (error) {
-      console.error("[MCP Server] Error calling RASS Engine:", error.message);
-      res.status(error.response?.status || 500).json({
-        tool_name: "queryRASS",
-        status: "error",
-        error:
-          error.response?.data?.error || "Failed to connect to RASS Engine.",
-      });
+app.post("/mcp", async (req, res) => {
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+  });
+  res.on("close", () => {
+    transport.close();
+    server.close();
+  });
+  try {
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (e) {
+    console.error("[MCP Server] Error handling request:", e);
+    if (!res.headersSent) {
+      res.status(500).send("Internal Server Error");
     }
-  } else if (tool_name === "addDocumentToRASS") {
-    const { source_uri } = tool_args;
-    if (!source_uri) {
-      return res
-        .status(400)
-        .json({ error: "Missing 'source_uri' in arguments." });
-    }
-
-    // This is the path *inside the mcp-server container* where the volume is mounted.
-    const fullPath = path.join("/usr/src/app/uploads", source_uri);
-
-    console.log(`[MCP Server] Attempting to read document from: ${fullPath}`);
-
-    if (!fs.existsSync(fullPath)) {
-      console.error(`[MCP Server] File not found at path: ${fullPath}`);
-      return res
-        .status(404)
-        .json({ error: `File not found at source_uri: ${source_uri}` });
-    }
-
-    try {
-      const form = new FormData();
-      // Use the original filename for the form-data part
-      form.append(
-        "files",
-        fs.createReadStream(fullPath),
-        path.basename(fullPath)
-      );
-
-      const embeddingServiceUrl = "http://embedding-service:8001/upload";
-      console.log(
-        `[MCP Server] Forwarding document to Embedding Service at ${embeddingServiceUrl}`
-      );
-
-      const response = await axios.post(embeddingServiceUrl, form, {
-        headers: {
-          ...form.getHeaders(),
-        },
-      });
-
-      console.log(
-        "[MCP Server] Successfully received response from Embedding Service."
-      );
-      return res.status(200).json({
-        tool_name: "addDocumentToRASS",
-        status: "success",
-        result: response.data,
-      });
-    } catch (error) {
-      console.error(
-        "[MCP Server] Error calling Embedding Service:",
-        error.response?.data || error.message
-      );
-      return res.status(error.response?.status || 500).json({
-        tool_name: "addDocumentToRASS",
-        status: "error",
-        error:
-          error.response?.data?.error ||
-          "Failed to connect to Embedding Service.",
-      });
-    }
-  } else {
-    res.status(400).json({
-      error: `Tool '${tool_name}' is not supported by this server.`,
-    });
   }
 });
 
