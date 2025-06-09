@@ -1,0 +1,50 @@
+{
+  "tools": [
+    {
+      "tool_name": "queryRASS",
+      "description": "Queries the Retrieval Augmented Semantic Search (RASS) knowledge base with a natural language query to find and return relevant document chunks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The natural language question to ask the knowledge base."
+          },
+          "top_k": {
+            "type": "integer",
+            "description": "Optional. The maximum number of document chunks to return. Defaults to 5."
+          },
+          "filters": {
+            "type": "object",
+            "description": "Optional. A key-value map to filter results based on metadata (e.g., file_type, source). For future use.",
+            "properties": {}
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "tool_name": "addDocumentToRASS",
+      "description": "Adds a new document to the RASS knowledge base by providing a source URI. The system will fetch, process, and index the document.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_uri": {
+            "type": "string",
+            "description": "The URI of the document to add. Can be a local file path accessible to the service or a public URL."
+          },
+          "document_id": {
+            "type": "string",
+            "description": "Optional. A specific ID to assign to this document."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optional. A key-value map of metadata to associate with the document.",
+            "properties": {}
+          }
+        },
+        "required": ["source_uri"]
+      }
+    }
+  ]
+}
