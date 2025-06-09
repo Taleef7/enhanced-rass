@@ -36,6 +36,10 @@ const {
 
 app.use(express.json());
 
+app.get("/", (req, res) => {
+  res.status(200).json({ status: "ok", message: "RASS Engine is running" });
+});
+
 // EMBED_DIM is crucial and must match the target index AND the search term embedding model
 const EMBED_DIM =
   parseInt(process.env.EMBED_DIM, 10) ||
@@ -323,7 +327,7 @@ async function startServer() {
       }
     });
   } catch (e) {
-    console.error('Failed to start server:', e);
+    console.error("Failed to start server:", e);
     process.exit(1);
   }
 }

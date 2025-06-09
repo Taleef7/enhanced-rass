@@ -58,16 +58,20 @@ services:
     container_name: rass_engine_app
     ports:
       - "8000:8000"
-    # volumes: # Uncomment and adjust if you need persistent storage or live reload
-      # - ./rass-engine-service:/usr/src/app/rass-engine-service
     env_file:
       - ./rass-engine-service/.env
     depends_on:
       opensearch:
-        condition: service_healthy # Waits for OpenSearch to be healthy
+        condition: service_healthy
     networks:
       - rass_network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   mcp-server:
     build:
