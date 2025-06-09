@@ -69,6 +69,20 @@ services:
       - rass_network
     restart: unless-stopped
 
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    container_name: mcp_server_app
+    ports:
+      - "8080:8080"
+    networks:
+      - rass_network
+    depends_on:
+      rass-engine-service:
+        condition: service_healthy
+    restart: unless-stopped
+
 networks:
   rass_network:
     driver: bridge
