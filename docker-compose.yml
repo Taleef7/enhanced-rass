@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0 # Using a specific version for stability
+    container_name: opensearch_node
+    environment:
+      - discovery.type=single-node
+      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g # Increased from 512m for better stability
+      - bootstrap.memory_lock=true # Recommended for performance
+      - "DISABLE_SECURITY_PLUGIN=true" # For easier local development; NOT FOR PRODUCTION
+      - "DISABLE_INSTALL_DEMO_CONFIG=true"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536 # Default for OpenSearch
+        hard: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+      - "9600:9600" # For performance analyzer
+    networks:
+      - rass_network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -k http://localhost:9200/_cluster/health | grep -vq '\"status\":\"red\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  embedding-service:
+    build:
+      context: ./embedding-service
+      dockerfile: Dockerfile
+    container_name: embedding_service_app
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./embedding-service/uploads:/usr/src/app/embedding-service/uploads
+      # For development, you might map the source code:
+      # - ./embedding-service:/usr/src/app/embedding-service 
+      # Note: This would require nodemon or similar in CMD for live reload
+    env_file:
+      - ./embedding-service/.env
+    depends_on:
+      opensearch:
+        condition: service_healthy # Waits for OpenSearch to be healthy
+    networks:
+      - rass_network
+    restart: unless-stopped
+
+  rass-engine-service:
+    build:
+      context: ./rass-engine-service
+      dockerfile: Dockerfile
+    container_name: rass_engine_app
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./rass-engine-service/.env
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    networks:
+      - rass_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    container_name: mcp_server_app
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./embedding-service/uploads:/usr/src/app/uploads:ro
+    networks:
+      - rass_network
+    depends_on:
+      rass-engine-service:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  rass_network:
+    driver: bridge
+
+volumes:
+  opensearch-data:
+    driver: local

@@ -20,6 +20,7 @@
   },
   "homepage": "https://github.com/NeuralRevenant/embedding-service#readme",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@opensearch-project/opensearch": "^3.5.1",
     "@prisma/client": "^6.6.0",
     "cheerio": "^1.0.0",
@@ -29,9 +30,11 @@
     "express": "^5.1.0",
     "fs-extra": "^11.3.0",
     "jsonwebtoken": "^9.0.2",
+    "mammoth": "^1.9.1",
     "markdown-it": "^14.1.0",
     "multer": "^1.4.5-lts.2",
-    "openai": "^4.96.0",
+    "openai": "^5.1.0",
+    "pdf-parse": "^1.1.1",
     "prisma": "^6.6.0",
     "sanitize-filename": "^1.6.3",
     "uuid": "^11.1.0"
