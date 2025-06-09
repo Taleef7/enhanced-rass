@@ -20,6 +20,7 @@ The system is designed to be flexible, supporting swappable embedding and langua
 - **`embedding-service` (Port 8001):** Handles file uploads, text extraction, chunking, embedding, and indexing into the OpenSearch database.
 - **`rass-engine-service` (Port 8000):** Exposes an API to accept natural language queries, uses an LLM to plan a search strategy, executes the plan against the OpenSearch index, and returns the most relevant document chunks.
 - **`mcp-server` (Port 8080):** The main entry point for agentic interaction. It exposes the backend capabilities as MCP-compliant "tools" (`queryRASS` and `addDocumentToRASS`).
+- **`mcp-test-client`:** A sample Node.js client script for validating the `mcp-server` using the official MCP SDK.
 
 ---
 
@@ -85,32 +86,60 @@ The recommended way to interact with the system is through the mcp-server on por
 
 ### 1. Add a Document via MCP
 
-First, place the file you want to add into the embedding-service/uploads/ directory.
+First, place the file you want to add into the `embedding-service/uploads/` directory.
 
-Then, send a `POST` request to the `/invoke_tool` endpoint, telling it to execute the `addDocumentToRASS` tool.
-
-```bash
-curl -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"tool_name": "addDocumentToRASS", "arguments": {"source_uri": "your-file-name.txt"}}' \
-  http://localhost:8080/invoke_tool
-```
-
-### 2. Query Documents via MCP
-
-Send a `POST request` to the `/invoke_tool` endpoint, telling it to execute the `queryRASS` tool.
+Then, send a `POST` request to the `/mcp` endpoint, telling it to execute the `addDocumentToRASS` tool.
 
 ```bash
 curl -X POST \
   -H "Content-Type: application/json" \
   -d '{
-        "tool_name": "queryRASS",
-        "arguments": {
-          "query": "your natural language query here",
-          "top_k": 5
-        }
+        "jsonrpc": "2.0",
+        "method": "invoke_tool",
+        "params": {
+          "name": "addDocumentToRASS",
+          "arguments": {"source_uri": "your-file-name.txt"}
+        },
+        "id": 1
       }' \
-  http://localhost:8080/invoke_tool
+  http://localhost:8080/mcp
 ```
 
-The service will return a JSON object containing the most relevant document chunks.
+### 2. Query Documents via MCP
+
+Send a `POST` request to the `/mcp` endpoint to execute the `queryRASS` tool.
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+        "jsonrpc": "2.0",
+        "method": "invoke_tool",
+        "params": {
+          "name": "queryRASS",
+          "arguments": {
+            "query": "your natural language query here",
+            "top_k": 5
+          }
+        },
+        "id": 2
+      }' \
+  http://localhost:8080/mcp
+```
+
+### 3. Testing with the SDK Client (Alternative to cURL)
+
+A dedicated test client is available in the `mcp-test-client/` directory. It uses the official MCP SDK to connect to and test the server.
+
+```bash
+# Navigate to the test client directory
+cd mcp-test-client
+
+# Install dependencies (first time only)
+npm install
+
+# Run the test
+node run-test.js
+```
+
+This script will connect to the `mcp-server`, invoke the `queryRASS` tool with a sample query, and print the response.

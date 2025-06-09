@@ -6,16 +6,16 @@ This service is intended to be run as part of the Docker Compose environment def
 
 ## ⚙️ Core Features
 
-- **MCP Tool Invocation:** Provides a central `/invoke_tool` endpoint for all MCP-based interactions.
+- **MCP Tool Invocation:** Provides a central `/mcp` endpoint that correctly parses official JSON-RPC 2.0 messages from MCP clients.
 - **Service Gateway:** Intelligently routes tool calls to the appropriate backend microservice:
   - `queryRASS` calls are proxied to the `rass-engine-service`.
   - `addDocumentToRASS` calls are proxied to the `embedding-service`.
 - **File Handling Proxy:** For the `addDocumentToRASS` tool, it reads a file from a shared volume and correctly streams it as `multipart/form-data` to the embedding service.
 - **Containerized & Networked:** Runs as a containerized service and communicates with other backend services over the shared Docker network.
 
-## 🔌 API Endpoint: `POST /invoke_tool`
+## 🔌 API Endpoint: `POST /mcp`
 
-This is the single entry point for all tool calls. It accepts a JSON payload specifying the tool name and its arguments. The service is accessible at `http://localhost:8080` when running via Docker Compose.
+This is the single entry point for all tool calls. It accepts a JSON-RPC 2.0 payload and is designed to work with clients using the official `@modelcontextprotocol/sdk`. The service is accessible at `http://localhost:8080` when running via Docker Compose.
 
 ### Supported Tools
 
@@ -23,34 +23,30 @@ This is the single entry point for all tool calls. It accepts a JSON payload spe
 
 Queries the knowledge base for relevant documents.
 
-**Request:**
+**SDK Client Usage:**
 
-```json
-{
-  "tool_name": "queryRASS",
-  "arguments": {
-    "query": "What is the MCP test document?",
-    "top_k": 5
-  }
-}
+```javascript
+await client.callTool({
+  name: "queryRASS",
+  arguments: {
+    query: "What is the MCP test document?",
+    top_k: 5,
+  },
+});
 ```
 
-**Success Response:**
+**Success Response (inside result.content[0].text):**
 
 ```json
 {
-  "tool_name": "queryRASS",
-  "status": "success",
-  "result": {
-    "documents": [
-      {
-        "doc_id": "...",
-        "file_path": "uploads/...",
-        "text_chunk": "...",
-        "score": 0.85
-      }
-    ]
-  }
+  "documents": [
+    {
+      "doc_id": "...",
+      "file_path": "uploads/...",
+      "text_chunk": "...",
+      "score": 0.85
+    }
+  ]
 }
 ```
 
@@ -58,41 +54,21 @@ Queries the knowledge base for relevant documents.
 
 Adds a new document to the knowledge base from a file accessible to the server.
 
-**Request:**
+**SDK Client Usage:**
+
+```javascript
+await client.callTool({
+  name: "addDocumentToRASS",
+  arguments: {
+    source_uri: "my-file-to-upload.txt",
+  },
+});
+```
+
+**Success Response (inside result.content[0].text):**
 
 ```json
 {
-  "tool_name": "addDocumentToRASS",
-  "arguments": {
-    "source_uri": "my-file-to-upload.txt/pdf/docx/md/json"
-  }
+  "message": "Successfully processed 1 files. Embedded and indexed 3 document chunks into 'knowledge_base_gemini'."
 }
 ```
-
-**Success Response:**
-
-```json
-{
-  "tool_name": "addDocumentToRASS",
-  "status": "success",
-  "result": {
-    "message": "Successfully processed 1 files. Embedded and indexed 3 document chunks into 'knowledge_base_gemini'."
-  }
-}
-```
-
-## 🛠️ Development and Deployment
-
-### Prerequisites
-
-- Docker and Docker Compose installed.
-- Python 3.8+ installed (for local development).
-
-### Running with Docker Compose
-
-1. Ensure you have the `docker-compose.yml` file in the root of the `enhanced-rass` project.
-2. Navigate to the root directory of the project.
-3. Run the following command to start the service:
-   ```bash
-   docker-compose up --build
-   ```
