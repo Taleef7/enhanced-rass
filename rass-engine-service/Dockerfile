@@ -2,6 +2,9 @@
 # Consistent with the embedding-service
 FROM node:20-slim
 
+# Install curl for health checks and other utilities
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 # Set the working directory in the container
 WORKDIR /usr/src/app/rass-engine-service
 
