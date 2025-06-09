@@ -1,13 +1,14 @@
 # Enhanced RASS (Retrieval Augmented Semantic Search)
 
-This project provides a complete, containerized RASS pipeline for intelligent search over documents. It consists of two primary microservices: an `embedding-service` for document ingestion and an `rass-engine-service` for querying.
+This project provides a complete, containerized RASS pipeline for intelligent search over documents. It consists of two primary microservices for the backend (`embedding-service`, `rass-engine-service`) and an `mcp-server` that acts as a standardized gateway.
 
 The system is designed to be flexible, supporting swappable embedding and language models from different providers (e.g., OpenAI, Gemini), and is fully orchestrated with Docker for easy local setup and development.
 
 ## ✨ Core Features
 
 - **End-to-End RASS Pipeline:** From document upload to query response.
-- **Containerized Environment:** Run the entire stack (`embedding-service`, `rass-engine-service`, and OpenSearch) with a single Docker Compose command.
+- **MCP-Compliant Gateway:** Interact with the entire pipeline through a standardized Model Context Protocol server, making it ready for AI agent integration.
+- **Containerized Environment:** Run the entire stack (`embedding-service`, `rass-engine-service`, `mcp-server`, and OpenSearch) with a single Docker Compose command.
 - **Configurable AI Models:**
   - **Embedding Service:** Supports different embedding providers (OpenAI, Gemini) and automatically manages separate, dimension-appropriate OpenSearch indexes.
   - **RASS Engine:** The LLM-based planner is configurable to use different providers and models (e.g., GPT-4o, Gemini Flash). The search term embedder is provider-aware to ensure compatibility with the target index.
@@ -18,6 +19,7 @@ The system is designed to be flexible, supporting swappable embedding and langua
 
 - **`embedding-service` (Port 8001):** Handles file uploads, text extraction, chunking, embedding, and indexing into the OpenSearch database.
 - **`rass-engine-service` (Port 8000):** Exposes an API to accept natural language queries, uses an LLM to plan a search strategy, executes the plan against the OpenSearch index, and returns the most relevant document chunks.
+- **`mcp-server` (Port 8080):** The main entry point for agentic interaction. It exposes the backend capabilities as MCP-compliant "tools" (`queryRASS` and `addDocumentToRASS`).
 
 ---
 
@@ -44,57 +46,71 @@ cd enhanced-rass
 You need to create a `.env` file for each service based on the provided examples.
 
 **A. For the Embedding Service:**
+
 ```bash
 cp embedding-service/.env.example embedding-service/.env
 ```
+
 Now, edit `embedding-service/.env` and add your `OPENAI_API_KEY` and/or `GEMINI_API_KEY`. **Do not change `OPENSEARCH_HOST` or `OPENSEARCH_PORT`**; they are correctly set for the Docker network.
 
 **B. For the RASS Engine Service:**
+
 ```bash
 cp rass-engine-service/.env.example rass-engine-service/.env
 ```
+
 Now, edit `rass-engine-service/.env` and add your API keys. **Do not change `OPENSEARCH_HOST` or `OPENSEARCH_PORT`**.
 
 ### 3. Build and Run the Services
 
 From the root of the `enhanced-rass` project, run:
+
 ```bash
 docker-compose up --build -d
 ```
-This will build the images for both services and start all three containers (OpenSearch, `embedding-service`, `rass-engine-service`) in the background.
+
+This will build the images for both services and start all four containers (OpenSearch, `embedding-service`, `rass-engine-service`, and `mcp-server`) in the background.
 
 You can check the status of your containers with:
+
 ```bash
 docker-compose ps
 ```
 
 ---
 
-## ⚙️ Usage
+## ⚙️ Usage via MCP (Recommended)
 
-### 1. Ingest Documents
+The recommended way to interact with the system is through the mcp-server on port 8080.
 
-Send a `POST` request to the `embedding-service` to upload and index your files.
+### 1. Add a Document via MCP
+
+First, place the file you want to add into the embedding-service/uploads/ directory.
+
+Then, send a `POST` request to the `/invoke_tool` endpoint, telling it to execute the `addDocumentToRASS` tool.
 
 ```bash
-# Example from within the embedding-service directory
-curl -X POST http://localhost:8001/upload \
-  -F "files=@./data/sample1.txt" \
-  -F "files=@./data/markdown_example.md"
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"tool_name": "addDocumentToRASS", "arguments": {"source_uri": "your-file-name.txt"}}' \
+  http://localhost:8080/invoke_tool
 ```
-The service will create an appropriate OpenSearch index (e.g., `knowledge_base_openai_...` or `knowledge_base_gemini_...`) based on your `.env` configuration and ingest the documents.
 
-### 2. Query Documents
+### 2. Query Documents via MCP
 
-Send a `POST` request to the `rass-engine-service` to ask a question. Ensure the service is configured (in its `.env` file) to target the index you populated in the previous step.
+Send a `POST request` to the `/invoke_tool` endpoint, telling it to execute the `queryRASS` tool.
 
 ```bash
-curl -X POST http://localhost:8000/ask \
+curl -X POST \
   -H "Content-Type: application/json" \
   -d '{
-        "query": "your natural language query here",
-        "top_k": 5
-      }'
+        "tool_name": "queryRASS",
+        "arguments": {
+          "query": "your natural language query here",
+          "top_k": 5
+        }
+      }' \
+  http://localhost:8080/invoke_tool
 ```
 
 The service will return a JSON object containing the most relevant document chunks.
