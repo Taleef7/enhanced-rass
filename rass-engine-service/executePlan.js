@@ -10,51 +10,47 @@ const log = (...a) => console.log(...a);
 const warn = (...a) => console.warn(...a);
 
 /**
- * Runs a single knn search with scroll.
+ * Runs a single hybrid (keyword + vector) search.
  */
-async function knnSearch(os, index, body) {
+async function hybridSearch(os, index, body) {
   try {
-    const first = await os.search({ index, body, scroll: SCROLL_TTL });
-    let sid = first.body._scroll_id;
-    const all = [...first.body.hits.hits];
+    // Note: Hybrid query doesn't use scrolling the same way.
+    // It combines results from sub-queries at the shard level first.
+    // We will handle pagination logic later if needed. For now, we get one page of results.
+    const response = await os.search({ index, body });
+    const all = response.body.hits.hits;
 
-    while (true) {
-      const nxt = await os.scroll({ scroll_id: sid, scroll: SCROLL_TTL });
-      if (!nxt.body.hits.hits.length) break;
-      all.push(...nxt.body.hits.hits);
-      sid = nxt.body._scroll_id;
-    }
-    await os.clearScroll({ scroll_id: [sid] });
-    // === MODIFIED LINES START ===
     if (all.length > 0) {
-      log(`[knnSearch] Top raw hits before filtering (up to 5):`);
+      log(`[hybridSearch] Top raw hits before filtering (up to 5):`);
       all
         .slice(0, 5)
         .forEach((hit) =>
           log(
-            `  Raw Hit: id=<span class="math-inline">\{hit\.\_id\}, score\=</span>{hit._score}, text_chunk (first 50 chars): ${hit._source?.text_chunk?.substring(
+            `  Raw Hit: id=${hit._id}, score=${
+              hit._score
+            }, text_chunk (first 50 chars): ${hit._source?.text_chunk?.substring(
               0,
               50
             )}`
           )
         );
     } else {
-      log(`[knnSearch] No raw hits returned from OpenSearch for this term.`);
+      log(`[hybridSearch] No raw hits returned from OpenSearch for this term.`);
     }
     const filtered = all.filter(
       (hit) => !hit._score || hit._score >= OPENSEARCH_SCORE_THRESHOLD
     );
     log(
-      `[knnSearch] Hits after score filter (threshold >=${OPENSEARCH_SCORE_THRESHOLD}): ${filtered.length} (out of ${all.length} raw hits)`
-    );
-    filtered.forEach((hit) =>
-      log(
-        `  Filtered Hit: id=<span class="math-inline">\{hit\.\_id\}, score\=</span>{hit._score}`
-      )
+      `[hybridSearch] Hits after score filter (threshold >=${OPENSEARCH_SCORE_THRESHOLD}): ${filtered.length} (out of ${all.length} raw hits)`
     );
     return filtered;
   } catch (err) {
-    warn("knnSearch error:", err.message);
+    // It's very useful to log the body of the query that failed
+    warn(
+      `[hybridSearch] Error executing hybrid search:`,
+      err.meta ? JSON.stringify(err.meta.body, null, 2) : err.message
+    );
+    warn("[hybridSearch] Failing query body:", JSON.stringify(body, null, 2));
     return [];
   }
 }
@@ -82,17 +78,38 @@ async function runSteps({ plan, embed, os, index }) {
   // collect each step’s raw hits
   const perStepHits = [];
   for (const step of plan) {
-    // console.log(`[runSteps] Processing step: ${JSON.stringify(step)}`);
     const term = step.search_term?.trim();
     const vector = await embedOnce(term);
     const k = step.knn_k || DEFAULT_K;
+
     const body = {
       size: k,
       _source: ["doc_id", "file_path", "file_type", "text_chunk"],
-      query: { knn: { embedding: { vector, k } } },
+      query: {
+        hybrid: {
+          queries: [
+            {
+              match: {
+                text_chunk: {
+                  query: term,
+                },
+              },
+            },
+            {
+              knn: {
+                embedding: {
+                  vector: vector,
+                  k: k,
+                },
+              },
+            },
+          ],
+        },
+      },
     };
 
-    const hits = await knnSearch(os, index, body);
+    // We now call our new function
+    const hits = await hybridSearch(os, index, body);
     perStepHits.push(hits);
   }
 
