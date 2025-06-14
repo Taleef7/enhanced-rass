@@ -5,3 +5,4 @@ build
 uploads
 data/
 temp/
+package-lock.json
