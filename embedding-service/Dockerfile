@@ -13,7 +13,7 @@ COPY package-lock.json ./
 
 # Install app dependencies
 # Using --omit=dev if you have devDependencies you don't want in production
-RUN npm install --omit=dev
+RUN npm install --omit=dev --legacy-peer-deps
 
 # Bundle app source
 COPY . .
