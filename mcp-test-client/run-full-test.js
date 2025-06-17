@@ -23,12 +23,12 @@ async function main() {
 
     // --- STEP 1: UPLOAD THE DOCUMENT ---
     console.log(
-      "[Test Client] Invoking 'addDocumentToRASS' tool for 'markdown_example.md'..."
+      "[Test Client] Invoking 'addDocumentToRASS' tool for 'waroftheworlds.pdf'..."
     );
     const addResult = await client.callTool({
       name: "addDocumentToRASS",
       arguments: {
-        source_uri: "markdown_example.md",
+        source_uri: "waroftheworlds.pdf",
       },
     });
 
@@ -46,7 +46,7 @@ async function main() {
       name: "queryRASS",
       arguments: {
         // Ask a question relevant to the document we just uploaded
-        query: "How do you format bold and italic text in markdown?",
+        query: "What was the initial object that fell to Earth from Mars?",
         top_k: 2,
       },
     });
