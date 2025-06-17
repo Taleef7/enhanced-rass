@@ -1,52 +1,27 @@
 [
   {
-    "id": "WOW_eval_001",
-    "difficulty": "Easy",
-    "type": "Simple Fact Retrieval",
-    "question": "What is the narrator's profession?",
-    "expected_answer": "The narrator is a writer, specifically known for writing philosophical papers.",
-    "expected_chunk_ids": [
-      "469ed712-919a-4366-8db6-3440f28bbdbb_waroftheworlds.pdf-chunk145"
-    ]
+    "id": "wotw_01",
+    "question": "What was the initial object that fell to Earth from Mars?",
+    "ground_truth": "The initial object was a metallic cylinder, described as a huge, artificial object that fell on Horsell Common."
   },
   {
-    "id": "WOW_eval_002",
-    "difficulty": "Easy",
-    "type": "Multi-Fact Retrieval",
-    "question": "From which planet did the invaders come, and what was the name of the narrator's astronomer friend?",
-    "expected_answer": "The invaders came from Mars, and the astronomer's name was Ogilvy.",
-    "expected_chunk_ids": [
-      "469ed712-919a-4366-8db6-3440f28bbdbb_waroftheworlds.pdf-chunk4"
-    ]
+    "id": "wotw_02",
+    "question": "Describe the appearance of the Martians as they first emerged.",
+    "ground_truth": "The Martians had a bulky body with a diameter of about four feet, a fleshy, V-shaped mouth, and large, dark-colored eyes. They were equipped with two bunches of Gorgon-like tentacles."
   },
   {
-    "id": "WOW_eval_003",
-    "difficulty": "Medium",
-    "type": "Descriptive Synthesis",
-    "question": "Describe the physical appearance of a Martian creature itself, not its machine.",
-    "expected_answer": "A Martian is described as having a round, large body, about four feet in diameter, with a fleshy, V-shaped mouth that lacks lips and quivers. It has two large, dark-colored eyes and two bunches of slender, whip-like tentacles near its mouth. The creature's body glistens like wet leather and it breathes with difficulty in Earth's atmosphere.",
-    "expected_chunk_ids": [
-      "469ed712-919a-4366-8db6-3440f28bbdbb_waroftheworlds.pdf-chunk15"
-    ]
+    "id": "wotw_03",
+    "question": "What was the first hostile action the Martians took against the humans?",
+    "ground_truth": "The first hostile action was the use of the Heat-Ray, an invisible beam of intense heat that incinerated a delegation of humans who were approaching under a white flag of peace."
   },
   {
-    "id": "WOW_eval_004",
-    "difficulty": "Medium",
-    "type": "Cause and Effect",
-    "question": "What was the ultimate cause of the Martians' defeat?",
-    "expected_answer": "The Martians were ultimately defeated by terrestrial bacteria. They had no immunity to the common germs and diseases on Earth, which caused them to sicken and die.",
-    "expected_chunk_ids": [
-      "469ed712-919a-4366-8db6-3440f28bbdbb_waroftheworlds.pdf-chunk156"
-    ]
+    "id": "wotw_04",
+    "question": "How did the narrator escape the Heat-Ray during the first encounter?",
+    "ground_truth": "The narrator escaped by stumbling and falling into a sandy ditch, which shielded him from the direct path of the Heat-Ray."
   },
   {
-    "id": "WOW_eval_005",
-    "difficulty": "Hard",
-    "type": "Thematic Analysis",
-    "question": "How does the author compare the Martian invasion to human actions, specifically regarding colonialism or extermination?",
-    "expected_answer": "The author draws a direct parallel between the Martian invasion and human colonialism, mentioning how humans have wiped out species like the bison and the dodo, and waged wars of extermination against 'inferior races' such as the Tasmanians. This comparison serves as a critique of human hubris and violence.",
-    "expected_chunk_ids": [
-      "469ed712-919a-4366-8db6-3440f28bbdbb_waroftheworlds.pdf-chunk3"
-    ]
+    "id": "wotw_05",
+    "question": "What was the general state of the public and military response immediately following the first Martian attack?",
+    "ground_truth": "The public response was one of terror and panic, with people fleeing the area in chaos. The military response was initially ineffective against the Martians' advanced technology."
   }
 ]
