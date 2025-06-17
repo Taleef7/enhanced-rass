@@ -236,36 +236,74 @@ async function ask(query, top_k_param) {
     `[Ask] Query: "${query}", Target Index: ${OPENSEARCH_INDEX_NAME}, Top K: ${top_k}`
   );
 
-  // The planAndExecute function will now receive the configured plannerLLMClient
+  // --- Step 1: Retrieval (This part is unchanged) ---
   const hits = await planAndExecute({
     query,
-    llmClient: plannerLLMClient, // Pass the initialized planner client
-    llmProvider: LLM_PLANNER_PROVIDER, // Pass provider name for internal logic in agenticPlanner
-    openaiPlannerModel: OPENAI_PLANNER_MODEL_NAME, // Pass specific model names
+    llmClient: plannerLLMClient,
+    llmProvider: LLM_PLANNER_PROVIDER,
+    openaiPlannerModel: OPENAI_PLANNER_MODEL_NAME,
     geminiPlannerModel: GEMINI_PLANNER_MODEL_NAME,
     osClient,
     indexName: OPENSEARCH_INDEX_NAME,
-    // mappings: null, // Mappings check can be done at startup or if needed
-    embedTextFn: embedText, // Pass the ref to our new provider-aware embedText
+    embedTextFn: embedText,
     runStepsFn: runSteps,
   });
 
   if (!hits || !hits.length) {
-    // Return empty docs array instead of throwing, or as per desired API contract
     console.warn("[Ask] No matching documents found for the query.");
-    return { documents: [] };
+    return {
+      answer:
+        "I could not find any relevant information to answer your question.",
+      source_documents: [],
+    };
   }
 
-  const documents = hits.map((h) => ({
-    doc_id: h._source?.doc_id,
-    file_path: h._source?.file_path,
-    file_type: h._source?.file_type,
-    text: h._source?.text, // Corrected from text_chunk
+  const source_documents = hits.slice(0, top_k).map((h) => ({
+    text: h._source?.text,
     score: h._score || 0,
   }));
 
-  console.log(`[Ask] Returning ${documents.slice(0, top_k).length} documents.`);
-  return { documents: documents.slice(0, top_k) };
+  // --- Step 2: Augmentation & Generation (This is the new logic) ---
+  console.log(`[Generation] Generating final answer...`);
+
+  // 2a. Construct the context string from the retrieved documents
+  const context = source_documents.map((doc) => doc.text).join("\n\n---\n\n");
+
+  // 2b. Create the prompt for the generator LLM
+  const generationPrompt = `You are a helpful assistant. Answer the user's question based only on the following context. If the context does not contain the answer, say so.
+
+<context>
+${context}
+</context>
+
+Question: ${query}
+Answer:`;
+
+  // 2c. Call the LLM to generate the answer
+  let answer = "Sorry, I was unable to generate an answer.";
+  try {
+    if (LLM_PLANNER_PROVIDER === "openai") {
+      const completion = await plannerLLMClient.chat.completions.create({
+        model: OPENAI_PLANNER_MODEL_NAME,
+        messages: [{ role: "user", content: generationPrompt }],
+      });
+      answer = completion.choices[0].message.content;
+    } else if (LLM_PLANNER_PROVIDER === "gemini") {
+      const result = await plannerLLMClient.generateContent(generationPrompt);
+      const response = await result.response;
+      answer = response.text();
+    }
+  } catch (e) {
+    console.error("[Generation] Error calling LLM for final answer:", e);
+  }
+
+  console.log(`[Generation] Final answer generated.`);
+
+  // --- Step 3: Return the final response object ---
+  return {
+    answer: answer,
+    source_documents: source_documents,
+  };
 }
 
 // API endpoints
