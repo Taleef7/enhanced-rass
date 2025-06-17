@@ -260,7 +260,7 @@ async function ask(query, top_k_param) {
     doc_id: h._source?.doc_id,
     file_path: h._source?.file_path,
     file_type: h._source?.file_type,
-    text_chunk: h._source?.text_chunk, // Make sure to include text_chunk if UI needs it
+    text: h._source?.text, // Corrected from text_chunk
     score: h._score || 0,
   }));
 

@@ -3,7 +3,7 @@ const EMBED_DIM = Number(process.env.EMBED_DIM || 1536);
 const envScoreThreshold = parseFloat(process.env.OPENSEARCH_SCORE_THRESHOLD);
 const OPENSEARCH_SCORE_THRESHOLD = !isNaN(envScoreThreshold)
   ? envScoreThreshold
-  : 0.78; // More robust check
+  : 0.75; // More robust check
 const SCROLL_TTL = "60s";
 
 const log = (...a) => console.log(...a);
@@ -28,7 +28,7 @@ async function hybridSearch(os, index, body) {
           log(
             `  Raw Hit: id=${hit._id}, score=${
               hit._score
-            }, text_chunk (first 50 chars): ${hit._source?.text_chunk?.substring(
+            }, text_chunk (first 50 chars): ${hit._source?.text?.substring(
               0,
               50
             )}`
@@ -84,13 +84,13 @@ async function runSteps({ plan, embed, os, index }) {
 
     const body = {
       size: k,
-      _source: ["doc_id", "file_path", "file_type", "text_chunk"],
+      _source: ["doc_id", "file_path", "file_type", "text"],
       query: {
         hybrid: {
           queries: [
             {
               match: {
-                text_chunk: {
+                text: {
                   query: term,
                 },
               },
