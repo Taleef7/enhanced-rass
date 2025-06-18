@@ -1,4 +1,5 @@
 // rass-engine-service/index.js
+const { rerank } = require("./reranker.js");
 const dotenv = require("dotenv");
 dotenv.config();
 
@@ -236,7 +237,7 @@ async function ask(query, top_k_param) {
     `[Ask] Query: "${query}", Target Index: ${OPENSEARCH_INDEX_NAME}, Top K: ${top_k}`
   );
 
-  // --- Step 1: Retrieval (This part is unchanged) ---
+  // --- Step 1: Retrieval (Unchanged) ---
   const hits = await planAndExecute({
     query,
     llmClient: plannerLLMClient,
@@ -258,18 +259,26 @@ async function ask(query, top_k_param) {
     };
   }
 
-  const source_documents = hits.slice(0, top_k).map((h) => ({
+  // Map the raw hits to a cleaner document format first
+  const initial_documents = hits.map((h) => ({
     text: h._source?.text,
-    score: h._score || 0,
+    initial_score: h._score || 0,
   }));
 
-  // --- Step 2: Augmentation & Generation (This is the new logic) ---
-  console.log(`[Generation] Generating final answer...`);
+  // --- Step 2: Reranking (NEW STEP) ---
+  // Pass the initial documents to our new reranker function
+  const reranked_documents = await rerank(query, initial_documents);
 
-  // 2a. Construct the context string from the retrieved documents
+  // --- Step 3: Augmentation & Generation ---
+  // Use the top_k documents from the *reranked* list as context
+  const source_documents = reranked_documents.slice(0, top_k);
+
+  console.log(
+    `[Generation] Generating final answer with ${source_documents.length} reranked documents...`
+  );
+
   const context = source_documents.map((doc) => doc.text).join("\n\n---\n\n");
 
-  // 2b. Create the prompt for the generator LLM
   const generationPrompt = `You are a helpful assistant. Answer the user's question based only on the following context. If the context does not contain the answer, say so.
 
 <context>
@@ -279,7 +288,6 @@ ${context}
 Question: ${query}
 Answer:`;
 
-  // 2c. Call the LLM to generate the answer
   let answer = "Sorry, I was unable to generate an answer.";
   try {
     if (LLM_PLANNER_PROVIDER === "openai") {
@@ -299,9 +307,10 @@ Answer:`;
 
   console.log(`[Generation] Final answer generated.`);
 
-  // --- Step 3: Return the final response object ---
+  // --- Step 4: Return the final response object ---
   return {
     answer: answer,
+    // We return the source_documents that were used, now including their new rerank_score
     source_documents: source_documents,
   };
 }
