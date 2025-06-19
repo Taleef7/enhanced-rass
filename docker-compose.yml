@@ -63,6 +63,8 @@ services:
     depends_on:
       opensearch:
         condition: service_healthy
+      py_reranker:
+        condition: service_started
     networks:
       - rass_network
     restart: unless-stopped
@@ -87,6 +89,15 @@ services:
     depends_on:
       rass-engine-service:
         condition: service_healthy
+    restart: unless-stopped
+  
+  py_reranker:
+    build:
+      context: ./rass-engine-service/py_reranker
+    ports:
+      - "8008:8008"
+    networks:
+      - rass_network
     restart: unless-stopped
 
 networks:
