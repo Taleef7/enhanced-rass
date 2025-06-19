@@ -237,7 +237,6 @@ async function ask(query, top_k_param) {
     `[Ask] Query: "${query}", Target Index: ${OPENSEARCH_INDEX_NAME}, Top K: ${top_k}`
   );
 
-  // --- Step 1: Retrieval (Unchanged) ---
   const hits = await planAndExecute({
     query,
     llmClient: plannerLLMClient,
@@ -259,18 +258,33 @@ async function ask(query, top_k_param) {
     };
   }
 
-  // Map the raw hits to a cleaner document format first
-  const initial_documents = hits.map((h) => ({
-    text: h._source?.text,
-    initial_score: h._score || 0,
-  }));
+  // --- START DEBUBGGING FIX ---
+  // Let's log the raw hits to see exactly what OpenSearch is returning.
+  console.log(
+    "[Debug] Raw hits from OpenSearch:",
+    JSON.stringify(hits, null, 2)
+  );
 
-  // --- Step 2: Reranking (NEW STEP) ---
-  // Pass the initial documents to our new reranker function
+  // Create the initial list and robustly filter out any malformed documents.
+  const initial_documents = hits
+    .map((h) => ({
+      // Ensure we handle cases where _source might be missing
+      text: h._source ? h._source.text : null,
+      initial_score: h._score || 0,
+    }))
+    .filter((doc) => typeof doc.text === "string" && doc.text.trim() !== "");
+
+  if (initial_documents.length !== hits.length) {
+    console.warn(
+      `[Debug] Filtered out ${
+        hits.length - initial_documents.length
+      } documents with invalid text content.`
+    );
+  }
+  // --- END DEBUGGING FIX ---
+
   const reranked_documents = await rerank(query, initial_documents);
 
-  // --- Step 3: Augmentation & Generation ---
-  // Use the top_k documents from the *reranked* list as context
   const source_documents = reranked_documents.slice(0, top_k);
 
   console.log(
@@ -307,10 +321,8 @@ Answer:`;
 
   console.log(`[Generation] Final answer generated.`);
 
-  // --- Step 4: Return the final response object ---
   return {
     answer: answer,
-    // We return the source_documents that were used, now including their new rerank_score
     source_documents: source_documents,
   };
 }

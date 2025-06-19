@@ -6,8 +6,8 @@
   },
   {
     "id": "wotw_02",
-    "question": "Describe the appearance of the Martians as they first emerged.",
-    "ground_truth": "The Martians had a bulky body with a diameter of about four feet, a fleshy, V-shaped mouth, and large, dark-colored eyes. They were equipped with two bunches of Gorgon-like tentacles."
+    "question": "Describe the appearance of the Martians as they first emerged from the cylinder.",
+    "ground_truth": "The Martians had a bulky, oily, greyish body with a diameter of about four feet, a fleshy, V-shaped, lipless mouth, and large, dark-colored, luminous eyes. They were equipped with two bunches of Gorgon-like tentacles."
   },
   {
     "id": "wotw_03",
@@ -16,12 +16,37 @@
   },
   {
     "id": "wotw_04",
-    "question": "How did the narrator escape the Heat-Ray during the first encounter?",
-    "ground_truth": "The narrator escaped by stumbling and falling into a sandy ditch, which shielded him from the direct path of the Heat-Ray."
+    "question": "How did the narrator escape the Heat-Ray during the first encounter on Horsell Common?",
+    "ground_truth": "The narrator escaped by stumbling and falling into a sandy ditch, which shielded him from the direct path of the Heat-Ray as it swept through the crowd."
   },
   {
     "id": "wotw_05",
-    "question": "What was the general state of the public and military response immediately following the first Martian attack?",
-    "ground_truth": "The public response was one of terror and panic, with people fleeing the area in chaos. The military response was initially ineffective against the Martians' advanced technology."
+    "question": "Besides the Tripods and the Heat-Ray, what other major weapon did the Martians deploy?",
+    "ground_truth": "The Martians also deployed a chemical weapon known as the Black Smoke, which was a heavy, black vapor that was lethal to humans upon inhalation, causing suffocation and death."
+  },
+  {
+    "id": "wotw_06",
+    "question": "What was the fate of the ironclad warship, the Thunder Child?",
+    "ground_truth": "The Thunder Child heroically sacrificed itself by ramming and destroying two Martian Tripods to protect a flotilla of refugee ships escaping from the Thames. It was ultimately destroyed by the Heat-Ray from a third Martian."
+  },
+  {
+    "id": "wotw_07",
+    "question": "With whom was the narrator trapped in a ruined house in Sheen?",
+    "ground_truth": "The narrator was trapped for many days in a ruined house with a curate, whose incessant talking and psychological breakdown eventually forced the narrator to silence him to avoid detection by the Martians."
+  },
+  {
+    "id": "wotw_08",
+    "question": "What was the artilleryman's vision for the future of humanity?",
+    "ground_truth": "The artilleryman envisioned a future where humanity would live underground in sewers and tunnels, surviving as a resilient but subjugated race, preserving knowledge and waiting for a chance to strike back against the Martians."
+  },
+  {
+    "id": "wotw_09",
+    "question": "What was the ultimate cause of the Martians' defeat?",
+    "ground_truth": "The Martians were not defeated by human weaponry but by their lack of immunity to Earth's common pathogenic bacteria. They were wiped out by diseases like putrefaction and decay."
+  },
+  {
+    "id": "wotw_10",
+    "question": "How did the narrator's brother escape London?",
+    "ground_truth": "The narrator's brother escaped the chaos of London with two other women, managing to get on a steamer bound for the continent from the coast of Essex after witnessing the Martian attack on the refugee fleet."
   }
 ]
