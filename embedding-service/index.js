@@ -1,16 +1,14 @@
 /**********************************************************************
  * embeddingService - Node.js Microservice for Text Embeddings
  *
- * Now with Contextual Retrieval Enhancement:
- * 1. Reads the full text of a document.
- * 2. Splits it into chunks.
- * 3. For each chunk, it calls a generative LLM to create a summary
- * based on the chunk's content within the context of the full document.
- * 4. Prepends this generated context to the original chunk.
- * 5. Embeds the final "contextualized chunk" into OpenSearch.
+ * Enhanced with Contextual Retrieval:
+ * 1. Reads the full text of a document
+ * 2. Splits it into chunks using semantic similarity
+ * 3. For each chunk, generates contextual summary using LLM
+ * 4. Prepends context to create enriched chunks
+ * 5. Embeds the contextualized chunks into OpenSearch
  *********************************************************************/
 
-// Using require for consistency in this Node.js environment
 const express = require("express");
 const multer = require("multer");
 const { v4: uuidv4 } = require("uuid");
@@ -24,7 +22,6 @@ const path = require("path");
 const { TextLoader } = require("langchain/document_loaders/fs/text");
 const { PDFLoader } = require("@langchain/community/document_loaders/fs/pdf");
 const { DocxLoader } = require("@langchain/community/document_loaders/fs/docx");
-const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
 
 // Provider SDKs
 const { OpenAIEmbeddings, ChatOpenAI } = require("@langchain/openai");
@@ -40,10 +37,9 @@ const { Client: OSClient } = require("@opensearch-project/opensearch");
 /**************** Load ENV ****************/
 dotenv.config();
 
-// Destructure and set defaults for all environment variables
 const {
-  LLM_PROVIDER = "gemini", // "openai" or "gemini"
-  EMBEDDING_PROVIDER = "gemini", // "openai" or "gemini"
+  LLM_PROVIDER = "gemini",
+  EMBEDDING_PROVIDER = "gemini",
   OPENAI_API_KEY,
   GEMINI_API_KEY,
   OPENSEARCH_HOST = "localhost",
@@ -55,17 +51,19 @@ const {
   CHUNK_SIZE = 1000,
   CHUNK_OVERLAP = 200,
   EMBED_DIM = 768,
+  ENABLE_CONTEXT_GENERATION = "true",
+  CONTEXT_GENERATION_DELAY_MS = "100",
 } = process.env;
 
 /**************** Initialize Clients ****************/
 const app = express();
 
-// --- OpenSearch Client ---
+// OpenSearch Client
 const openSearchClient = new OSClient({
   node: `http://${OPENSEARCH_HOST}:${OPENSEARCH_PORT}`,
 });
 
-// --- Generative LLM for Contextualization ---
+// Generative LLM for Contextualization
 let llm;
 console.log(
   `[Initialization] Initializing LLM for Context Generation via provider: ${LLM_PROVIDER}`
@@ -73,7 +71,7 @@ console.log(
 if (LLM_PROVIDER === "gemini") {
   llm = new ChatGoogleGenerativeAI({
     apiKey: GEMINI_API_KEY,
-    model: "gemini-2.0-flash-lite", // Good, cost-effective model for summarization
+    model: "gemini-2.0-flash-lite",
   });
 } else {
   llm = new ChatOpenAI({
@@ -82,7 +80,7 @@ if (LLM_PROVIDER === "gemini") {
   });
 }
 
-// --- Embedding Model ---
+// Embedding Model
 let embeddings;
 console.log(
   `[Initialization] Initializing Embedding Model via provider: ${EMBEDDING_PROVIDER}`
@@ -90,7 +88,7 @@ console.log(
 if (EMBEDDING_PROVIDER === "gemini") {
   embeddings = new GoogleGenerativeAIEmbeddings({
     apiKey: GEMINI_API_KEY,
-    modelName: "text-embedding-004", // Latest Google embedding model
+    modelName: "text-embedding-004",
   });
 } else {
   embeddings = new OpenAIEmbeddings({
@@ -108,10 +106,10 @@ const upload = multer({ dest: TEMP_DIR });
 
 /**************** Helper Functions ****************/
 
-/**
- * Ensures the target OpenSearch index exists, creating it with the correct
- * vector mapping if it doesn't.
- */
+async function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function ensureIndexExists() {
   try {
     const exists = await openSearchClient.indices.exists({
@@ -124,10 +122,28 @@ async function ensureIndexExists() {
       await openSearchClient.indices.create({
         index: OPENSEARCH_INDEX_NAME,
         body: {
-          settings: { index: { knn: true, "knn.algo_param.ef_search": 100 } },
+          settings: {
+            index: {
+              knn: true,
+              "knn.algo_param.ef_search": 100,
+            },
+          },
           mappings: {
             properties: {
-              embedding: { type: "knn_vector", dimension: EMBED_DIM },
+              embedding: {
+                type: "knn_vector",
+                dimension: EMBED_DIM,
+              },
+              metadata: {
+                type: "object",
+                properties: {
+                  source: { type: "keyword" },
+                  chunkIndex: { type: "integer" },
+                  totalChunks: { type: "integer" },
+                  generatedContext: { type: "text" },
+                  originalChunkText: { type: "text" },
+                },
+              },
             },
           },
         },
@@ -149,44 +165,46 @@ async function ensureIndexExists() {
   }
 }
 
-/**
- * Uses the configured LLM to generate a concise summary for a text chunk,
- * based on its content within the larger document.
- * @param {string} wholeDocumentContent - The full text of the source document.
- * @param {string} chunkContent - The specific text content of the chunk.
- * @returns {Promise<string>} A promise that resolves to the generated context.
- */
-async function generateContextForChunk(wholeDocumentContent, chunkContent) {
-  const promptTemplate = `
-<document>
-${wholeDocumentContent}
+async function generateContextForChunk(
+  wholeDocumentContent,
+  chunkContent,
+  fileName
+) {
+  // Truncate document if too long to fit in context window
+  const maxDocLength = 8000;
+  const truncatedDoc =
+    wholeDocumentContent.length > maxDocLength
+      ? wholeDocumentContent.substring(0, maxDocLength) +
+        "... [document truncated]"
+      : wholeDocumentContent;
+
+  const promptTemplate = `<document>
+${truncatedDoc}
 </document>
-Here is the chunk we want to situate within the whole document:
+
+Here is a specific chunk from the document:
 <chunk>
 ${chunkContent}
 </chunk>
-Please give a short, succinct context to situate this chunk within the
-overall document for the purposes of improving search retrieval of the
-chunk. Answer only with the succinct context and nothing else.`;
+
+Please provide a brief context (2-3 sentences) that explains:
+1. What section or topic this chunk belongs to in the document
+2. How this chunk relates to the document's main theme
+3. Any key entities or concepts that are referenced but not fully explained in the chunk
+
+Keep the context concise and focused on improving search retrieval. Do not repeat the chunk content itself.`;
 
   try {
     const response = await llm.invoke(promptTemplate);
-    // Ensure response.content is a string, handle potential object responses
     return typeof response.content === "string"
       ? response.content.trim()
       : "Failed to generate valid context.";
   } catch (error) {
     console.error("[LLM Error] Failed to generate context for chunk:", error);
-    return "No additional context could be generated due to an error.";
+    return `This chunk is from "${fileName}" and discusses topics related to the document's content.`;
   }
 }
 
-/**
- * Calculates the cosine similarity between two vectors.
- * @param {number[]} vecA - The first vector.
- * @param {number[]} vecB - The second vector.
- * @returns {number} The cosine similarity score.
- */
 function cosineSimilarity(vecA, vecB) {
   if (!vecA || !vecB || vecA.length !== vecB.length) {
     return 0;
@@ -200,30 +218,24 @@ function cosineSimilarity(vecA, vecB) {
   return dotProduct / (magA * magB);
 }
 
-/**
- * Splits a document into chunks based on semantic similarity.
- * @param {string} text - The full text of the document.
- * @param {object} embeddingModel - The initialized embedding model.
- * @param {number} threshold - The similarity score threshold to split on.
- * @returns {Promise<string[]>} A promise that resolves to an array of text chunks.
- */
 async function semanticSplit(text, embeddingModel, threshold = 0.85) {
-  // 1. Split the document into individual sentences
+  // Split the document into individual sentences
   const sentences = text
     .split(/(?<=[.?!])\s+/)
     .filter((s) => s.trim().length > 0);
+
   if (sentences.length <= 1) {
     return [text];
   }
 
-  // 2. Get embeddings for each sentence
+  // Get embeddings for each sentence
   console.log(
     `[Semantic Split] Generating embeddings for ${sentences.length} sentences...`
   );
   const embeddings = await embeddingModel.embedDocuments(sentences);
   console.log(`[Semantic Split] Embeddings generated.`);
 
-  // 3. Find split points based on similarity drop
+  // Find split points based on similarity drop
   const chunks = [];
   let currentChunkSentences = [sentences[0]];
 
@@ -260,68 +272,160 @@ app.post("/upload", upload.array("files"), async (req, res) => {
   try {
     await ensureIndexExists();
     let totalChunksEmbedded = 0;
+    const processingStats = {
+      filesProcessed: 0,
+      chunksCreated: 0,
+      contextsGenerated: 0,
+      errors: [],
+    };
 
     for (const file of files) {
-      console.log(
-        `[Processing] Starting semantic chunking for: ${file.originalname}`
-      );
+      console.log(`[Processing] Starting processing for: ${file.originalname}`);
 
-      // 1. Load Document Content using appropriate LangChain loader
-      let loader;
-      const ext = path.extname(file.originalname).toLowerCase();
-      if (ext === ".pdf") {
-        loader = new PDFLoader(file.path);
-      } else if (ext === ".docx") {
-        loader = new DocxLoader(file.path);
-      } else {
-        // .txt, .md, .json etc.
-        loader = new TextLoader(file.path);
-      }
-      const docs = await loader.load();
-      const wholeDocumentContent = docs
-        .map((doc) => doc.pageContent)
-        .join("\n");
+      try {
+        // 1. Load Document Content
+        let loader;
+        const ext = path.extname(file.originalname).toLowerCase();
+        if (ext === ".pdf") {
+          loader = new PDFLoader(file.path);
+        } else if (ext === ".docx") {
+          loader = new DocxLoader(file.path);
+        } else {
+          loader = new TextLoader(file.path);
+        }
 
-      if (!wholeDocumentContent.trim()) {
-        console.warn(
-          `[Processing] No content extracted from ${file.originalname}. Skipping.`
+        const docs = await loader.load();
+        const wholeDocumentContent = docs
+          .map((doc) => doc.pageContent)
+          .join("\n");
+
+        if (!wholeDocumentContent.trim()) {
+          console.warn(
+            `[Processing] No content extracted from ${file.originalname}. Skipping.`
+          );
+          processingStats.errors.push({
+            file: file.originalname,
+            error: "No content extracted",
+          });
+          continue;
+        }
+
+        // 2. Split Document into Semantic Chunks
+        const semanticChunksText = await semanticSplit(
+          wholeDocumentContent,
+          embeddings
         );
-        continue;
+        processingStats.chunksCreated += semanticChunksText.length;
+
+        // 3. Generate context and create enriched chunks
+        console.log(
+          `[Context Generation] Processing ${semanticChunksText.length} chunks for ${file.originalname}...`
+        );
+        const enrichedChunks = [];
+
+        for (let i = 0; i < semanticChunksText.length; i++) {
+          const chunkText = semanticChunksText[i];
+
+          // Add delay between LLM calls to avoid rate limits
+          if (i > 0 && ENABLE_CONTEXT_GENERATION === "true") {
+            await sleep(parseInt(CONTEXT_GENERATION_DELAY_MS));
+          }
+
+          let enrichedContent;
+          let chunkContext = "";
+
+          if (ENABLE_CONTEXT_GENERATION === "true") {
+            // Generate contextual summary for this chunk
+            chunkContext = await generateContextForChunk(
+              wholeDocumentContent,
+              chunkText,
+              file.originalname
+            );
+            enrichedContent = `Context: ${chunkContext}\n\nContent: ${chunkText}`;
+            processingStats.contextsGenerated++;
+          } else {
+            // Skip context generation for faster testing
+            enrichedContent = chunkText;
+          }
+
+          enrichedChunks.push({
+            pageContent: enrichedContent,
+            metadata: {
+              source: file.originalname,
+              chunkIndex: i,
+              totalChunks: semanticChunksText.length,
+              originalChunkText: chunkText,
+              generatedContext: chunkContext,
+              documentLength: wholeDocumentContent.length,
+              chunkLength: chunkText.length,
+            },
+          });
+
+          // Log progress
+          if ((i + 1) % 5 === 0 || i === semanticChunksText.length - 1) {
+            console.log(
+              `[Context Generation] Processed ${i + 1}/${
+                semanticChunksText.length
+              } chunks`
+            );
+          }
+        }
+
+        // 4. Embed and Store the enriched chunks
+        console.log(
+          `[Embedding] Embedding ${enrichedChunks.length} chunks into OpenSearch...`
+        );
+        await OpenSearchVectorStore.fromDocuments(enrichedChunks, embeddings, {
+          client: openSearchClient,
+          indexName: OPENSEARCH_INDEX_NAME,
+        });
+
+        totalChunksEmbedded += enrichedChunks.length;
+        processingStats.filesProcessed++;
+        console.log(
+          `[Success] Successfully processed ${file.originalname} (${enrichedChunks.length} chunks)`
+        );
+      } catch (fileError) {
+        console.error(
+          `[Error] Failed to process ${file.originalname}:`,
+          fileError
+        );
+        processingStats.errors.push({
+          file: file.originalname,
+          error: fileError.message,
+        });
+      } finally {
+        // Clean up the temporary file
+        await fs
+          .unlink(file.path)
+          .catch((err) =>
+            console.error(
+              `[Cleanup] Failed to delete temp file: ${err.message}`
+            )
+          );
       }
-
-      // 2. Split Document into Chunks using our new Semantic Splitter
-      const semanticChunksText = await semanticSplit(
-        wholeDocumentContent,
-        embeddings
-      );
-
-      // Convert the text chunks back into LangChain Document objects for the vector store
-      const finalChunks = semanticChunksText.map((chunkText) => ({
-        pageContent: chunkText,
-        metadata: { source: file.originalname },
-      }));
-
-      // 3. Embed and Store the final chunks
-      console.log(
-        `[Embedding] Embedding ${finalChunks.length} semantic chunks into OpenSearch...`
-      );
-      await OpenSearchVectorStore.fromDocuments(finalChunks, embeddings, {
-        client: openSearchClient,
-        indexName: OPENSEARCH_INDEX_NAME,
-      });
-
-      totalChunksEmbedded += finalChunks.length;
-      console.log(
-        `[Success] Successfully processed and embedded ${file.originalname}`
-      );
-
-      // Clean up the temporary file
-      await fs.unlink(file.path);
     }
 
-    res.status(200).json({
-      message: `Successfully processed ${files.length} files. Embedded and indexed ${totalChunksEmbedded} semantic document chunks into '${OPENSEARCH_INDEX_NAME}'.`,
-    });
+    // Return detailed response
+    const response = {
+      success: true,
+      message: `Processing complete. Successfully processed ${processingStats.filesProcessed}/${files.length} files.`,
+      stats: {
+        filesUploaded: files.length,
+        filesProcessed: processingStats.filesProcessed,
+        totalChunksCreated: processingStats.chunksCreated,
+        totalChunksEmbedded: totalChunksEmbedded,
+        contextsGenerated: processingStats.contextsGenerated,
+        contextGenerationEnabled: ENABLE_CONTEXT_GENERATION === "true",
+        indexName: OPENSEARCH_INDEX_NAME,
+      },
+    };
+
+    if (processingStats.errors.length > 0) {
+      response.errors = processingStats.errors;
+    }
+
+    res.status(200).json(response);
   } catch (error) {
     console.error("[Upload] Critical endpoint error:", error);
     res.status(500).json({
@@ -331,17 +435,42 @@ app.post("/upload", upload.array("files"), async (req, res) => {
   }
 });
 
+/**************** Health Check Endpoint ****************/
+app.get("/health", async (req, res) => {
+  try {
+    const osHealth = await openSearchClient.cluster.health();
+    res.status(200).json({
+      status: "healthy",
+      service: "embedding-service",
+      opensearch: osHealth.body.status,
+      contextGeneration: ENABLE_CONTEXT_GENERATION === "true",
+      embeddingProvider: EMBEDDING_PROVIDER,
+      llmProvider: LLM_PROVIDER,
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: "unhealthy",
+      error: error.message,
+    });
+  }
+});
+
 /**************** Start Server ****************/
 app.listen(PORT, async () => {
   console.log(`Embedding Service running on http://localhost:${PORT}`);
   console.log(
-    `Attempting to ensure OpenSearch index '${OPENSEARCH_INDEX_NAME}' exists...`
+    `Context Generation: ${
+      ENABLE_CONTEXT_GENERATION === "true" ? "ENABLED" : "DISABLED"
+    }`
   );
+  console.log(`LLM Provider: ${LLM_PROVIDER}`);
+  console.log(`Embedding Provider: ${EMBEDDING_PROVIDER}`);
+
   try {
     await ensureIndexExists();
   } catch (error) {
     console.error(
-      `[Startup] CRITICAL: Could not connect to or create OpenSearch index. Please check OpenSearch is running and accessible.`,
+      `[Startup] CRITICAL: Could not connect to or create OpenSearch index.`,
       error
     );
     process.exit(1);
