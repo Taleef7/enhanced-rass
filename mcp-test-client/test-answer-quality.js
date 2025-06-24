@@ -32,7 +32,7 @@ async function testAnswerQuality() {
       console.log(`\nAnswer: ${response.answer}\n`);
 
       console.log("Retrieved chunks:");
-      response.source_documents.forEach((doc, i) => {
+      response.chunks.forEach((doc, i) => {
         console.log(
           `\n${i + 1}. Score: ${
             doc.rerank_score?.toFixed(2) || doc.initial_score?.toFixed(2)
