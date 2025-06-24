@@ -1,86 +1,121 @@
 # 📦 Embedding Service
 
-This microservice is the ingestion component of the `enhanced-rass` project. It extracts text from various document types, generates vector embeddings using a configured AI model provider (OpenAI or Gemini), and indexes the results into an OpenSearch database.
+This microservice is the ingestion and embedding component of the `enhanced-rass` project. It extracts text from various document types, performs **semantic chunking**, generates vector embeddings using a configured AI model provider (OpenAI or Gemini), and indexes the results into an OpenSearch database for hybrid semantic search.
 
 This service is intended to be run as part of the Docker Compose environment defined in the root of the `enhanced-rass` repository.
+
+For a full system overview and architecture, see [`../docs/PLANNER_AND_DIAGRAMS.md`](../docs/PLANNER_AND_DIAGRAMS.md).
 
 ---
 
 ## 🔧 Features
 
-- **Multi-Provider Embeddings:** Natively supports embedding models from both **OpenAI** (e.g., `text-embedding-3-small`) and **Google Gemini** (e.g., `text-embedding-004`).
-- **Dynamic Index Management:** Automatically creates and targets OpenSearch indexes based on the chosen embedding provider and model (e.g., `knowledge_base_openai_...` or `knowledge_base_gemini_...`), ensuring separation of data.
+- **Multi-Provider Embeddings:** Supports embedding models from **OpenAI** (e.g., `text-embedding-3-small`) and **Google Gemini** (e.g., `text-embedding-004`).
+- **Semantic Chunking:** Splits documents into semantically meaningful chunks for accurate retrieval.
+- **Dynamic Index Management:** Automatically creates and targets OpenSearch indexes based on the embedding provider and model.
 - **Multiple File Format Support:** Extracts text from `.txt`, `.md`, `.json`, `.pdf`, and `.docx` files.
-- **Robust Ingestion:** Chunks large documents into appropriately sized pieces for embedding models.
+- **Robust Ingestion:** Handles large documents and batch uploads.
 - **Containerized:** Designed to run as a service within the main project's Docker Compose setup.
 
 ---
 
 ## 🌱 Environment Configuration
 
-This service is configured via a `.env` file located in its directory (`embedding-service/.env`). You should create this file from `.env.example`.
+This service is configured via a `.env` file located in its directory (`embedding-service/.env`).
 
-Key variables:
+**To set up:**
 
-- `EMBEDDING_PROVIDER`: Set to `openai` or `gemini` to select the embedding model provider.
-- `OPENAI_API_KEY` / `GEMINI_API_KEY`: The API key for your chosen provider.
-- `OPENAI_EMBED_MODEL` / `GEMINI_EMBED_MODEL`: The specific model to use for embeddings.
-- `OPENSEARCH_HOST`: Should be set to `opensearch` to connect to the OpenSearch container within the Docker network.
-- `CHUNK_SIZE`: The size (in characters) to split large documents into.
-- `EMBED_DIM`: The vector dimension of the chosen embedding model (e.g., `1536` for OpenAI's `text-embedding-3-small`, `768` for Gemini's `text-embedding-004`).
-
-**Example `.env`:**
-
-```ini
-# Provider Selection: "openai" or "gemini"
-EMBEDDING_PROVIDER=gemini
-
-# Provider-specific settings
-OPENAI_API_KEY=sk-...
-OPENAI_EMBED_MODEL=text-embedding-3-small
-
-GEMINI_API_KEY=...
-GEMINI_EMBED_MODEL=text-embedding-004
-
-# OpenSearch Configuration (for Docker Compose network)
-OPENSEARCH_HOST=opensearch
-OPENSEARCH_PORT=9200
-# Note: The final index name is dynamically generated based on the provider and model.
-
-# Embedding & File Config
-CHUNK_SIZE=4000
-EMBED_DIM=768 # IMPORTANT: Must match the dimension of your selected model
-MAX_FILE_SIZE=10485760
-MAX_FILES_PER_REQUEST=10
+```bash
+cp embedding-service/.env.example embedding-service/.env
 ```
+
+Edit `embedding-service/.env` and set your API keys and model preferences.
+
+**Key variables:**
+
+- `EMBEDDING_PROVIDER`: `openai` or `gemini`
+- `OPENAI_API_KEY` / `GEMINI_API_KEY`: API key for your provider
+- `OPENAI_EMBED_MODEL` / `GEMINI_EMBED_MODEL`: Model to use
+- `OPENSEARCH_HOST`: Should be `opensearch` for Docker
+- `CHUNK_SIZE`: Size (in characters) for chunking
+- `EMBED_DIM`: Vector dimension (must match model)
 
 ---
 
 ## 🚀 Running the Service
 
-This service is not intended to be run standalone. Please refer to the **main `README.md`** in the root of the `enhanced-rass` repository for instructions on how to start the entire application stack using `docker-compose up`.
+This service is started automatically with:
+
+```bash
+docker compose up --build
+```
+
+Or, to run just the embedding service for development:
+
+```bash
+cd embedding-service
+npm install
+npm start
+```
 
 ---
 
-## 📤 API Endpoint: `POST /upload`
+## 📤 Uploading Documents
 
-Uploads and embeds one or more documents. The service is accessible at `http://localhost:8001` when running via Docker Compose.
+Documents are uploaded via a `POST` request to:
 
-**Note:** This endpoint is for direct interaction with the embedding service. For most use cases, documents should be added via the `addDocumentToRASS` tool through the `mcp-server`, which acts as a gateway to this service.
+```
+POST /upload
+```
 
-### Example cURL
+**Example using curl:**
 
 ```bash
-# Uploads two files to be processed
-curl -X POST http://localhost:8001/upload \
-  -F "files=@./data/my-document.pdf" \
-  -F "files=@./data/another-document.docx"
+curl -F "files=@/path/to/your/document.pdf" http://localhost:8001/upload
 ```
 
-### ✅ Success Response
+**Expected Output:**
 
-```json
-{
-  "message": "Successfully processed 2 files. Embedded and indexed 15 document chunks into 'knowledge_base_gemini_text-embedding-004'."
-}
-```
+- JSON response indicating success, number of chunks created, and index name.
+- Example:
+  ```json
+  {
+    "message": "Successfully processed 1 files. Embedded and indexed 3289 semantic document chunks into 'knowledge_base_gemini_768'."
+  }
+  ```
+
+**Batch Upload:**
+
+- You can upload multiple files in one request:
+  ```bash
+  curl -F "files=@file1.pdf" -F "files=@file2.md" http://localhost:8001/upload
+  ```
+
+---
+
+## 🧠 How it Works
+
+1. **Semantic Chunking:** Uploaded documents are split into semantically meaningful chunks (default size: 4000 characters).
+2. **Embedding:** Each chunk is embedded using the configured model (OpenAI or Gemini).
+3. **Indexing:** Embeddings and metadata are indexed into OpenSearch under a model-specific index.
+4. **Confirmation:** The service returns a summary of the operation, including the number of chunks and the index used.
+
+---
+
+## 🛠️ Troubleshooting & Tips
+
+- **File Not Found:** Ensure the file path is correct and accessible from your client.
+- **API Key Errors:** Double-check your `.env` file for valid API keys.
+- **Index Errors:** Make sure OpenSearch is running and accessible at the configured host/port.
+- **Chunk Size:** Adjust `CHUNK_SIZE` in `.env` for optimal performance based on your documents.
+
+---
+
+## 🔗 Related Docs
+
+- [System Architecture & Workflows](../docs/PLANNER_AND_DIAGRAMS.md)
+- [OpenSearch Documentation](https://opensearch.org/docs/)
+
+---
+
+For advanced configuration and developer notes, see the code comments and `.env.example`.
