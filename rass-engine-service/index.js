@@ -293,7 +293,12 @@ async function ask(query, top_k_param) {
 
   const context = source_documents.map((doc) => doc.text).join("\n\n---\n\n");
 
-  const generationPrompt = `You are a helpful assistant. Answer the user's question based only on the following context. If the context does not contain the answer, say so.
+  const generationPrompt = `You are a helpful assistant. Answer the user's question based on the following context. 
+
+Important: 
+- Code examples and syntax demonstrations ARE valid answers
+- If you see an example that demonstrates the answer, explain what it shows
+- Only say "the context does not contain the answer" if there is truly no relevant information
 
 <context>
 ${context}

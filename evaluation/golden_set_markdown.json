@@ -1,0 +1,52 @@
+[
+  {
+    "id": "md_01",
+    "question": "What text formatting options does Markdown support for bold and italic text?",
+    "ground_truth": "Markdown supports bold text using double asterisks (**) or double underscores (__), and italic text using single asterisks (*) or single underscores (_). You can also combine them for bold and italic text."
+  },
+  {
+    "id": "md_02",
+    "question": "How do you create nested blockquotes in Markdown?",
+    "ground_truth": "Nested blockquotes are created by using multiple greater-than symbols (>). Use >> for a nested blockquote inside a regular blockquote."
+  },
+  {
+    "id": "md_03",
+    "question": "What programming languages are shown in the code block examples?",
+    "ground_truth": "The document shows code examples in Python (with a greet function), JavaScript (with a fibonacci function), and HTML (with a basic HTML5 document structure)."
+  },
+  {
+    "id": "md_04",
+    "question": "How can you specify alignment in Markdown tables?",
+    "ground_truth": "You can specify alignment in Markdown tables using colons. Use :--- for left alignment, :---: for center alignment, and ---: for right alignment in the separator row."
+  },
+  {
+    "id": "md_05",
+    "question": "What is the syntax for creating both ordered and unordered lists?",
+    "ground_truth": "Unordered lists use dashes (-), asterisks (*), or plus signs (+). Ordered lists use numbers followed by periods (1. 2. 3.). Both support nesting with indentation."
+  },
+  {
+    "id": "md_06",
+    "question": "How do you add images and links in Markdown?",
+    "ground_truth": "Links use square brackets for text and parentheses for URL: [text](url). Images use the same syntax but with an exclamation mark in front: ![alt text](url)."
+  },
+  {
+    "id": "md_07",
+    "question": "What advanced features like tasks and emojis does the document mention?",
+    "ground_truth": "The document mentions task lists with checkboxes using - [x] for completed and - [ ] for incomplete tasks, emojis using colons like :smile:, and footnotes using [^1] notation."
+  },
+  {
+    "id": "md_08",
+    "question": "How do you create inline code versus code blocks?",
+    "ground_truth": "Inline code uses single backticks (`code`). Code blocks use triple backticks (```) with optional language specification for syntax highlighting."
+  },
+  {
+    "id": "md_09",
+    "question": "What methods can create horizontal rules in Markdown?",
+    "ground_truth": "Horizontal rules can be created using three or more dashes (---), asterisks (***), or underscores (___) on a line by themselves."
+  },
+  {
+    "id": "md_10",
+    "question": "What is strikethrough text and how is it created?",
+    "ground_truth": "Strikethrough text is created using double tildes (~~text~~) which renders text with a line through it."
+  }
+]

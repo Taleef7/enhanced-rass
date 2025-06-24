@@ -5,7 +5,7 @@ const axios = require("axios");
 const { spawn } = require("child_process"); // Import spawn to run external scripts
 
 // --- Configuration ---
-const GOLDEN_SET_PATH = path.join(__dirname, "golden_set.json");
+const GOLDEN_SET_PATH = path.join(__dirname, "golden_set_markdown.json");
 const RASS_ENGINE_URL = "http://localhost:8000/ask";
 const EVAL_DATA_PATH = path.join(
   __dirname,
