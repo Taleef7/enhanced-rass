@@ -51,7 +51,9 @@ const {
   CHUNK_SIZE = 1000,
   CHUNK_OVERLAP = 200,
   EMBED_DIM = 768,
-  ENABLE_CONTEXT_GENERATION = "true",
+  ENABLE_CONTEXT_GENERATION = String(
+    process.env.ENABLE_CONTEXT_GENERATION
+  ).toLowerCase() === "true",
   CONTEXT_GENERATION_DELAY_MS = "100",
 } = process.env;
 
