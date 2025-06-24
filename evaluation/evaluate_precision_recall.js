@@ -2,7 +2,7 @@ const axios = require("axios");
 const fs = require("fs");
 
 async function evaluatePrecisionRecall() {
-  const goldenSet = JSON.parse(fs.readFileSync("./golden_set.json", "utf8"));
+  const goldenSet = JSON.parse(fs.readFileSync("./golden_set_markdown.json", "utf8"));
   let totalPrecision = 0;
   let totalRecall = 0;
   let totalRelevantRetrieved = 0;
