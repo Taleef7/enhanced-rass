@@ -5,17 +5,46 @@ const {
   StreamableHTTPServerTransport,
 } = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
 const { z } = require("zod");
+const cors = require("cors");
 const axios = require("axios");
 const FormData = require("form-data");
 const fs = require("fs");
 const path = require("path");
 
+// --- Express App Setup ---
+const app = express();
+app.use(cors()); // Use CORS middleware to allow requests from the frontend
+app.use(express.json({ limit: "10mb" }));
+const PORT = process.env.MCP_SERVER_PORT || 8080;
+
+// --- NEW: Simple REST Endpoint for Web Frontend ---
+app.post("/simple-ask", async (req, res) => {
+  const { query, top_k } = req.body;
+  console.log(`[REST /simple-ask] Received query: "${query}"`);
+
+  if (!query) {
+    return res.status(400).json({ error: "Query is required" });
+  }
+
+  try {
+    // Forward the simple request directly to the rass-engine-service
+    const rassEngineUrl = "http://rass-engine-service:8000/ask";
+    const response = await axios.post(rassEngineUrl, { query, top_k });
+    res.status(200).json(response.data);
+  } catch (e) {
+    console.error("[REST /simple-ask] Error calling RASS engine:", e.message);
+    res.status(500).json({ error: "Failed to process query in RASS engine." });
+  }
+});
+// --- END NEW SECTION ---
+
+// --- Official MCP Server and Tool Definitions ---
 const server = new McpServer({
   name: "RASS-MCP-Server",
   version: "1.0.0",
 });
 
-// Define the 'queryRASS' tool
+// Define the 'queryRASS' tool for official MCP clients
 server.tool(
   "queryRASS",
   {
@@ -30,14 +59,13 @@ server.tool(
     console.log(`[MCP Tool 'queryRASS'] Executing with args:`, tool_args);
     const rassEngineUrl = "http://rass-engine-service:8000/ask";
     const response = await axios.post(rassEngineUrl, tool_args);
-    // CORRECTED RETURN: The content type must be 'text', and the data is stringified.
     return {
       content: [{ type: "text", text: JSON.stringify(response.data, null, 2) }],
     };
   }
 );
 
-// Define the 'addDocumentToRASS' tool
+// Define the 'addDocumentToRASS' tool for official MCP clients
 server.tool(
   "addDocumentToRASS",
   {
@@ -71,30 +99,20 @@ server.tool(
       headers: { ...form.getHeaders() },
     });
 
-    // CORRECTED RETURN: The content type must be 'text', and the data is stringified.
     return {
       content: [{ type: "text", text: JSON.stringify(response.data, null, 2) }],
     };
   }
 );
 
-// --- Set up the Express App and MCP Transport ---
-
-const app = express();
-app.use(express.json({ limit: "10mb" }));
-const PORT = process.env.MCP_SERVER_PORT || 8080;
-
-app.get("/", (req, res) => {
-  res.status(200).send("MCP Server is running.");
-});
-
+// --- Set up the MCP Transport Endpoint ---
 app.post("/mcp", async (req, res) => {
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });
   res.on("close", () => {
     transport.close();
-    server.close();
+    // Note: Do not close the main MCP server instance here, as it's shared.
   });
   try {
     await server.connect(transport);
@@ -105,6 +123,11 @@ app.post("/mcp", async (req, res) => {
       res.status(500).send("Internal Server Error");
     }
   }
+});
+
+// --- Health Check and Server Start ---
+app.get("/", (req, res) => {
+  res.status(200).send("RASS MCP Server is running.");
 });
 
 app.listen(PORT, () => {
