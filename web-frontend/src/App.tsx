@@ -71,8 +71,8 @@ function App() {
     setIsLoading(true);
     setError('');
 
-    // Wait for state to update then scroll
-    setTimeout(scrollToBottom, 100);
+    // Scroll to the bottom after the messages update
+    scrollToBottom();
 
     const serverUrl = 'http://localhost:8080/simple-ask';
     const requestBody = { query, top_k: 5 };
