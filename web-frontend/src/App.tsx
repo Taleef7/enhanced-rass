@@ -234,7 +234,7 @@ function App() {
                     placeholder="Ask RASS anything..."
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey ? (e.preventDefault(), handleQuerySubmit()) : null }
+                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey ? (e.preventDefault(), handleQuerySubmit()) : null }
                     disabled={isLoading}
                     multiline
                     maxRows={5}
