@@ -17,6 +17,7 @@ const cookieParser = require("cookie-parser");
 const dotenv = require("dotenv");
 const fs = require("fs-extra");
 const path = require("path");
+const cors = require("cors");
 
 // Document Loaders & Parsers
 const { TextLoader } = require("langchain/document_loaders/fs/text");
@@ -51,16 +52,15 @@ const {
   CHUNK_SIZE = 1000,
   CHUNK_OVERLAP = 200,
   EMBED_DIM = 768,
-  ENABLE_CONTEXT_GENERATION = String(
-    process.env.ENABLE_CONTEXT_GENERATION
-  )
-    .toLowerCase()
-    .trim() === "true",
   CONTEXT_GENERATION_DELAY_MS = "100",
 } = process.env;
 
+const ENABLE_CONTEXT_GENERATION =
+  String(process.env.ENABLE_CONTEXT_GENERATION).toLowerCase().trim() === "true";
+
 /**************** Initialize Clients ****************/
 const app = express();
+app.use(cors());
 
 // OpenSearch Client
 const openSearchClient = new OSClient({
@@ -463,9 +463,7 @@ app.get("/health", async (req, res) => {
 app.listen(PORT, async () => {
   console.log(`Embedding Service running on http://localhost:${PORT}`);
   console.log(
-    `Context Generation: ${
-      ENABLE_CONTEXT_GENERATION ? "ENABLED" : "DISABLED"
-    }`
+    `Context Generation: ${ENABLE_CONTEXT_GENERATION ? "ENABLED" : "DISABLED"}`
   );
   console.log(`LLM Provider: ${LLM_PROVIDER}`);
   console.log(`Embedding Provider: ${EMBEDDING_PROVIDER}`);
