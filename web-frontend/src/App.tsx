@@ -240,7 +240,7 @@ function App() {
                     maxRows={5}
                     InputProps={{ disableUnderline: true }}
                 />
-                <IconButton color="primary" type="submit" disabled={isLoading || !query.trim()}>
+                <IconButton color="primary" type="submit" disabled={isLoading || !query.trim()} aria-label="Send message">
                     <SmartToyIcon />
                 </IconButton>
             </Paper>
