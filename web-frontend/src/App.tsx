@@ -138,7 +138,7 @@ function App() {
       <Box sx={{ display: 'flex', height: '100vh' }}>
         <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
           <Toolbar>
-            <IconButton color="inherit" edge="start" onClick={() => setDrawerOpen(!isDrawerOpen)} sx={{ mr: 2, display: { sm: 'none' } }}>
+            <IconButton color="inherit" edge="start" aria-label="Toggle menu" onClick={() => setDrawerOpen(!isDrawerOpen)} sx={{ mr: 2, display: { sm: 'none' } }}>
               <MenuIcon />
             </IconButton>
             <SmartToyIcon sx={{ mr: 2 }} />
