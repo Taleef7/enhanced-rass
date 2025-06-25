@@ -53,7 +53,9 @@ const {
   EMBED_DIM = 768,
   ENABLE_CONTEXT_GENERATION = String(
     process.env.ENABLE_CONTEXT_GENERATION
-  ).toLowerCase() === "true",
+  )
+    .toLowerCase()
+    .trim() === "true",
   CONTEXT_GENERATION_DELAY_MS = "100",
 } = process.env;
 
@@ -329,14 +331,14 @@ app.post("/upload", upload.array("files"), async (req, res) => {
           const chunkText = semanticChunksText[i];
 
           // Add delay between LLM calls to avoid rate limits
-          if (i > 0 && ENABLE_CONTEXT_GENERATION === "true") {
+          if (i > 0 && ENABLE_CONTEXT_GENERATION) {
             await sleep(parseInt(CONTEXT_GENERATION_DELAY_MS));
           }
 
           let enrichedContent;
           let chunkContext = "";
 
-          if (ENABLE_CONTEXT_GENERATION === "true") {
+          if (ENABLE_CONTEXT_GENERATION) {
             // Generate contextual summary for this chunk
             chunkContext = await generateContextForChunk(
               wholeDocumentContent,
@@ -418,7 +420,7 @@ app.post("/upload", upload.array("files"), async (req, res) => {
         totalChunksCreated: processingStats.chunksCreated,
         totalChunksEmbedded: totalChunksEmbedded,
         contextsGenerated: processingStats.contextsGenerated,
-        contextGenerationEnabled: ENABLE_CONTEXT_GENERATION === "true",
+        contextGenerationEnabled: ENABLE_CONTEXT_GENERATION,
         indexName: OPENSEARCH_INDEX_NAME,
       },
     };
@@ -445,7 +447,7 @@ app.get("/health", async (req, res) => {
       status: "healthy",
       service: "embedding-service",
       opensearch: osHealth.body.status,
-      contextGeneration: ENABLE_CONTEXT_GENERATION === "true",
+      contextGeneration: ENABLE_CONTEXT_GENERATION,
       embeddingProvider: EMBEDDING_PROVIDER,
       llmProvider: LLM_PROVIDER,
     });
@@ -462,7 +464,7 @@ app.listen(PORT, async () => {
   console.log(`Embedding Service running on http://localhost:${PORT}`);
   console.log(
     `Context Generation: ${
-      ENABLE_CONTEXT_GENERATION === "true" ? "ENABLED" : "DISABLED"
+      ENABLE_CONTEXT_GENERATION ? "ENABLED" : "DISABLED"
     }`
   );
   console.log(`LLM Provider: ${LLM_PROVIDER}`);
