@@ -9,24 +9,25 @@ const { Client } = require("@opensearch-project/opensearch");
 const { OpenAI } = require("openai");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-const { planAndExecute } = require("./agenticPlanner");
 const { runSteps } = require("./executePlan");
+const { generateHypotheticalDocument } = require("./hydeGenerator.js");
 
 // Load all necessary .env variables
 const {
   OPENAI_API_KEY,
   GEMINI_API_KEY,
-  LLM_PLANNER_PROVIDER = "openai",
-  OPENAI_PLANNER_MODEL_NAME = "gpt-4o",
-  GEMINI_PLANNER_MODEL_NAME = "gemini-1.5-flash-latest",
-  SEARCH_TERM_EMBEDDING_PROVIDER = "openai",
+  LLM_PROVIDER = "openai", // Used for both HyDE and Final Answer Generation
+  OPENAI_MODEL_NAME = "gpt-4o-mini",
+  GEMINI_MODEL_NAME = "gemini-1.5-flash-latest",
+  SEARCH_TERM_EMBEDDING_PROVIDER = "gemini",
   OPENAI_EMBED_MODEL_FOR_SEARCH_TERMS = "text-embedding-3-small",
-  GEMINI_EMBED_MODEL_FOR_SEARCH_TERMS = "embedding-001",
+  GEMINI_EMBED_MODEL_FOR_SEARCH_TERMS = "text-embedding-004",
   OPENSEARCH_HOST = "localhost",
   OPENSEARCH_PORT = "9200",
   OPENSEARCH_INDEX_NAME = "knowledge_base",
   RASS_ENGINE_PORT = 8000,
-  DEFAULT_K_OPENSEARCH_HITS = 25, // Increased default for wider candidate pool
+  // This K is for the initial candidate pool for the reranker. Should be larger.
+  DEFAULT_K_OPENSEARCH_HITS = 50,
 } = process.env;
 
 app.use(express.json());
@@ -39,25 +40,24 @@ const EMBED_DIM =
   parseInt(process.env.EMBED_DIM, 10) ||
   (SEARCH_TERM_EMBEDDING_PROVIDER === "gemini" ? 768 : 1536);
 
-let plannerLLMClient;
+let llmClient; // Single client for both HyDE and final answer
 let searchEmbedderClient;
 
-if (LLM_PLANNER_PROVIDER === "openai") {
+if (LLM_PROVIDER === "openai") {
   if (!OPENAI_API_KEY)
-    throw new Error("OPENAI_API_KEY is required for OpenAI planner.");
-  plannerLLMClient = new OpenAI({ apiKey: OPENAI_API_KEY });
+    throw new Error("OPENAI_API_KEY is required for OpenAI provider.");
+  llmClient = new OpenAI({ apiKey: OPENAI_API_KEY });
   console.log(
-    `[Initialization] LLM Planner: OpenAI, Model: ${OPENAI_PLANNER_MODEL_NAME}`
+    `[Initialization] LLM Provider: OpenAI, Model: ${OPENAI_MODEL_NAME}`
   );
 } else {
+  // Gemini
   if (!GEMINI_API_KEY)
-    throw new Error("GEMINI_API_KEY is required for Gemini planner.");
+    throw new Error("GEMINI_API_KEY is required for Gemini provider.");
   const googleGenAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-  plannerLLMClient = googleGenAI.getGenerativeModel({
-    model: GEMINI_PLANNER_MODEL_NAME,
-  });
+  llmClient = googleGenAI.getGenerativeModel({ model: GEMINI_MODEL_NAME });
   console.log(
-    `[Initialization] LLM Planner: Gemini, Model: ${GEMINI_PLANNER_MODEL_NAME}`
+    `[Initialization] LLM Provider: Gemini, Model: ${GEMINI_MODEL_NAME}`
   );
 }
 
@@ -68,9 +68,10 @@ if (SEARCH_TERM_EMBEDDING_PROVIDER === "openai") {
     );
   searchEmbedderClient = new OpenAI({ apiKey: OPENAI_API_KEY });
   console.log(
-    `[Initialization] Search Term Embedder: OpenAI, Model: ${OPENAI_EMBED_MODEL_FOR_SEARCH_TERMS}, Dim: ${EMBED_DIM}`
+    `[Initialization] Search Term Embedder: OpenAI, Model: ${OPENAI_EMBED_MODEL_FOR_SEARCH_TERMS}`
   );
 } else {
+  // Gemini
   if (!GEMINI_API_KEY)
     throw new Error(
       "GEMINI_API_KEY is required for Gemini search term embedder."
@@ -80,7 +81,7 @@ if (SEARCH_TERM_EMBEDDING_PROVIDER === "openai") {
     model: GEMINI_EMBED_MODEL_FOR_SEARCH_TERMS,
   });
   console.log(
-    `[Initialization] Search Term Embedder: Gemini, Model: ${GEMINI_EMBED_MODEL_FOR_SEARCH_TERMS}, Dim: ${EMBED_DIM}`
+    `[Initialization] Search Term Embedder: Gemini, Model: ${GEMINI_EMBED_MODEL_FOR_SEARCH_TERMS}`
   );
 }
 
@@ -91,10 +92,7 @@ const osClient = new Client({
 async function embedText(text) {
   if (!text?.trim())
     throw new Error("Empty text provided for search term embedding");
-  const targetDimension = Number(EMBED_DIM);
-  console.log(
-    `[EmbedSearchTerm] Provider: ${SEARCH_TERM_EMBEDDING_PROVIDER}, Term: "${text}"`
-  );
+  console.log(`[EmbedSearchTerm] Embedding text for search...`);
 
   try {
     if (SEARCH_TERM_EMBEDDING_PROVIDER === "openai") {
@@ -113,7 +111,7 @@ async function embedText(text) {
     }
   } catch (err) {
     console.error(
-      `[EmbedSearchTerm] Error embedding "${text}" with ${SEARCH_TERM_EMBEDDING_PROVIDER}:`,
+      `[EmbedSearchTerm] Error embedding text with ${SEARCH_TERM_EMBEDDING_PROVIDER}:`,
       err.message
     );
     throw err;
@@ -122,26 +120,38 @@ async function embedText(text) {
 
 async function ask(query, top_k_param) {
   if (!query?.trim()) throw new Error("Empty query");
-  const top_k = top_k_param || 5; // We rerank all parents, then select top 5 for generation.
+  const top_k_for_generation = top_k_param || 5;
 
-  console.log(
-    `[Ask] Query: "${query}", Target Index: ${OPENSEARCH_INDEX_NAME}, Top K for generation: ${top_k}`
+  console.log(`[Ask] Query: "${query}"`);
+
+  // --- NEW HyDE FLOW ---
+  // 1. Generate hypothetical document
+  const hypotheticalDocument = await generateHypotheticalDocument(
+    llmClient,
+    LLM_PROVIDER,
+    LLM_PROVIDER === "openai" ? OPENAI_MODEL_NAME : GEMINI_MODEL_NAME,
+    query
   );
 
-  // planAndExecute now returns parent documents
-  const parentDocs = await planAndExecute({
-    query,
-    llmClient: plannerLLMClient,
-    llmProvider: LLM_PLANNER_PROVIDER,
-    openaiPlannerModel: OPENAI_PLANNER_MODEL_NAME,
-    osClient,
-    indexName: OPENSEARCH_INDEX_NAME,
-    embedTextFn: embedText,
-    runStepsFn: runSteps,
+  // 2. Create a simple, single-step plan using the HyDE result.
+  const simplePlan = [
+    {
+      step_id: "hyde_search",
+      search_term: hypotheticalDocument,
+      knn_k: DEFAULT_K_OPENSEARCH_HITS,
+    },
+  ];
+
+  // 3. Execute the search to retrieve parent documents
+  const parentDocs = await runSteps({
+    plan: simplePlan,
+    embed: embedText,
+    os: osClient,
+    index: OPENSEARCH_INDEX_NAME,
   });
 
   if (!parentDocs || !parentDocs.length) {
-    console.warn("[Ask] No parent documents found for the query.");
+    console.warn("[Ask] No parent documents found after HyDE search.");
     return {
       answer:
         "I could not find any relevant information to answer your question.",
@@ -149,20 +159,16 @@ async function ask(query, top_k_param) {
     };
   }
 
-  // The documents are now the full parent documents, ready for reranking.
-  // The structure from runSteps is { _source: { text, metadata }, _score }
   const initial_documents = parentDocs
     .map((h) => ({
       text: h._source ? h._source.text : null,
-      initial_score: h._score || 0,
-      // Pass parent metadata through
       metadata: h._source ? h._source.metadata : {},
     }))
     .filter((doc) => typeof doc.text === "string" && doc.text.trim() !== "");
 
   const reranked_documents = await rerank(query, initial_documents);
 
-  const source_documents = reranked_documents.slice(0, top_k);
+  const source_documents = reranked_documents.slice(0, top_k_for_generation);
 
   console.log(
     `[Generation] Generating final answer with ${source_documents.length} reranked parent documents...`
@@ -180,15 +186,15 @@ Answer:`;
 
   let answer = "Sorry, I was unable to generate an answer.";
   try {
-    if (LLM_PLANNER_PROVIDER === "openai") {
-      const completion = await plannerLLMClient.chat.completions.create({
-        model: OPENAI_PLANNER_MODEL_NAME,
+    if (LLM_PROVIDER === "openai") {
+      const completion = await llmClient.chat.completions.create({
+        model: OPENAI_MODEL_NAME,
         messages: [{ role: "user", content: generationPrompt }],
       });
       answer = completion.choices[0].message.content;
     } else {
       // Gemini
-      const result = await plannerLLMClient.generateContent(generationPrompt);
+      const result = await llmClient.generateContent(generationPrompt);
       answer = result.response.text();
     }
   } catch (e) {
@@ -199,7 +205,7 @@ Answer:`;
 
   return {
     answer: answer,
-    source_documents: source_documents, // These now contain full context
+    source_documents: source_documents,
   };
 }
 
@@ -221,7 +227,7 @@ app.post("/ask", async (req, res) => {
 });
 
 async function startServer() {
-  const srv = app.listen(RASS_ENGINE_PORT, () =>
+  app.listen(RASS_ENGINE_PORT, () =>
     console.log(
       `RASS Engine API running on http://localhost:${RASS_ENGINE_PORT}`
     )
