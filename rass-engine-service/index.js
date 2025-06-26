@@ -5,10 +5,9 @@ dotenv.config();
 
 const express = require("express");
 const app = express();
-const { WebSocketServer } = require("ws");
 const { Client } = require("@opensearch-project/opensearch");
-const { OpenAI } = require("openai"); // Keep OpenAI for its client
-const { GoogleGenerativeAI } = require("@google/generative-ai"); // Add Gemini
+const { OpenAI } = require("openai");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const { planAndExecute } = require("./agenticPlanner");
 const { runSteps } = require("./executePlan");
@@ -16,23 +15,18 @@ const { runSteps } = require("./executePlan");
 // Load all necessary .env variables
 const {
   OPENAI_API_KEY,
-  // OPENAI_API_URL = 'https://api.openai.com/v1', // baseURL often not needed for OpenAI v4+
   GEMINI_API_KEY,
-
   LLM_PLANNER_PROVIDER = "openai",
   OPENAI_PLANNER_MODEL_NAME = "gpt-4o",
   GEMINI_PLANNER_MODEL_NAME = "gemini-1.5-flash-latest",
-
   SEARCH_TERM_EMBEDDING_PROVIDER = "openai",
   OPENAI_EMBED_MODEL_FOR_SEARCH_TERMS = "text-embedding-3-small",
-  GEMINI_EMBED_MODEL_FOR_SEARCH_TERMS = "embedding-001", // (text-embedding-004)
-
+  GEMINI_EMBED_MODEL_FOR_SEARCH_TERMS = "embedding-001",
   OPENSEARCH_HOST = "localhost",
   OPENSEARCH_PORT = "9200",
-  OPENSEARCH_INDEX_NAME = "knowledge_base_gemini", // Defaulting to your Gemini index
-
+  OPENSEARCH_INDEX_NAME = "knowledge_base",
   RASS_ENGINE_PORT = 8000,
-  DEFAULT_K_OPENSEARCH_HITS = 10, // Used as fallback for knn_k
+  DEFAULT_K_OPENSEARCH_HITS = 25, // Increased default for wider candidate pool
 } = process.env;
 
 app.use(express.json());
@@ -41,16 +35,13 @@ app.get("/", (req, res) => {
   res.status(200).json({ status: "ok", message: "RASS Engine is running" });
 });
 
-// EMBED_DIM is crucial and must match the target index AND the search term embedding model
 const EMBED_DIM =
   parseInt(process.env.EMBED_DIM, 10) ||
   (SEARCH_TERM_EMBEDDING_PROVIDER === "gemini" ? 768 : 1536);
 
-// ---- Initialize LLM and Embedding Clients ----
-let plannerLLMClient; // This will be passed to agenticPlanner
-let searchEmbedderClient; // This will be used by the local embedText function
+let plannerLLMClient;
+let searchEmbedderClient;
 
-// Initialize Planner LLM Client
 if (LLM_PLANNER_PROVIDER === "openai") {
   if (!OPENAI_API_KEY)
     throw new Error("OPENAI_API_KEY is required for OpenAI planner.");
@@ -58,7 +49,7 @@ if (LLM_PLANNER_PROVIDER === "openai") {
   console.log(
     `[Initialization] LLM Planner: OpenAI, Model: ${OPENAI_PLANNER_MODEL_NAME}`
   );
-} else if (LLM_PLANNER_PROVIDER === "gemini") {
+} else {
   if (!GEMINI_API_KEY)
     throw new Error("GEMINI_API_KEY is required for Gemini planner.");
   const googleGenAI = new GoogleGenerativeAI(GEMINI_API_KEY);
@@ -68,33 +59,18 @@ if (LLM_PLANNER_PROVIDER === "openai") {
   console.log(
     `[Initialization] LLM Planner: Gemini, Model: ${GEMINI_PLANNER_MODEL_NAME}`
   );
-} else {
-  throw new Error(`Unsupported LLM_PLANNER_PROVIDER: ${LLM_PLANNER_PROVIDER}`);
 }
 
-// Initialize Client for Search Term Embeddings (used by local embedText function)
 if (SEARCH_TERM_EMBEDDING_PROVIDER === "openai") {
   if (!OPENAI_API_KEY)
     throw new Error(
       "OPENAI_API_KEY is required for OpenAI search term embedder."
     );
-  // Can reuse the planner's OpenAI client if keys are the same, or make a new one
-  searchEmbedderClient = new OpenAI({ apiKey: OPENAI_API_KEY }); // Assuming same API key for simplicity
+  searchEmbedderClient = new OpenAI({ apiKey: OPENAI_API_KEY });
   console.log(
     `[Initialization] Search Term Embedder: OpenAI, Model: ${OPENAI_EMBED_MODEL_FOR_SEARCH_TERMS}, Dim: ${EMBED_DIM}`
   );
-  if (
-    (EMBED_DIM !== 1536 &&
-      OPENAI_EMBED_MODEL_FOR_SEARCH_TERMS.includes("ada")) ||
-    OPENAI_EMBED_MODEL_FOR_SEARCH_TERMS.includes("text-embedding-3-small")
-  )
-    console.warn("EMBED_DIM mismatch for OpenAI search term embedding model!");
-  if (
-    EMBED_DIM !== 3072 &&
-    OPENAI_EMBED_MODEL_FOR_SEARCH_TERMS.includes("text-embedding-3-large")
-  )
-    console.warn("EMBED_DIM mismatch for OpenAI search term embedding model!");
-} else if (SEARCH_TERM_EMBEDDING_PROVIDER === "gemini") {
+} else {
   if (!GEMINI_API_KEY)
     throw new Error(
       "GEMINI_API_KEY is required for Gemini search term embedder."
@@ -106,74 +82,16 @@ if (SEARCH_TERM_EMBEDDING_PROVIDER === "openai") {
   console.log(
     `[Initialization] Search Term Embedder: Gemini, Model: ${GEMINI_EMBED_MODEL_FOR_SEARCH_TERMS}, Dim: ${EMBED_DIM}`
   );
-  if (
-    EMBED_DIM !== 768 &&
-    GEMINI_EMBED_MODEL_FOR_SEARCH_TERMS === "embedding-001"
-  )
-    console.warn(
-      "EMBED_DIM mismatch for Gemini search term embedding model (embedding-001 is 768d)!"
-    );
-  if (
-    EMBED_DIM !== 3072 &&
-    GEMINI_EMBED_MODEL_FOR_SEARCH_TERMS === "gemini-embedding-001"
-  )
-    console.warn(
-      "EMBED_DIM mismatch for Gemini search term embedding model (gemini-embedding-001 is 3072d)!"
-    );
-} else {
-  throw new Error(
-    `Unsupported SEARCH_TERM_EMBEDDING_PROVIDER: ${SEARCH_TERM_EMBEDDING_PROVIDER}`
-  );
 }
 
 const osClient = new Client({
   node: `http://${OPENSEARCH_HOST}:${OPENSEARCH_PORT}`,
-  // ssl: { rejectUnauthorized: false } // Only if using self-signed certs on OS, generally not recommended for prod
 });
 
-app.use(express.json());
-
-/**
- * Ensures the OpenSearch index (specified by OPENSEARCH_INDEX_NAME) exists.
- * Note: This service *queries* the index. Index creation/mapping is primarily
- * the responsibility of the embedding-service. This function is more of a check.
- */
-async function checkIndexExists() {
-  try {
-    const exists = await osClient.indices.exists({
-      index: OPENSEARCH_INDEX_NAME,
-    });
-    if (!exists.body) {
-      console.error(
-        `[OpenSearch Check] CRITICAL: Index '${OPENSEARCH_INDEX_NAME}' does NOT exist. This service cannot query it. Ensure embedding-service has created and populated it.`
-      );
-      // Unlike embedding-service, rass-engine might not create the index,
-      // as its schema (esp. EMBED_DIM) is dictated by what embedding-service created.
-      // For now, we'll just log an error.
-      // throw new Error(`Index ${OPENSEARCH_INDEX_NAME} not found.`);
-    } else {
-      console.log(
-        `[OpenSearch Check] Index '${OPENSEARCH_INDEX_NAME}' exists and is queryable.`
-      );
-      // You could optionally fetch and log/verify mapping dimension here if needed.
-    }
-  } catch (err) {
-    console.error(
-      `[OpenSearch Check] Error checking index '${OPENSEARCH_INDEX_NAME}':`,
-      err.message
-    );
-    // throw err; // Or handle gracefully
-  }
-}
-
-// MODIFIED: Generates embeddings for search terms based on configured provider
 async function embedText(text) {
   if (!text?.trim())
     throw new Error("Empty text provided for search term embedding");
-
-  // Ensure EMBED_DIM is a number for comparison and API calls
   const targetDimension = Number(EMBED_DIM);
-
   console.log(
     `[EmbedSearchTerm] Provider: ${SEARCH_TERM_EMBEDDING_PROVIDER}, Term: "${text}"`
   );
@@ -182,75 +100,48 @@ async function embedText(text) {
     if (SEARCH_TERM_EMBEDDING_PROVIDER === "openai") {
       const { data } = await searchEmbedderClient.embeddings.create({
         model: OPENAI_EMBED_MODEL_FOR_SEARCH_TERMS,
-        input: text, // OpenAI embedding API takes string directly
+        input: text,
       });
-      const embedding = data[0].embedding;
-      if (embedding.length !== targetDimension) {
-        throw new Error(
-          `OpenAI embedding dimension mismatch for "${text}". Expected ${targetDimension}, got ${embedding.length}`
-        );
-      }
-      return embedding;
-    } else if (SEARCH_TERM_EMBEDDING_PROVIDER === "gemini") {
-      const taskType = "RETRIEVAL_QUERY"; // For embedding user queries to find relevant documents
-      const embedConfig = { taskType };
-      // For gemini-embedding-001 and similar, outputDimensionality can be set if < model's max
-      if (
-        GEMINI_EMBED_MODEL_FOR_SEARCH_TERMS === "gemini-embedding-001" &&
-        targetDimension < 3072
-      ) {
-        embedConfig.outputDimensionality = targetDimension;
-      }
-      // For "embedding-001" (text-embedding-004), output dimension is fixed at 768, so no need to set outputDimensionality if targetDimension is 768.
-
+      return data[0].embedding;
+    } else {
+      // Gemini
       const result = await searchEmbedderClient.embedContent({
         content: { parts: [{ text }] },
-        ...embedConfig,
+        taskType: "RETRIEVAL_QUERY",
       });
-      const embedding = result.embedding.values;
-      if (embedding.length !== targetDimension) {
-        throw new Error(
-          `Gemini embedding dimension mismatch for "${text}". Expected ${targetDimension}, got ${embedding.length}`
-        );
-      }
-      return embedding;
-    } else {
-      throw new Error(
-        `Unsupported SEARCH_TERM_EMBEDDING_PROVIDER: ${SEARCH_TERM_EMBEDDING_PROVIDER}`
-      );
+      return result.embedding.values;
     }
   } catch (err) {
     console.error(
       `[EmbedSearchTerm] Error embedding "${text}" with ${SEARCH_TERM_EMBEDDING_PROVIDER}:`,
       err.message
     );
-    throw err; // Re-throw to be caught by the caller
+    throw err;
   }
 }
 
-// Main query function
 async function ask(query, top_k_param) {
   if (!query?.trim()) throw new Error("Empty query");
-  const top_k = top_k_param || Number(DEFAULT_K_OPENSEARCH_HITS);
+  const top_k = top_k_param || 5; // We rerank all parents, then select top 5 for generation.
 
   console.log(
-    `[Ask] Query: "${query}", Target Index: ${OPENSEARCH_INDEX_NAME}, Top K: ${top_k}`
+    `[Ask] Query: "${query}", Target Index: ${OPENSEARCH_INDEX_NAME}, Top K for generation: ${top_k}`
   );
 
-  const hits = await planAndExecute({
+  // planAndExecute now returns parent documents
+  const parentDocs = await planAndExecute({
     query,
     llmClient: plannerLLMClient,
     llmProvider: LLM_PLANNER_PROVIDER,
     openaiPlannerModel: OPENAI_PLANNER_MODEL_NAME,
-    geminiPlannerModel: GEMINI_PLANNER_MODEL_NAME,
     osClient,
     indexName: OPENSEARCH_INDEX_NAME,
     embedTextFn: embedText,
     runStepsFn: runSteps,
   });
 
-  if (!hits || !hits.length) {
-    console.warn("[Ask] No matching documents found for the query.");
+  if (!parentDocs || !parentDocs.length) {
+    console.warn("[Ask] No parent documents found for the query.");
     return {
       answer:
         "I could not find any relevant information to answer your question.",
@@ -258,52 +149,32 @@ async function ask(query, top_k_param) {
     };
   }
 
-  // --- START DEBUBGGING FIX ---
-  // Let's log the raw hits to see exactly what OpenSearch is returning.
-  console.log(
-    "[Debug] Raw hits from OpenSearch:",
-    JSON.stringify(hits, null, 2)
-  );
-
-  // Create the initial list and robustly filter out any malformed documents.
-  const initial_documents = hits
+  // The documents are now the full parent documents, ready for reranking.
+  // The structure from runSteps is { _source: { text, metadata }, _score }
+  const initial_documents = parentDocs
     .map((h) => ({
-      // Ensure we handle cases where _source might be missing
       text: h._source ? h._source.text : null,
       initial_score: h._score || 0,
+      // Pass parent metadata through
+      metadata: h._source ? h._source.metadata : {},
     }))
     .filter((doc) => typeof doc.text === "string" && doc.text.trim() !== "");
-
-  if (initial_documents.length !== hits.length) {
-    console.warn(
-      `[Debug] Filtered out ${
-        hits.length - initial_documents.length
-      } documents with invalid text content.`
-    );
-  }
-  // --- END DEBUGGING FIX ---
 
   const reranked_documents = await rerank(query, initial_documents);
 
   const source_documents = reranked_documents.slice(0, top_k);
 
   console.log(
-    `[Generation] Generating final answer with ${source_documents.length} reranked documents...`
+    `[Generation] Generating final answer with ${source_documents.length} reranked parent documents...`
   );
 
   const context = source_documents.map((doc) => doc.text).join("\n\n---\n\n");
 
   const generationPrompt = `You are a helpful assistant. Answer the user's question based on the following context. 
-
-Important: 
-- Code examples and syntax demonstrations ARE valid answers
-- If you see an example that demonstrates the answer, explain what it shows
-- Only say "the context does not contain the answer" if there is truly no relevant information
-
+- Only say "the context does not contain the answer" if there is truly no relevant information.
 <context>
 ${context}
 </context>
-
 Question: ${query}
 Answer:`;
 
@@ -315,10 +186,10 @@ Answer:`;
         messages: [{ role: "user", content: generationPrompt }],
       });
       answer = completion.choices[0].message.content;
-    } else if (LLM_PLANNER_PROVIDER === "gemini") {
+    } else {
+      // Gemini
       const result = await plannerLLMClient.generateContent(generationPrompt);
-      const response = await result.response;
-      answer = response.text();
+      answer = result.response.text();
     }
   } catch (e) {
     console.error("[Generation] Error calling LLM for final answer:", e);
@@ -328,11 +199,10 @@ Answer:`;
 
   return {
     answer: answer,
-    source_documents: source_documents,
+    source_documents: source_documents, // These now contain full context
   };
 }
 
-// API endpoints
 app.post("/ask", async (req, res) => {
   try {
     const { query, top_k } = req.body;
@@ -350,55 +220,12 @@ app.post("/ask", async (req, res) => {
   }
 });
 
-// WebSocket (no changes needed to its core logic for now)
-const wss = new WebSocketServer({ noServer: true });
-wss.on("connection", (ws) => {
-  ws.on("message", async (msg) => {
-    try {
-      const { query, top_k } = JSON.parse(msg);
-      if (!query) throw new Error("Missing query from WebSocket");
-      console.log(`[WS /ask] Received query: "${query}", top_k: ${top_k}`);
-      ws.send(JSON.stringify(await ask(query, top_k)));
-    } catch (e) {
-      console.error("[WS /ask] WebSocket error:", e);
-      ws.send(JSON.stringify({ error: e.message }));
-    } finally {
-      // Consider if closing immediately is always desired
-      // ws.close();
-    }
-  });
-  ws.on("close", () => console.log("[WS /ask] Client disconnected"));
-  ws.on("error", (err) =>
-    console.error("[WS /ask] WebSocket error event:", err)
-  );
-});
-
 async function startServer() {
-  try {
-    // await checkIndexExists(); // Check if target index exists on startup
-    const srv = app.listen(RASS_ENGINE_PORT, () =>
-      console.log(
-        `RASS Engine API running on http://localhost:${RASS_ENGINE_PORT}`
-      )
-    );
-    srv.on("upgrade", (req, sock, head) => {
-      if (req.url === "/ws/ask") {
-        wss.handleUpgrade(req, sock, head, (ws) =>
-          wss.emit("connection", ws, req)
-        );
-      } else {
-        sock.destroy();
-      }
-    });
-  } catch (e) {
-    console.error("Failed to start server:", e);
-    process.exit(1);
-  }
+  const srv = app.listen(RASS_ENGINE_PORT, () =>
+    console.log(
+      `RASS Engine API running on http://localhost:${RASS_ENGINE_PORT}`
+    )
+  );
 }
 
 startServer();
-
-process.on("SIGTERM", () => {
-  console.log("[Shutdown] RASS Engine shutting down…");
-  process.exit(0);
-});

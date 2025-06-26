@@ -1,48 +1,26 @@
 {
   "name": "embedding-service",
   "version": "1.0.0",
-  "description": "",
+  "description": "Microservice for document ingestion, chunking, and embedding.",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/NeuralRevenant/embedding-service.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/NeuralRevenant/embedding-service/issues"
-  },
-  "homepage": "https://github.com/NeuralRevenant/embedding-service#readme",
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
-    "@langchain/community": "^0.3.46",
-    "@langchain/core": "^0.3.58",
-    "@langchain/google-genai": "^0.2.12",
-    "@langchain/openai": "^0.5.13",
-    "@opensearch-project/opensearch": "^3.5.1",
-    "@prisma/client": "^6.6.0",
-    "cheerio": "^1.0.0",
-    "cookie": "^1.0.2",
-    "cookie-parser": "^1.4.7",
+    "@langchain/community": "^0.2.14",
+    "@langchain/google-genai": "^0.0.22",
+    "@langchain/openai": "^0.2.1",
+    "@opensearch-project/opensearch": "^2.6.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.5.0",
-    "express": "^5.1.0",
-    "fs-extra": "^11.3.0",
-    "jsonwebtoken": "^9.0.2",
-    "langchain": "^0.3.28",
-    "mammoth": "^1.9.1",
-    "markdown-it": "^14.1.0",
-    "multer": "^1.4.5-lts.2",
-    "openai": "^5.1.0",
-    "pdf-parse": "^1.1.1",
-    "prisma": "^6.6.0",
-    "sanitize-filename": "^1.6.3",
-    "uuid": "^11.1.0"
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "fs-extra": "^11.2.0",
+    "langchain": "^0.2.7",
+    "mammoth": "^1.8.0",
+    "multer": "^1.4.5-lts.1",
+    "pdf-parse": "^1.1.1"
+  },
+  "overrides": {
+    "ignore": "^5.3.1"
   }
 }
