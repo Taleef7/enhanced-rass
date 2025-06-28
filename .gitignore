@@ -2,7 +2,9 @@ node_modules
 .DS_Store
 package-lock.json
 dist
-evaluation/ragas_evaluator/venv/
-evaluation/ragas_evaluator/eval_data.json
+evaluation/trulens_evaluator/venv/
+evaluation/trulens_evaluator/__pycache__/
 package-lock.json
 rass-engine-service/pnpm-lock.yaml
+evaluation/trulens_evaluator/default.sqlite
+.env

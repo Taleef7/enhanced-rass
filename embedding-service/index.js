@@ -1,480 +1,190 @@
-/**********************************************************************
- * embeddingService - Node.js Microservice for Text Embeddings
- *
- * Enhanced with Contextual Retrieval:
- * 1. Reads the full text of a document
- * 2. Splits it into chunks using semantic similarity
- * 3. For each chunk, generates contextual summary using LLM
- * 4. Prepends context to create enriched chunks
- * 5. Embeds the contextualized chunks into OpenSearch
- *********************************************************************/
-
 const express = require("express");
 const multer = require("multer");
 const { v4: uuidv4 } = require("uuid");
-const sanitize = require("sanitize-filename");
-const cookieParser = require("cookie-parser");
-const dotenv = require("dotenv");
 const fs = require("fs-extra");
 const path = require("path");
 const cors = require("cors");
+const yaml = require("js-yaml");
 
-// Document Loaders & Parsers
+// LangChain and OpenSearch Imports
 const { TextLoader } = require("langchain/document_loaders/fs/text");
 const { PDFLoader } = require("@langchain/community/document_loaders/fs/pdf");
 const { DocxLoader } = require("@langchain/community/document_loaders/fs/docx");
-
-// Provider SDKs
-const { OpenAIEmbeddings, ChatOpenAI } = require("@langchain/openai");
-const {
-  GoogleGenerativeAIEmbeddings,
-  ChatGoogleGenerativeAI,
-} = require("@langchain/google-genai");
+const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
+const { InMemoryStore } = require("langchain/storage/in_memory");
+const { OpenAIEmbeddings } = require("@langchain/openai");
+const { GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
 const {
   OpenSearchVectorStore,
 } = require("@langchain/community/vectorstores/opensearch");
 const { Client: OSClient } = require("@opensearch-project/opensearch");
 
-/**************** Load ENV ****************/
-dotenv.config();
+// --- Centralized Configuration Loading ---
+const config = yaml.load(fs.readFileSync("./config.yml", "utf8"));
+console.log("[Config] Loaded configuration from config.yml");
 
+const { OPENAI_API_KEY, GEMINI_API_KEY } = process.env;
 const {
-  LLM_PROVIDER = "gemini",
-  EMBEDDING_PROVIDER = "gemini",
-  OPENAI_API_KEY,
-  GEMINI_API_KEY,
-  OPENSEARCH_HOST = "localhost",
-  OPENSEARCH_PORT = "9200",
-  OPENSEARCH_INDEX_NAME = "knowledge_base",
-  TEMP_DIR = "./temp",
-  UPLOAD_DIR = "./uploads",
-  PORT = 8001,
-  CHUNK_SIZE = 1000,
-  CHUNK_OVERLAP = 200,
-  EMBED_DIM = 768,
-  CONTEXT_GENERATION_DELAY_MS = "100",
-} = process.env;
+  EMBEDDING_PROVIDER,
+  OPENSEARCH_HOST,
+  OPENSEARCH_PORT,
+  OPENSEARCH_INDEX_NAME,
+  EMBEDDING_SERVICE_PORT,
+  PARENT_CHUNK_SIZE,
+  PARENT_CHUNK_OVERLAP,
+  CHILD_CHUNK_SIZE,
+  CHILD_CHUNK_OVERLAP,
+  EMBED_DIM,
+  OPENAI_EMBED_MODEL_NAME,
+  GEMINI_EMBED_MODEL_NAME,
+} = config;
+// --- End Configuration Loading ---
 
-const ENABLE_CONTEXT_GENERATION =
-  String(process.env.ENABLE_CONTEXT_GENERATION).toLowerCase().trim() === "true";
-
-/**************** Initialize Clients ****************/
 const app = express();
 app.use(cors());
+app.use(express.json());
 
-// OpenSearch Client
+let docstore = new InMemoryStore();
+
 const openSearchClient = new OSClient({
   node: `http://${OPENSEARCH_HOST}:${OPENSEARCH_PORT}`,
 });
 
-// Generative LLM for Contextualization
-let llm;
-console.log(
-  `[Initialization] Initializing LLM for Context Generation via provider: ${LLM_PROVIDER}`
-);
-if (LLM_PROVIDER === "gemini") {
-  llm = new ChatGoogleGenerativeAI({
-    apiKey: GEMINI_API_KEY,
-    model: "gemini-2.0-flash-lite",
-  });
-} else {
-  llm = new ChatOpenAI({
-    apiKey: OPENAI_API_KEY,
-    model: "gpt-4o-mini",
-  });
-}
-
-// Embedding Model
 let embeddings;
-console.log(
-  `[Initialization] Initializing Embedding Model via provider: ${EMBEDDING_PROVIDER}`
-);
 if (EMBEDDING_PROVIDER === "gemini") {
+  if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is required.");
+  // *** THIS IS THE FIX ***
+  // REMOVED the outputDimension parameter.
   embeddings = new GoogleGenerativeAIEmbeddings({
     apiKey: GEMINI_API_KEY,
-    modelName: "text-embedding-004",
+    modelName: GEMINI_EMBED_MODEL_NAME,
+    taskType: "RETRIEVAL_DOCUMENT",
   });
+  console.log(
+    `[Init] Embedding Provider: Gemini, Model: ${GEMINI_EMBED_MODEL_NAME}`
+  );
 } else {
+  if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is required.");
   embeddings = new OpenAIEmbeddings({
     apiKey: OPENAI_API_KEY,
-    model: "text-embedding-3-small",
+    model: OPENAI_EMBED_MODEL_NAME,
   });
+  console.log(
+    `[Init] Embedding Provider: OpenAI, Model: ${OPENAI_EMBED_MODEL_NAME}`
+  );
 }
 
-/**************** Middleware & Setup ***************/
-fs.ensureDirSync(UPLOAD_DIR);
-fs.ensureDirSync(TEMP_DIR);
-app.use(express.json());
-app.use(cookieParser());
-const upload = multer({ dest: TEMP_DIR });
-
-/**************** Helper Functions ****************/
-
-async function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+fs.ensureDirSync("./temp");
+const upload = multer({ dest: "./temp" });
 
 async function ensureIndexExists() {
-  try {
-    const exists = await openSearchClient.indices.exists({
+  const exists = await openSearchClient.indices.exists({
+    index: OPENSEARCH_INDEX_NAME,
+  });
+  if (!exists.body) {
+    console.log(
+      `[OpenSearch] Index "${OPENSEARCH_INDEX_NAME}" not found. Creating with dimension: ${EMBED_DIM}...`
+    );
+    await openSearchClient.indices.create({
       index: OPENSEARCH_INDEX_NAME,
-    });
-    if (!exists.body) {
-      console.log(
-        `[OpenSearch] Index '${OPENSEARCH_INDEX_NAME}' not found. Creating with EMBED_DIM: ${EMBED_DIM}...`
-      );
-      await openSearchClient.indices.create({
-        index: OPENSEARCH_INDEX_NAME,
-        body: {
-          settings: {
-            index: {
-              knn: true,
-              "knn.algo_param.ef_search": 100,
-            },
-          },
-          mappings: {
-            properties: {
-              embedding: {
-                type: "knn_vector",
-                dimension: EMBED_DIM,
-              },
-              metadata: {
-                type: "object",
-                properties: {
-                  source: { type: "keyword" },
-                  chunkIndex: { type: "integer" },
-                  totalChunks: { type: "integer" },
-                  generatedContext: { type: "text" },
-                  originalChunkText: { type: "text" },
-                },
-              },
-            },
+      body: {
+        settings: { index: { knn: true, "knn.algo_param.ef_search": 100 } },
+        mappings: {
+          properties: {
+            embedding: { type: "knn_vector", dimension: EMBED_DIM },
           },
         },
-      });
-      console.log(
-        `[OpenSearch] Index '${OPENSEARCH_INDEX_NAME}' created successfully.`
-      );
-    } else {
-      console.log(
-        `[OpenSearch] Index '${OPENSEARCH_INDEX_NAME}' already exists.`
-      );
-    }
-  } catch (error) {
-    console.error(
-      "[OpenSearch] Error in ensureIndexExists:",
-      error.meta ? JSON.stringify(error.meta.body) : error
-    );
-    throw error;
+      },
+    });
+    console.log(`[OpenSearch] Index "${OPENSEARCH_INDEX_NAME}" created.`);
   }
 }
 
-async function generateContextForChunk(
-  wholeDocumentContent,
-  chunkContent,
-  fileName
-) {
-  // Truncate document if too long to fit in context window
-  const maxDocLength = 8000;
-  const truncatedDoc =
-    wholeDocumentContent.length > maxDocLength
-      ? wholeDocumentContent.substring(0, maxDocLength) +
-        "... [document truncated]"
-      : wholeDocumentContent;
-
-  const promptTemplate = `<document>
-${truncatedDoc}
-</document>
-
-Here is a specific chunk from the document:
-<chunk>
-${chunkContent}
-</chunk>
-
-Please provide a brief context (2-3 sentences) that explains:
-1. What section or topic this chunk belongs to in the document
-2. How this chunk relates to the document's main theme
-3. Any key entities or concepts that are referenced but not fully explained in the chunk
-
-Keep the context concise and focused on improving search retrieval. Do not repeat the chunk content itself.`;
-
-  try {
-    const response = await llm.invoke(promptTemplate);
-    return typeof response.content === "string"
-      ? response.content.trim()
-      : "Failed to generate valid context.";
-  } catch (error) {
-    console.error("[LLM Error] Failed to generate context for chunk:", error);
-    return `This chunk is from "${fileName}" and discusses topics related to the document's content.`;
-  }
-}
-
-function cosineSimilarity(vecA, vecB) {
-  if (!vecA || !vecB || vecA.length !== vecB.length) {
-    return 0;
-  }
-  const dotProduct = vecA.reduce((acc, val, i) => acc + val * vecB[i], 0);
-  const magA = Math.sqrt(vecA.reduce((acc, val) => acc + val * val, 0));
-  const magB = Math.sqrt(vecB.reduce((acc, val) => acc + val * val, 0));
-  if (magA === 0 || magB === 0) {
-    return 0;
-  }
-  return dotProduct / (magA * magB);
-}
-
-async function semanticSplit(text, embeddingModel, threshold = 0.85) {
-  // Split the document into individual sentences
-  const sentences = text
-    .split(/(?<=[.?!])\s+/)
-    .filter((s) => s.trim().length > 0);
-
-  if (sentences.length <= 1) {
-    return [text];
-  }
-
-  // Get embeddings for each sentence
-  console.log(
-    `[Semantic Split] Generating embeddings for ${sentences.length} sentences...`
-  );
-  const embeddings = await embeddingModel.embedDocuments(sentences);
-  console.log(`[Semantic Split] Embeddings generated.`);
-
-  // Find split points based on similarity drop
-  const chunks = [];
-  let currentChunkSentences = [sentences[0]];
-
-  for (let i = 1; i < sentences.length; i++) {
-    const prevEmbedding = embeddings[i - 1];
-    const currentEmbedding = embeddings[i];
-    const similarity = cosineSimilarity(prevEmbedding, currentEmbedding);
-
-    if (similarity < threshold) {
-      chunks.push(currentChunkSentences.join(" ").trim());
-      currentChunkSentences = [];
-    }
-    currentChunkSentences.push(sentences[i]);
-  }
-
-  // Add the last remaining chunk
-  if (currentChunkSentences.length > 0) {
-    chunks.push(currentChunkSentences.join(" ").trim());
-  }
-
-  console.log(
-    `[Semantic Split] Document split into ${chunks.length} semantic chunks.`
-  );
-  return chunks;
-}
-
-/**************** Main Upload Route ****************/
 app.post("/upload", upload.array("files"), async (req, res) => {
   const files = req.files;
-  if (!files || files.length === 0) {
+  console.log(`[Upload] Received ${files.length} file(s)`);
+  if (!files || files.length === 0)
     return res.status(400).json({ error: "No files uploaded." });
-  }
 
   try {
     await ensureIndexExists();
-    let totalChunksEmbedded = 0;
-    const processingStats = {
-      filesProcessed: 0,
-      chunksCreated: 0,
-      contextsGenerated: 0,
-      errors: [],
-    };
+    const parentSplitter = new RecursiveCharacterTextSplitter({
+      chunkSize: PARENT_CHUNK_SIZE,
+      chunkOverlap: PARENT_CHUNK_OVERLAP,
+    });
+    const childSplitter = new RecursiveCharacterTextSplitter({
+      chunkSize: CHILD_CHUNK_SIZE,
+      chunkOverlap: CHILD_CHUNK_OVERLAP,
+    });
 
     for (const file of files) {
-      console.log(`[Processing] Starting processing for: ${file.originalname}`);
+      console.log(`[Processing] Starting: ${file.originalname}`);
+      const loader = new (
+        path.extname(file.originalname).toLowerCase() === ".pdf"
+          ? PDFLoader
+          : path.extname(file.originalname).toLowerCase() === ".docx"
+          ? DocxLoader
+          : TextLoader
+      )(file.path);
+      const docs = await loader.load();
+      const parentChunks = await parentSplitter.splitDocuments(docs);
+      const parentDocIds = parentChunks.map(() => uuidv4());
+      await docstore.mset(
+        parentChunks.map((chunk, i) => [parentDocIds[i], chunk])
+      );
 
-      try {
-        // 1. Load Document Content
-        let loader;
-        const ext = path.extname(file.originalname).toLowerCase();
-        if (ext === ".pdf") {
-          loader = new PDFLoader(file.path);
-        } else if (ext === ".docx") {
-          loader = new DocxLoader(file.path);
-        } else {
-          loader = new TextLoader(file.path);
-        }
-
-        const docs = await loader.load();
-        const wholeDocumentContent = docs
-          .map((doc) => doc.pageContent)
-          .join("\n");
-
-        if (!wholeDocumentContent.trim()) {
-          console.warn(
-            `[Processing] No content extracted from ${file.originalname}. Skipping.`
-          );
-          processingStats.errors.push({
-            file: file.originalname,
-            error: "No content extracted",
-          });
-          continue;
-        }
-
-        // 2. Split Document into Semantic Chunks
-        const semanticChunksText = await semanticSplit(
-          wholeDocumentContent,
-          embeddings
-        );
-        processingStats.chunksCreated += semanticChunksText.length;
-
-        // 3. Generate context and create enriched chunks
-        console.log(
-          `[Context Generation] Processing ${semanticChunksText.length} chunks for ${file.originalname}...`
-        );
-        const enrichedChunks = [];
-
-        for (let i = 0; i < semanticChunksText.length; i++) {
-          const chunkText = semanticChunksText[i];
-
-          // Add delay between LLM calls to avoid rate limits
-          if (i > 0 && ENABLE_CONTEXT_GENERATION) {
-            await sleep(parseInt(CONTEXT_GENERATION_DELAY_MS));
-          }
-
-          let enrichedContent;
-          let chunkContext = "";
-
-          if (ENABLE_CONTEXT_GENERATION) {
-            // Generate contextual summary for this chunk
-            chunkContext = await generateContextForChunk(
-              wholeDocumentContent,
-              chunkText,
-              file.originalname
-            );
-            enrichedContent = `Context: ${chunkContext}\n\nContent: ${chunkText}`;
-            processingStats.contextsGenerated++;
-          } else {
-            // Skip context generation for faster testing
-            enrichedContent = chunkText;
-          }
-
-          enrichedChunks.push({
-            pageContent: enrichedContent,
-            metadata: {
-              source: file.originalname,
-              chunkIndex: i,
-              totalChunks: semanticChunksText.length,
-              originalChunkText: chunkText,
-              generatedContext: chunkContext,
-              documentLength: wholeDocumentContent.length,
-              chunkLength: chunkText.length,
-            },
-          });
-
-          // Log progress
-          if ((i + 1) % 5 === 0 || i === semanticChunksText.length - 1) {
-            console.log(
-              `[Context Generation] Processed ${i + 1}/${
-                semanticChunksText.length
-              } chunks`
-            );
-          }
-        }
-
-        // 4. Embed and Store the enriched chunks
-        console.log(
-          `[Embedding] Embedding ${enrichedChunks.length} chunks into OpenSearch...`
-        );
-        await OpenSearchVectorStore.fromDocuments(enrichedChunks, embeddings, {
+      let childChunks = [];
+      for (let i = 0; i < parentChunks.length; i++) {
+        const subDocs = await childSplitter.splitDocuments([parentChunks[i]]);
+        subDocs.forEach((doc) => {
+          doc.metadata.parentId = parentDocIds[i];
+          childChunks.push(doc);
+        });
+      }
+      if (childChunks.length > 0) {
+        await OpenSearchVectorStore.fromDocuments(childChunks, embeddings, {
           client: openSearchClient,
           indexName: OPENSEARCH_INDEX_NAME,
         });
-
-        totalChunksEmbedded += enrichedChunks.length;
-        processingStats.filesProcessed++;
-        console.log(
-          `[Success] Successfully processed ${file.originalname} (${enrichedChunks.length} chunks)`
-        );
-      } catch (fileError) {
-        console.error(
-          `[Error] Failed to process ${file.originalname}:`,
-          fileError
-        );
-        processingStats.errors.push({
-          file: file.originalname,
-          error: fileError.message,
-        });
-      } finally {
-        // Clean up the temporary file
-        await fs
-          .unlink(file.path)
-          .catch((err) =>
-            console.error(
-              `[Cleanup] Failed to delete temp file: ${err.message}`
-            )
-          );
       }
+      console.log(
+        `[Success] Finished ${file.originalname}: ${parentChunks.length} parent chunks, ${childChunks.length} child chunks.`
+      );
+      await fs.unlink(file.path);
     }
-
-    // Return detailed response
-    const response = {
-      success: true,
-      message: `Processing complete. Successfully processed ${processingStats.filesProcessed}/${files.length} files.`,
-      stats: {
-        filesUploaded: files.length,
-        filesProcessed: processingStats.filesProcessed,
-        totalChunksCreated: processingStats.chunksCreated,
-        totalChunksEmbedded: totalChunksEmbedded,
-        contextsGenerated: processingStats.contextsGenerated,
-        contextGenerationEnabled: ENABLE_CONTEXT_GENERATION,
-        indexName: OPENSEARCH_INDEX_NAME,
-      },
-    };
-
-    if (processingStats.errors.length > 0) {
-      response.errors = processingStats.errors;
-    }
-
-    res.status(200).json(response);
+    res.status(200).json({ success: true, message: "All files processed." });
   } catch (error) {
-    console.error("[Upload] Critical endpoint error:", error);
-    res.status(500).json({
-      error: "An unexpected error occurred during file processing.",
-      details: error.message,
-    });
+    console.error("[Upload] Critical error:", error);
+    res.status(500).json({ error: "Error during upload." });
   }
 });
 
-/**************** Health Check Endpoint ****************/
-app.get("/health", async (req, res) => {
+app.post("/get-documents", async (req, res) => {
+  const { ids } = req.body;
+  console.log(`[get-documents] Request for ${ids?.length || 0} IDs.`);
+  if (!ids || !Array.isArray(ids))
+    return res.status(400).json({ error: "Invalid request body." });
   try {
-    const osHealth = await openSearchClient.cluster.health();
-    res.status(200).json({
-      status: "healthy",
-      service: "embedding-service",
-      opensearch: osHealth.body.status,
-      contextGeneration: ENABLE_CONTEXT_GENERATION,
-      embeddingProvider: EMBEDDING_PROVIDER,
-      llmProvider: LLM_PROVIDER,
-    });
-  } catch (error) {
-    res.status(503).json({
-      status: "unhealthy",
-      error: error.message,
-    });
-  }
-});
-
-/**************** Start Server ****************/
-app.listen(PORT, async () => {
-  console.log(`Embedding Service running on http://localhost:${PORT}`);
-  console.log(
-    `Context Generation: ${ENABLE_CONTEXT_GENERATION ? "ENABLED" : "DISABLED"}`
-  );
-  console.log(`LLM Provider: ${LLM_PROVIDER}`);
-  console.log(`Embedding Provider: ${EMBEDDING_PROVIDER}`);
-
-  try {
-    await ensureIndexExists();
-  } catch (error) {
-    console.error(
-      `[Startup] CRITICAL: Could not connect to or create OpenSearch index.`,
-      error
+    const documents = await docstore.mget(ids);
+    console.log(
+      `[get-documents] Found ${documents.filter((d) => d).length} documents.`
     );
-    process.exit(1);
+    res.status(200).json({ documents });
+  } catch (error) {
+    console.error("[get-documents] Error:", error);
+    res.status(500).json({ error: "Failed to retrieve documents." });
   }
+});
+
+app.post("/clear-docstore", (req, res) => {
+  docstore = new InMemoryStore();
+  console.log(`[Admin] In-memory docstore reset.`);
+  res.status(200).send({ message: "Document store cleared." });
+});
+
+app.get("/health", (req, res) => res.status(200).json({ status: "healthy" }));
+
+app.listen(EMBEDDING_SERVICE_PORT, async () => {
+  console.log(`Embedding Service running on port ${EMBEDDING_SERVICE_PORT}`);
+  await ensureIndexExists();
 });

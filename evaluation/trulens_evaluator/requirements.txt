@@ -1,0 +1,5 @@
+trulens
+trulens-providers-openai
+requests
+pandas
+numpy

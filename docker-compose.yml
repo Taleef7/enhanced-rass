@@ -1,27 +1,38 @@
 version: '3.8'
 
+# Defines a reusable configuration block for environment variables
+# This will be used by services that need access to the config file values
+x-environment: &default-env
+  # Secrets are loaded from the root .env file by Docker Compose automatically
+  OPENAI_API_KEY: ${OPENAI_API_KEY}
+  GEMINI_API_KEY: ${GEMINI_API_KEY}
+  
+  # Non-secret configs are now read from the mounted config.yml
+  # The services will need to be updated to read these from env vars
+  # which we will populate below.
+
 services:
   opensearch:
-    image: opensearchproject/opensearch:2.11.0 # Using a specific version for stability
+    image: opensearchproject/opensearch:2.11.0
     container_name: opensearch_node
     environment:
       - discovery.type=single-node
-      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g # Increased from 512m for better stability
-      - bootstrap.memory_lock=true # Recommended for performance
-      - "DISABLE_SECURITY_PLUGIN=true" # For easier local development; NOT FOR PRODUCTION
+      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+      - bootstrap.memory_lock=true
+      - "DISABLE_SECURITY_PLUGIN=true"
       - "DISABLE_INSTALL_DEMO_CONFIG=true"
     ulimits:
       memlock:
         soft: -1
         hard: -1
       nofile:
-        soft: 65536 # Default for OpenSearch
+        soft: 65536
         hard: 65536
     volumes:
       - opensearch-data:/usr/share/opensearch/data
     ports:
       - "9200:9200"
-      - "9600:9600" # For performance analyzer
+      - "9600:9600"
     networks:
       - rass_network
     healthcheck:
@@ -39,14 +50,14 @@ services:
       - "8001:8001"
     volumes:
       - ./embedding-service/uploads:/usr/src/app/embedding-service/uploads
-      # For development, you might map the source code:
-      # - ./embedding-service:/usr/src/app/embedding-service 
-      # Note: This would require nodemon or similar in CMD for live reload
-    env_file:
-      - ./embedding-service/.env
+      - ./config.yml:/usr/src/app/embedding-service/config.yml:ro # Mount config read-only
+    # The 'env_file' is now removed. Environment is handled below.
+    environment:
+      <<: *default-env # Inherit secrets
+      # We will add non-secret vars from config.yml here in the next step
     depends_on:
       opensearch:
-        condition: service_healthy # Waits for OpenSearch to be healthy
+        condition: service_healthy
     networks:
       - rass_network
     restart: unless-stopped
@@ -58,8 +69,11 @@ services:
     container_name: rass_engine_app
     ports:
       - "8000:8000"
-    env_file:
-      - ./rass-engine-service/.env
+    volumes:
+      - ./config.yml:/usr/src/app/rass-engine-service/config.yml:ro # Mount config read-only
+    # The 'env_file' is now removed.
+    environment:
+      <<: *default-env # Inherit secrets
     depends_on:
       opensearch:
         condition: service_healthy
@@ -84,6 +98,7 @@ services:
       - "8080:8080"
     volumes:
       - ./embedding-service/uploads:/usr/src/app/uploads:ro
+    # No environment variables needed for this service currently
     networks:
       - rass_network
     depends_on:
@@ -96,6 +111,9 @@ services:
       context: ./rass-engine-service/py_reranker
     ports:
       - "8008:8008"
+    volumes:
+      - ./config.yml:/app/config.yml:ro # Mount config read-only
+    # Environment variables will be added in the next step
     networks:
       - rass_network
     restart: unless-stopped
