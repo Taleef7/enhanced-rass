@@ -7,3 +7,4 @@ evaluation/trulens_evaluator/__pycache__/
 package-lock.json
 rass-engine-service/pnpm-lock.yaml
 evaluation/trulens_evaluator/default.sqlite
+.env

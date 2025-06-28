@@ -16,9 +16,16 @@ async function generateHypotheticalDocument(
 ) {
   console.log(`[HyDE] Generating hypothetical document for query: "${query}"`);
 
-  // A simple, effective prompt for generating a hypothetical answer.
-  const prompt = `Please write a concise, ideal passage that directly answers the following question. This passage will be used to find the most relevant real documents.
+  // Enhanced prompt that encourages more detailed and contextual responses
+  const prompt = `You are tasked with writing a detailed, informative passage that would perfectly answer the following question. Write as if you are an expert providing a comprehensive answer with specific details, examples, and context.
+
 Question: "${query}"
+
+Write a detailed passage (150-250 words) that:
+- Directly answers the question with specific information
+- Includes relevant details and context
+- Uses terminology and style consistent with authoritative sources
+- Provides concrete examples or evidence where appropriate
 
 Passage:`;
 
@@ -27,8 +34,8 @@ Passage:`;
       const completion = await llmClient.chat.completions.create({
         model: modelName,
         messages: [{ role: "user", content: prompt }],
-        temperature: 0.7, // A bit of creativity is helpful here
-        max_tokens: 200, // Keep the hypothetical doc concise
+        temperature: 0.5, // Slightly less creative for more factual content
+        max_tokens: 300, // Allow for more detailed responses
       });
       const hypotheticalDoc = completion.choices[0].message.content;
       console.log(
