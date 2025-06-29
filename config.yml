@@ -6,6 +6,11 @@ OPENSEARCH_HOST: "opensearch"
 OPENSEARCH_PORT: 9200
 OPENSEARCH_INDEX_NAME: "knowledge_base"
 
+# --- Redis Configuration ---
+REDIS_HOST: "redis"
+REDIS_PORT: 6379
+REDIS_DB: 0
+
 # --- Provider Choices ---
 # Can be "openai" or "gemini"
 EMBEDDING_PROVIDER: "gemini"

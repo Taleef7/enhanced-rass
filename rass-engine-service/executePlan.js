@@ -295,7 +295,9 @@ async function runSteps({ plan, embed, os, index }) {
         ids: uniqueParentIds,
       }
     );
-    const parentDocuments = response.data.documents;
+    const parentDocuments = response.data.documents.filter(
+      (doc) => doc !== null
+    );
     log(
       `[runSteps] Successfully fetched ${parentDocuments.length} parent documents.`
     );

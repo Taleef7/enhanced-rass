@@ -41,6 +41,23 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis_node
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - rass_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    command: redis-server --appendonly yes --appendfsync everysec
+
   embedding-service:
     build:
       context: ./embedding-service
@@ -57,6 +74,8 @@ services:
       # We will add non-secret vars from config.yml here in the next step
     depends_on:
       opensearch:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - rass_network
@@ -124,4 +143,6 @@ networks:
 
 volumes:
   opensearch-data:
+    driver: local
+  redis-data:
     driver: local
