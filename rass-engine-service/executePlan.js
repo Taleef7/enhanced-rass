@@ -6,7 +6,7 @@ const yaml = require("js-yaml");
 const config = yaml.load(fs.readFileSync("./config.yml", "utf8"));
 const {
   DEFAULT_K_OPENSEARCH_HITS,
-  OPENSEARCH_SCORE_THRESHOLD = 0.7,
+  OPENSEARCH_SCORE_THRESHOLD = 0.6,
   EMBED_DIM,
 } = config;
 // --- End Configuration Loading ---
@@ -82,9 +82,6 @@ async function runSteps({ plan, embed, os, index }) {
         query: {
           bool: {
             must: [query],
-            filter: [
-              { range: { _score: { gte: OPENSEARCH_SCORE_THRESHOLD * 0.5 } } },
-            ],
           },
         },
         min_score: OPENSEARCH_SCORE_THRESHOLD * 0.3,

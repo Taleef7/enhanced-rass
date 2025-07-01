@@ -117,19 +117,12 @@ async function createEnhancedSearchPlan(
 
 User Query: "${originalQuery}"
 
-Create 4-6 diverse search terms that cover:
+Create 8-10 diverse search terms that cover:
 1. The original query (exact or paraphrased)
 2. Key concepts and entities from the query
 3. Related terms and synonyms
 4. Specific details mentioned in the query
 5. Broader context that might be relevant
-
-For the query about "How did the Martians die in War of the Worlds?", good search terms might include:
-- "Martians death War of the Worlds"
-- "bacteria killed Martians"
-- "terrestrial microorganisms Martians"
-- "Martian invasion failure cause"
-- "War of the Worlds ending"
 
 Return ONLY a JSON array of search terms, no other text:
 ["term1", "term2", "term3", ...]`;
