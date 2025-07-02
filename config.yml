@@ -6,6 +6,11 @@ OPENSEARCH_HOST: "opensearch"
 OPENSEARCH_PORT: 9200
 OPENSEARCH_INDEX_NAME: "knowledge_base"
 
+# --- Redis Configuration ---
+REDIS_HOST: "redis"
+REDIS_PORT: 6379
+REDIS_DB: 0
+
 # --- Provider Choices ---
 # Can be "openai" or "gemini"
 EMBEDDING_PROVIDER: "gemini"
@@ -31,10 +36,13 @@ RERANKER_PORT: 8008
 # --- RAG Parameters ---
 # For Small-to-Big Retrieval
 PARENT_CHUNK_SIZE: 2000
-PARENT_CHUNK_OVERLAP: 200
-CHILD_CHUNK_SIZE: 512
+PARENT_CHUNK_OVERLAP: 500
+CHILD_CHUNK_SIZE: 200
 CHILD_CHUNK_OVERLAP: 100
 # Initial candidate pool size for reranking
 DEFAULT_K_OPENSEARCH_HITS: 64
 # Vector dimension for OpenSearch index
 EMBED_DIM: 768
+
+# Search score thresholds
+OPENSEARCH_SCORE_THRESHOLD: 0.1

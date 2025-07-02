@@ -3,119 +3,118 @@ import requests
 import pandas as pd
 import numpy as np
 
-# TruLens imports
+# Updated TruLens imports for a custom RAG application
 from trulens.core.session import TruSession
-from trulens.apps.basic import TruBasicApp
-from trulens.core import Feedback
+from trulens.apps.custom import TruCustomApp
+# *** THIS IS THE FIX: Correct import path for the decorator ***
+from trulens.apps.app import instrument
+from trulens.core import Feedback, Select
 from trulens.providers.openai import OpenAI
 
-# --- RASS API Wrapper ---
-def rass_query_app(query: str) -> str:
-    """
-    Simple function that sends a query to the RASS engine.
-    Returns just the answer string for basic evaluation.
-    """
-    engine_url = "http://localhost:8000/ask"
-    
-    try:
-        response = requests.post(engine_url, json={"query": query, "top_k": 5})
-        response.raise_for_status()
-        data = response.json()
-        
-        answer = data.get("answer", "No answer found.")
-        return answer
-        
-    except requests.exceptions.RequestException as e:
-        print(f"Error calling RASS Engine: {e}")
-        return f"Error: {e}"
+# --- RASS API Wrapper (Now an instrumented class) ---
+# By decorating the query method, we allow TruLens to see its inputs and outputs.
+class RASS_App:
+    def __init__(self):
+        self.engine_url = "http://localhost:8000/ask"
 
-# --- TruLens Setup ---
+    @instrument
+    def query_with_context(self, query: str) -> dict:
+        """
+        This method is now instrumented. TruLens will track its inputs,
+        and its full dictionary output (answer and context).
+        """
+        try:
+            # Increased top_k for better context coverage
+            response = requests.post(self.engine_url, json={"query": query, "top_k": 8})
+            response.raise_for_status()
+            data = response.json()
+            
+            answer = data.get("answer", "No answer found.")
+            # Extract the page_content from each source document for evaluation
+            context_list = [doc.get('text', '') for doc in data.get('source_documents', [])]
+            context = "\n".join(context_list)
+            
+            return {"answer": answer, "context": context}
+        except requests.exceptions.RequestException as e:
+            print(f"Error calling RASS Engine: {e}")
+            return {"answer": f"Error: {e}", "context": ""}
+
+# --- TruLens Setup (Upgraded for the RAG Triad) ---
 def setup_trulens_evaluator():
-    # Initialize the OpenAI provider
     provider = OpenAI()
 
-    # Define basic feedback functions for simple input->output evaluation
-    # For TruBasicApp with string output, we use the simple selectors
-    
-    # Answer Relevance - compares input query to output answer
-    f_answer_relevance = (
-        Feedback(provider.relevance, name="Answer Relevance")
-        .on_input_output()  # input=prompt, output=response
+    # Define selectors for the instrumented 'query_with_context' method
+    select_context = Select.Record.app.query_with_context.rets.context
+    select_answer = Select.Record.app.query_with_context.rets.answer
+
+    # 1. Groundedness: Is the answer supported by the context?
+    f_groundedness = (
+        Feedback(provider.groundedness_measure_with_cot_reasons, name="Groundedness")
+        .on(source=select_context)
+        .on(statement=select_answer)
     )
 
-    return [f_answer_relevance]
+    # 2. Answer Relevance: Is the answer relevant to the user's query?
+    f_answer_relevance = (
+        Feedback(provider.relevance, name="Answer Relevance")
+        .on_input()
+        .on(select_answer)
+    )
+
+    # 3. Context Relevance: Is the retrieved context relevant to the user's query?
+    f_context_relevance = (
+        Feedback(provider.context_relevance, name="Context Relevance")
+        .on_input()
+        .on(select_context)
+        .aggregate(np.mean)
+    )
+    
+    # The full RAG Triad for comprehensive evaluation
+    return [f_groundedness, f_answer_relevance, f_context_relevance]
 
 # --- Main Evaluation Logic ---
 if __name__ == "__main__":
-    # Check for OpenAI API key
     if not os.environ.get("OPENAI_API_KEY"):
         print("Error: OPENAI_API_KEY environment variable not set.")
-        print("Please set your OpenAI API key: export OPENAI_API_KEY='your-key-here'")
         exit(1)
     
     print("Please ensure all RASS services are running...")
     
-    # Initialize a TruLens Session
     session = TruSession()
     session.reset_database()
     
-    # Get the feedback functions
     feedbacks = setup_trulens_evaluator()
+    rass_app = RASS_App()
 
-    # Wrap the function with TruBasicApp for evaluation
-    # Disable selector checking since we're returning simple strings
-    tru_app_recorder = TruBasicApp(
-        rass_query_app,
-        app_name="RASS Engine",
-        app_version="v1.0",
-        feedbacks=feedbacks,
-        selectors_nocheck=True  # This disables the selector validation that's causing errors
+    # Use TruCustomApp to wrap our instrumented RASS_App class
+    tru_recorder = TruCustomApp(
+        rass_app,
+        app_id="RASS Engine - Optimized Reranker", # New app_id for comparison
+        feedbacks=feedbacks
     )
 
-    # Define your evaluation questions
+    # **REPLACED** - More targeted evaluation questions
     evaluation_questions = [
-        "How are the Martians ultimately defeated?",
-        "What is the most prominent feature of Seattle's skyline?", 
-        "What is the capital of New Zealand?",
-        "Describe the Martian handling-machine."
+        # Question 1: Factual recall from the text
+        "How are the Martians ultimately defeated in The War of the Worlds?",
+        # Question 2: More specific factual recall
+        "What weapon did the Martians use that generated immense heat?",
+        # Question 3: Descriptive question
+        "Describe the appearance of the Martian handling-machine.",
+        # Question 4: Out-of-domain question to test for hallucinations
+        "What is the primary export of Brazil?",
     ]
 
-    print("--- Starting RASS Evaluation with TruLens ---")
+    print("--- Starting RASS Evaluation with Optimized Reranker ---")
     
-    # Run the evaluation
     for i, question in enumerate(evaluation_questions, 1):
         print(f"\n[Question {i}/{len(evaluation_questions)}]: {question}")
         
-        with tru_app_recorder as recording:
-            response = tru_app_recorder.app(question)
-            print(f"[Answer]: {response[:200]}{'...' if len(response) > 200 else ''}")
+        with tru_recorder as recording:
+            response_dict = rass_app.query_with_context(question)
+            print(f"[Answer]: {response_dict['answer'][:200]}...")
 
     print("\n--- Evaluation Complete ---")
     
-    # Show some basic results
-    try:
-        records, feedback = session.get_records_and_feedback(app_ids=["RASS Engine"])
-        print(f"\nProcessed {len(records)} questions")
-        print(f"Generated {len(feedback)} feedback entries")
-        
-        if feedback:
-            # Show average scores
-            df = pd.DataFrame(feedback)
-            if not df.empty and 'result' in df.columns:
-                avg_scores = df.groupby('name')['result'].mean()
-                print("\nAverage Feedback Scores:")
-                for name, score in avg_scores.items():
-                    print(f"  {name}: {score:.3f}")
-    except Exception as e:
-        print(f"Error retrieving results: {e}")
-    
-    # Launch the TruLens dashboard
     print("\nLaunching TruLens Dashboard...")
-    print("You can view detailed results at: http://localhost:8501")
-    try:
-        session.run_dashboard()
-    except KeyboardInterrupt:
-        print("\nDashboard stopped by user.")
-    except Exception as e:
-        print(f"Error launching dashboard: {e}")
-        print("You can manually run: from trulens.dashboard import run_dashboard; run_dashboard()")
+    session.run_dashboard()
