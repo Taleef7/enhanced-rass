@@ -5,6 +5,7 @@ const { OpenAI } = require("openai");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const fs = require("fs");
 const yaml = require("js-yaml");
+const { v4: uuidv4 } = require("uuid"); // Import uuid
 
 const { rerank } = require("./reranker.js");
 const { runSteps } = require("./executePlan");
@@ -113,19 +114,19 @@ async function createEnhancedSearchPlan(
     `[Search Plan] Creating enhanced search plan for: "${originalQuery}"`
   );
 
-  const planningPrompt = `You are an expert search planner. Given a user query, create multiple search terms that will help find comprehensive and relevant information.
+  const planningPrompt = `You are an expert search planner. Your task is to generate a JSON array of 3-4 diverse and high-quality search terms based on a user's query.
 
 User Query: "${originalQuery}"
 
-Create 8-10 diverse search terms that cover:
-1. The original query (exact or paraphrased)
-2. Key concepts and entities from the query
-3. Related terms and synonyms
-4. Specific details mentioned in the query
-5. Broader context that might be relevant
+Instructions:
+1. Create a concise list of 3 to 4 search terms.
+2. The terms should cover the most important concepts, entities, and the direct question.
+3. Your entire response must be ONLY the JSON array of strings. Do not include any other text, explanations, or markdown formatting.
 
-Return ONLY a JSON array of search terms, no other text:
-["term1", "term2", "term3", ...]`;
+Example response format:
+["term1", "term2", "term3"]
+
+Generate the JSON array for the user query now.`;
 
   try {
     let searchTerms = [];
@@ -205,19 +206,19 @@ Return ONLY a JSON array of search terms, no other text:
   }
 }
 
-async function ask(query, top_k_param) {
+// REFACTORED 'ask' function to support both streaming and non-streaming
+async function ask(query, top_k_param, stream = false, res = null) {
   if (!query?.trim()) throw new Error("Empty query");
   const top_k_for_generation = top_k_param || 5;
-  console.log(`[Ask] Query: "${query}"`);
+  console.log(`[Ask] Query: "${query}", Streaming: ${stream}`);
 
+  // --- Step 1: Retrieval (HyDE, Plan, Execute, Rerank) ---
   const hypotheticalDocument = await generateHypotheticalDocument(
     llmClient,
     LLM_PROVIDER,
     LLM_PROVIDER === "openai" ? OPENAI_MODEL_NAME : GEMINI_MODEL_NAME,
     query
   );
-
-  // Enhanced multi-step search plan with query decomposition
   const enhancedPlan = await createEnhancedSearchPlan(
     llmClient,
     LLM_PROVIDER,
@@ -225,9 +226,8 @@ async function ask(query, top_k_param) {
     query,
     hypotheticalDocument
   );
-
   const parentDocs = await runSteps({
-    plan: enhancedPlan, // Use the enhanced search plan
+    plan: enhancedPlan,
     embed: embedText,
     os: osClient,
     index: OPENSEARCH_INDEX_NAME,
@@ -235,10 +235,22 @@ async function ask(query, top_k_param) {
 
   if (!parentDocs || !parentDocs.length) {
     console.warn("[Ask] No documents found.");
-    return {
+    const emptyResponse = {
       answer: "I could not find any relevant information.",
       source_documents: [],
     };
+    if (stream) {
+      writeSSE(res, {
+        choices: [{ delta: { content: emptyResponse.answer } }],
+      });
+      writeSSE(res, {
+        choices: [{ delta: { custom_meta: { citations: [] } } }],
+      });
+      writeSSE(res, "[DONE]");
+      res.end();
+      return;
+    }
+    return emptyResponse;
   }
 
   const initial_documents = parentDocs
@@ -250,56 +262,100 @@ async function ask(query, top_k_param) {
     `[Generation] Generating with ${source_documents.length} reranked documents...`
   );
 
-  // Log the top reranked documents for debugging
-  console.log("[Generation] Top reranked documents:");
-  source_documents.forEach((doc, idx) => {
-    console.log(
-      `  [${idx + 1}] Score: ${
-        doc.rerank_score?.toFixed(4) || "N/A"
-      } | Preview: "${doc.text?.substring(0, 100)}..."`
-    );
-  });
-
   const context = source_documents.map((doc) => doc.text).join("\n\n---\n\n");
+  const generationPrompt = `You are a knowledgeable assistant. Use the provided context to answer the user's question accurately and comprehensively...\n\nContext:\n${context}\n\nQuestion: ${query}\n\nAnswer:`;
 
-  // Enhanced generation prompt with better instructions
-  const generationPrompt = `You are a knowledgeable assistant. Use the provided context to answer the user's question accurately and comprehensively.
-
-Instructions:
-- Base your answer on the information provided in the context
-- If the context contains relevant information, provide a detailed answer
-- Include specific details, examples, and quotes when available
-- Only say "The context does not contain sufficient information to answer this question" if the context is truly irrelevant or lacks the necessary information
-- Be thorough but concise in your response
-
-Context:
-${context}
-
-Question: ${query}
-
-Answer:`;
-
-  let answer = "Sorry, I was unable to generate an answer.";
-  try {
-    if (LLM_PROVIDER === "openai") {
-      const completion = await llmClient.chat.completions.create({
-        model: OPENAI_MODEL_NAME,
-        messages: [{ role: "user", content: generationPrompt }],
-        temperature: 0.3, // Lower temperature for more factual responses
-        max_tokens: 500, // Allow longer responses
-      });
-      answer = completion.choices[0].message.content;
-    } else {
-      const result = await llmClient.generateContent(generationPrompt);
-      answer = result.response.text();
+  // --- Step 2: Generation (Streaming or Non-Streaming) ---
+  if (!stream) {
+    // Original non-streaming logic
+    let answer = "Sorry, I was unable to generate an answer.";
+    try {
+      if (LLM_PROVIDER === "openai") {
+        const completion = await llmClient.chat.completions.create({
+          model: OPENAI_MODEL_NAME,
+          messages: [{ role: "user", content: generationPrompt }],
+          temperature: 0.3,
+          max_tokens: 500,
+        });
+        answer = completion.choices[0].message.content;
+      } else {
+        const result = await llmClient.generateContent(generationPrompt);
+        answer = result.response.text();
+      }
+    } catch (e) {
+      console.error("[Generation] Error calling LLM:", e);
     }
-  } catch (e) {
-    console.error("[Generation] Error calling LLM:", e);
+    console.log(`[Generation] Final answer generated.`);
+    return { answer, source_documents };
+  } else {
+    // NEW Streaming Logic
+    try {
+      if (LLM_PROVIDER === "openai") {
+        const completionStream = await llmClient.chat.completions.create({
+          model: OPENAI_MODEL_NAME,
+          messages: [{ role: "user", content: generationPrompt }],
+          temperature: 0.3,
+          max_tokens: 500,
+          stream: true,
+        });
+        for await (const chunk of completionStream) {
+          if (chunk.choices[0]?.delta?.content) {
+            writeSSE(res, {
+              choices: [{ delta: { content: chunk.choices[0].delta.content } }],
+            });
+          }
+        }
+      } else {
+        // Gemini
+        const result = await llmClient.generateContentStream(generationPrompt);
+        for await (const chunk of result.stream) {
+          if (chunk.text()) {
+            writeSSE(res, { choices: [{ delta: { content: chunk.text() } }] });
+          }
+        }
+      }
+      // After the token stream, send the citations
+      writeSSE(res, {
+        choices: [{ delta: { custom_meta: { citations: source_documents } } }],
+      });
+    } catch (e) {
+      console.error("[Generation] Error during LLM stream:", e);
+      writeSSE(res, {
+        choices: [
+          {
+            delta: {
+              content: "\n\nSorry, an error occurred during generation.",
+            },
+          },
+        ],
+      });
+    } finally {
+      // End the stream
+      writeSSE(res, "[DONE]");
+      res.end();
+      console.log("[Generation] Stream finished.");
+    }
   }
-  console.log(`[Generation] Final answer generated.`);
-  return { answer, source_documents };
 }
 
+// Helper to write Server-Sent Events in the OpenAI-compatible format
+function writeSSE(res, data) {
+  const id = uuidv4();
+  const chunk =
+    typeof data === "string"
+      ? data
+      : JSON.stringify({
+          id,
+          object: "chat.completion.chunk",
+          created: Math.floor(Date.now() / 1000),
+          model:
+            LLM_PROVIDER === "openai" ? OPENAI_MODEL_NAME : GEMINI_MODEL_NAME,
+          ...data,
+        });
+  res.write(`data: ${chunk}\n\n`);
+}
+
+// Original endpoint, remains non-streaming
 app.post("/ask", async (req, res) => {
   try {
     const { query, top_k } = req.body;
@@ -307,13 +363,48 @@ app.post("/ask", async (req, res) => {
     console.log("---------------------------------");
     console.log(`[API /ask] Received query: "${query}", top_k: ${top_k}`);
     console.log("---------------------------------");
-    const result = await ask(query, top_k);
+    const result = await ask(query, top_k, false); // stream = false
     return res.json(result);
   } catch (e) {
     console.error("[API /ask] Endpoint error:", e);
     return res
       .status(500)
       .json({ error: e.message || "Error processing request." });
+  }
+});
+
+// NEW Streaming endpoint for LibreChat
+app.post("/stream-ask", async (req, res) => {
+  try {
+    const { query, top_k } = req.body;
+    if (!query) return res.status(400).json({ error: "Missing query" });
+
+    // Set headers for SSE
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders(); // flush the headers to establish connection
+
+    console.log("---------------------------------");
+    console.log(
+      `[API /stream-ask] Received query: "${query}", top_k: ${top_k}`
+    );
+    console.log("---------------------------------");
+
+    // Call ask function in streaming mode
+    await ask(query, top_k, true, res);
+
+    res.on("close", () => {
+      console.log("[API /stream-ask] Client closed connection.");
+      res.end();
+    });
+  } catch (e) {
+    console.error("[API /stream-ask] Endpoint error:", e);
+    if (!res.headersSent) {
+      res.status(500).json({ error: e.message || "Error processing request." });
+    } else {
+      res.end();
+    }
   }
 });
 

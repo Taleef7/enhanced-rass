@@ -357,6 +357,11 @@ app.post("/get-documents", async (req, res) => {
   if (!ids || !Array.isArray(ids))
     return res.status(400).json({ error: "Invalid request body." });
   try {
+    if (!docstore) {
+      return res
+        .status(503)
+        .json({ error: "Document store is not initialized." });
+    }
     const documents = await docstore.mget(ids);
     console.log(
       `[get-documents] Found ${documents.filter((d) => d).length} documents.`
@@ -370,6 +375,11 @@ app.post("/get-documents", async (req, res) => {
 
 app.post("/clear-docstore", async (req, res) => {
   try {
+    if (!docstore) {
+      return res
+        .status(503)
+        .json({ error: "Document store is not initialized." });
+    }
     if (docstore instanceof RedisDocumentStore) {
       // For Redis store, clear all keys with our prefix
       const allKeys = await docstore.yieldKeys("");

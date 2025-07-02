@@ -98,6 +98,8 @@ services:
         condition: service_healthy
       py_reranker:
         condition: service_started
+    links: # <-- ADD THIS SECTION
+      - opensearch:opensearch_node # <-- ADD THIS LINE
     networks:
       - rass_network
     restart: unless-stopped
@@ -139,7 +141,8 @@ services:
 
 networks:
   rass_network:
-    driver: bridge
+    name: shared_rass_network 
+    external: true
 
 volumes:
   opensearch-data:
