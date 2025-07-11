@@ -124,9 +124,11 @@ services:
       rass-engine-service:
         condition: service_healthy
     restart: unless-stopped
+    environment:
+      - MCP_DEFAULT_TOP_K=50
 
 networks:
-  rass_network:
+  rass_network: 
     name: shared_rass_network 
     external: true
 

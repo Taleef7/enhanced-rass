@@ -40,9 +40,12 @@ PARENT_CHUNK_OVERLAP: 500
 CHILD_CHUNK_SIZE: 200
 CHILD_CHUNK_OVERLAP: 100
 # Initial candidate pool size for reranking
-DEFAULT_K_OPENSEARCH_HITS: 96
+DEFAULT_K_OPENSEARCH_HITS: 112
 # Vector dimension for OpenSearch index
 EMBED_DIM: 768
 
 # Search score thresholds
 OPENSEARCH_SCORE_THRESHOLD: 0.1
+
+search:
+  DEFAULT_TOP_K: 50
