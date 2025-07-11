@@ -17,7 +17,7 @@ services:
     container_name: opensearch_node
     environment:
       - discovery.type=single-node
-      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+      - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
       - bootstrap.memory_lock=true
       - "DISABLE_SECURITY_PLUGIN=true"
       - "DISABLE_INSTALL_DEMO_CONFIG=true"
@@ -96,8 +96,6 @@ services:
     depends_on:
       opensearch:
         condition: service_healthy
-      py_reranker:
-        condition: service_started
     links: # <-- ADD THIS SECTION
       - opensearch:opensearch_node # <-- ADD THIS LINE
     networks:
@@ -125,18 +123,6 @@ services:
     depends_on:
       rass-engine-service:
         condition: service_healthy
-    restart: unless-stopped
-  
-  py_reranker:
-    build:
-      context: ./rass-engine-service/py_reranker
-    ports:
-      - "8008:8008"
-    volumes:
-      - ./config.yml:/app/config.yml:ro # Mount config read-only
-    # Environment variables will be added in the next step
-    networks:
-      - rass_network
     restart: unless-stopped
 
 networks:

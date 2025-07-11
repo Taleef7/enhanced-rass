@@ -1,4 +1,13 @@
+# evaluate.py
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+import time
+
+# Construct the path to the root .env file (two levels up)
+env_path = Path(__file__).resolve().parent.parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
+
 import requests
 import pandas as pd
 import numpy as np
@@ -6,13 +15,11 @@ import numpy as np
 # Updated TruLens imports for a custom RAG application
 from trulens.core.session import TruSession
 from trulens.apps.custom import TruCustomApp
-# *** THIS IS THE FIX: Correct import path for the decorator ***
 from trulens.apps.app import instrument
 from trulens.core import Feedback, Select
 from trulens.providers.openai import OpenAI
 
 # --- RASS API Wrapper (Now an instrumented class) ---
-# By decorating the query method, we allow TruLens to see its inputs and outputs.
 class RASS_App:
     def __init__(self):
         self.engine_url = "http://localhost:8000/ask"
@@ -24,17 +31,33 @@ class RASS_App:
         and its full dictionary output (answer and context).
         """
         try:
-            # Increased top_k for better context coverage
-            response = requests.post(self.engine_url, json={"query": query, "top_k": 8})
+            # Increased timeout for potentially slower, higher-quality models
+            response = requests.post(self.engine_url, json={"query": query, "top_k": 12}, timeout=60)
             response.raise_for_status()
             data = response.json()
             
             answer = data.get("answer", "No answer found.")
-            # Extract the page_content from each source document for evaluation
-            context_list = [doc.get('text', '') for doc in data.get('source_documents', [])]
-            context = "\n".join(context_list)
+            source_docs = data.get('source_documents', [])
             
+            # --- ROBUST CONTEXT EXTRACTION ---
+            # This handles cases where docs might be structured differently or be empty.
+            context_list = []
+            if source_docs and isinstance(source_docs, list):
+                for doc in source_docs:
+                    # Check for nested text fields common in RAG responses
+                    if isinstance(doc, dict):
+                        text = doc.get('_source', {}).get('text') or doc.get('text')
+                        if text:
+                            context_list.append(str(text))
+            
+            context = "\n\n".join(context_list)
+            
+            # If after all that the context is still empty, log a warning.
+            if not context:
+                print(f"Warning: No text found in source_documents for query: '{query}'")
+
             return {"answer": answer, "context": context}
+            
         except requests.exceptions.RequestException as e:
             print(f"Error calling RASS Engine: {e}")
             return {"answer": f"Error: {e}", "context": ""}
@@ -43,25 +66,21 @@ class RASS_App:
 def setup_trulens_evaluator():
     provider = OpenAI()
 
-    # Define selectors for the instrumented 'query_with_context' method
     select_context = Select.Record.app.query_with_context.rets.context
     select_answer = Select.Record.app.query_with_context.rets.answer
 
-    # 1. Groundedness: Is the answer supported by the context?
     f_groundedness = (
         Feedback(provider.groundedness_measure_with_cot_reasons, name="Groundedness")
         .on(source=select_context)
         .on(statement=select_answer)
     )
 
-    # 2. Answer Relevance: Is the answer relevant to the user's query?
     f_answer_relevance = (
         Feedback(provider.relevance, name="Answer Relevance")
         .on_input()
         .on(select_answer)
     )
 
-    # 3. Context Relevance: Is the retrieved context relevant to the user's query?
     f_context_relevance = (
         Feedback(provider.context_relevance, name="Context Relevance")
         .on_input()
@@ -69,13 +88,12 @@ def setup_trulens_evaluator():
         .aggregate(np.mean)
     )
     
-    # The full RAG Triad for comprehensive evaluation
     return [f_groundedness, f_answer_relevance, f_context_relevance]
 
 # --- Main Evaluation Logic ---
 if __name__ == "__main__":
     if not os.environ.get("OPENAI_API_KEY"):
-        print("Error: OPENAI_API_KEY environment variable not set.")
+        print("Error: OPENAI_API_KEY environment variable not set. Check your .env file path and contents.")
         exit(1)
     
     print("Please ensure all RASS services are running...")
@@ -86,26 +104,33 @@ if __name__ == "__main__":
     feedbacks = setup_trulens_evaluator()
     rass_app = RASS_App()
 
-    # Use TruCustomApp to wrap our instrumented RASS_App class
     tru_recorder = TruCustomApp(
         rass_app,
-        app_id="RASS Engine - Optimized Reranker", # New app_id for comparison
+        app_id="Enhanced RASS - Industry Best Practices", 
         feedbacks=feedbacks
     )
 
-    # **REPLACED** - More targeted evaluation questions
+    # --- NEW: Expanded and more comprehensive evaluation questions ---
     evaluation_questions = [
-        # Question 1: Factual recall from the text
-        "How are the Martians ultimately defeated in The War of the Worlds?",
-        # Question 2: More specific factual recall
+        # 1. Simple Factual Recall
         "What weapon did the Martians use that generated immense heat?",
-        # Question 3: Descriptive question
+        # 2. Specific Factual Recall
+        "How did the Martians arrive on Earth?",
+        # 3. Nuanced Factual Recall (testing for deeper understanding)
+        "What was the ultimate cause of the Martians' defeat?",
+        # 4. Descriptive Question
         "Describe the appearance of the Martian handling-machine.",
-        # Question 4: Out-of-domain question to test for hallucinations
-        "What is the primary export of Brazil?",
+        # 5. Event-based Question
+        "What happened to the ship named the Thunder Child?",
+        # 6. Character-focused Question
+        "What role did the narrator's brother play in the story?",
+        # 7. Negative Case (In-Domain) - To test for hallucination
+        "Did the humans successfully destroy a Martian Tripod using artillery?",
+        # 8. Negative Case (Out-of-Domain) - To confirm it knows its limits
+        "What is the capital of Australia?",
     ]
 
-    print("--- Starting RASS Evaluation with Optimized Reranker ---")
+    print("--- Starting Enhanced RASS Evaluation ---")
     
     for i, question in enumerate(evaluation_questions, 1):
         print(f"\n[Question {i}/{len(evaluation_questions)}]: {question}")
@@ -113,6 +138,9 @@ if __name__ == "__main__":
         with tru_recorder as recording:
             response_dict = rass_app.query_with_context(question)
             print(f"[Answer]: {response_dict['answer'][:200]}...")
+        
+        print("Waiting 5 seconds to avoid rate limiting...")
+        time.sleep(5) # Wait for 5 seconds before the next question
 
     print("\n--- Evaluation Complete ---")
     
