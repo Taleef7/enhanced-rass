@@ -29,6 +29,7 @@ const {
   RASS_ENGINE_PORT,
   DEFAULT_K_OPENSEARCH_HITS,
   EMBED_DIM,
+  search: { topK: DEFAULT_TOP_K },
 } = config;
 // --- End Configuration Loading ---
 
@@ -209,7 +210,9 @@ Generate the JSON array for the user query now.`;
 // REFACTORED 'ask' function to support both streaming and non-streaming
 async function ask(query, top_k_param, stream = false, res = null) {
   if (!query?.trim()) throw new Error("Empty query");
-  const top_k_for_generation = top_k_param || 5;
+  // if the API caller passed in `top_k_param`, use that; otherwise fall back to our config
+  const top_k_for_generation =
+    typeof top_k_param === "number" ? top_k_param : DEFAULT_TOP_K;
   console.log(`[Ask] Query: "${query}", Streaming: ${stream}`);
 
   // --- Step 1: Retrieval (HyDE, Plan, Execute, Rerank) ---
@@ -352,6 +355,7 @@ function writeSSE(res, data) {
             LLM_PROVIDER === "openai" ? OPENAI_MODEL_NAME : GEMINI_MODEL_NAME,
           ...data,
         });
+  console.log("[RASS->SSE]", chunk);
   res.write(`data: ${chunk}\n\n`);
 }
 

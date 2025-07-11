@@ -11,6 +11,8 @@ const FormData = require("form-data");
 const fs = require("fs");
 const path = require("path");
 
+const DEFAULT_TOP_K = Number(process.env.MCP_DEFAULT_TOP_K) || 10;
+
 // --- Express App Setup ---
 const app = express();
 app.use(cors()); // Use CORS middleware to allow requests from any origin
@@ -20,14 +22,14 @@ const PORT = process.env.MCP_SERVER_PORT || 8080;
 // --- START: NEW LibreChat OpenAI-Compatible Endpoint ---
 app.post("/api/chat/completions", async (req, res) => {
   // Extract the last user message from the request body
-  const userMessages = req.body.messages.filter((m) => m.role === 'user');
+  const userMessages = req.body.messages.filter((m) => m.role === "user");
   const lastUserMessage = userMessages[userMessages.length - 1];
 
   let query;
   if (Array.isArray(lastUserMessage?.content)) {
     // Handles the expected case for text messages
     query = lastUserMessage.content[0]?.text;
-  } else if (typeof lastUserMessage?.content === 'string') {
+  } else if (typeof lastUserMessage?.content === "string") {
     // Handles the case where content might just be a string
     query = lastUserMessage.content;
   } else {
@@ -48,7 +50,7 @@ app.post("/api/chat/completions", async (req, res) => {
     // Use axios to get a readable stream from the RASS engine
     const response = await axios.post(
       rassEngineStreamUrl,
-      { query: query, top_k: 5 }, // We can pass other params like top_k if needed
+      { query: query, top_k: DEFAULT_TOP_K }, // We can pass other params like top_k if needed
       { responseType: "stream" }
     );
 
@@ -59,6 +61,11 @@ app.post("/api/chat/completions", async (req, res) => {
     res.flushHeaders();
 
     // Pipe the stream from the RASS engine directly to our response object.
+    response.data.on("data", (chunk) => {
+      // Log the raw chunk we’re about to forward
+      console.log("[Proxy → client]", chunk.toString());
+    });
+
     // This efficiently forwards the data as it arrives.
     response.data.pipe(res);
 
