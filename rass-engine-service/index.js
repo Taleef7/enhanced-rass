@@ -6,8 +6,6 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const fs = require("fs");
 const yaml = require("js-yaml");
 const { v4: uuidv4 } = require("uuid"); // Import uuid
-
-const { rerank } = require("./reranker.js");
 const { runSteps } = require("./executePlan");
 const { generateHypotheticalDocument } = require("./hydeGenerator.js");
 
@@ -274,14 +272,33 @@ async function ask(query, top_k_param, stream = false, res = null) {
   const initial_documents = parentDocs
     .map((h) => ({ text: h._source?.text, metadata: h._source?.metadata }))
     .filter((doc) => doc.text?.trim());
-  const reranked_documents = await rerank(query, initial_documents);
-  const source_documents = reranked_documents.slice(0, top_k_for_generation);
+  const source_documents = initial_documents.slice(0, top_k_for_generation);
   console.log(
-    `[Generation] Generating with ${source_documents.length} reranked documents...`
+    `[Generation] Generating with ${source_documents.length} documents...`
   );
 
   const context = source_documents.map((doc) => doc.text).join("\n\n---\n\n");
-  const generationPrompt = `You are a knowledgeable assistant. Use the provided context to answer the user's question accurately and comprehensively...\n\nContext:\n${context}\n\nQuestion: ${query}\n\nAnswer:`;
+  const generationPrompt = `
+You are a knowledgeable assistant whose sole job is to answer the user's question by **only** using the information given in the Context. Do **not** hallucinate or bring in outside knowledge.
+
+Guidelines:
+1. Provide a concise, accurate answer in ideally 2–3 paragraphs or as per the users' request.
+2. If the Context does not contain enough information to answer, reply exactly: "I don’t have enough information to answer that question."
+3. If the Context contains information that is not relevant to the question, do not include it in your answer.
+4. If the Context contains multiple documents, synthesize the information into a coherent answer.
+5. If the question is about a specific document, focus on that document's content.
+6. If the question is about a general topic, use the most relevant documents to provide a comprehensive answer.
+7. If the question is about a specific event or fact, ensure your answer is directly supported by the Context.
+
+
+Context:
+${context}
+
+Question:
+${query}
+
+Answer:
+`.trim();
 
   // --- Step 2: Generation (Streaming or Non-Streaming) ---
   if (!stream) {
