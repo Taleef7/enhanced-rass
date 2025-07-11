@@ -29,7 +29,7 @@ const {
   RASS_ENGINE_PORT,
   DEFAULT_K_OPENSEARCH_HITS,
   EMBED_DIM,
-  search: { topK: DEFAULT_TOP_K },
+  search: { DEFAULT_TOP_K },
 } = config;
 // --- End Configuration Loading ---
 
