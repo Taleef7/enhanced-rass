@@ -54,12 +54,12 @@ class RASS_App:
             
             # If after all that the context is still empty, log a warning.
             if not context:
-                print(f"Warning: No text found in source_documents for query: '{query}'")
+                logging.warning(f"No text found in source_documents for query: '{query}'")
 
             return {"answer": answer, "context": context}
             
         except requests.exceptions.RequestException as e:
-            print(f"Error calling RASS Engine: {e}")
+            logging.error(f"Error calling RASS Engine: {e}")
             return {"answer": f"Error: {e}", "context": ""}
 
 # --- TruLens Setup (Upgraded for the RAG Triad) ---
