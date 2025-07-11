@@ -334,7 +334,7 @@ app.post("/upload", upload.array("files"), async (req, res) => {
         });
       }
 
-      const BATCH_SIZE = 2000;
+      const BATCH_SIZE = parseInt(process.env.BATCH_SIZE, 10) || 2000;
 
       if (childChunks.length > 0) {
         console.log(
