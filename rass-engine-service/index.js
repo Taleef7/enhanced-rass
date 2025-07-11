@@ -103,6 +103,20 @@ async function embedText(text) {
   }
 }
 
+/**
+ * Extracts the first JSON array in a string and parses it.
+ * Throws if it can’t find a bracketed array or parse it.
+ */
+function parseJsonArray(raw) {
+  const firstBracket = raw.indexOf("[");
+  const lastBracket = raw.lastIndexOf("]");
+  if (firstBracket < 0 || lastBracket < 0) {
+    throw new Error("No JSON array found in planner response");
+  }
+  const json = raw.slice(firstBracket, lastBracket + 1);
+  return JSON.parse(json);
+}
+
 // Enhanced search plan creation function
 async function createEnhancedSearchPlan(
   llmClient,
@@ -140,11 +154,12 @@ Generate the JSON array for the user query now.`;
         max_tokens: 200,
       });
       const response = completion.choices[0].message.content;
-      searchTerms = JSON.parse(response);
+      // safe-parse out stray markdown fences, stray backticks, etc.
+      searchTerms = parseJsonArray(response);
     } else {
       const result = await llmClient.generateContent(planningPrompt);
       const response = result.response.text();
-      searchTerms = JSON.parse(response);
+      searchTerms = parseJsonArray(response);
     }
 
     // Create search plan from terms
@@ -168,7 +183,7 @@ Generate the JSON array for the user query now.`;
     return plan;
   } catch (error) {
     console.warn(
-      `[Search Plan] Failed to create enhanced plan: ${error.message}`
+      `[Search Plan] Could not parse planner JSON (${error.message}), falling back.`
     );
 
     // Fallback to manual decomposition
