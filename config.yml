@@ -23,7 +23,7 @@ OPENAI_EMBED_MODEL_NAME: "text-embedding-3-large"
 GEMINI_EMBED_MODEL_NAME: "text-embedding-004"
 # LLM (Generator) Models
 OPENAI_MODEL_NAME: "gpt-4.1-nano"
-GEMINI_MODEL_NAME: "gemini-2.5-flash"
+GEMINI_MODEL_NAME: "gemini-2.0-flash"
 # Reranker Model
 RERANKER_MODEL_NAME: "cross-encoder/ms-marco-MiniLM-L6-v2"
 
@@ -40,7 +40,7 @@ PARENT_CHUNK_OVERLAP: 500
 CHILD_CHUNK_SIZE: 200
 CHILD_CHUNK_OVERLAP: 100
 # Initial candidate pool size for reranking
-DEFAULT_K_OPENSEARCH_HITS: 64
+DEFAULT_K_OPENSEARCH_HITS: 96
 # Vector dimension for OpenSearch index
 EMBED_DIM: 768
 

@@ -333,11 +333,22 @@ app.post("/upload", upload.array("files"), async (req, res) => {
           childChunks.push(doc);
         });
       }
+
+      const BATCH_SIZE = parseInt(process.env.BATCH_SIZE, 10) || 2000;
+
       if (childChunks.length > 0) {
-        await OpenSearchVectorStore.fromDocuments(childChunks, embeddings, {
-          client: openSearchClient,
-          indexName: OPENSEARCH_INDEX_NAME,
-        });
+        console.log(
+          `[Indexing] ${childChunks.length} child chunks in batches of ${BATCH_SIZE}`
+        );
+        for (let i = 0; i < childChunks.length; i += BATCH_SIZE) {
+          const batch = childChunks.slice(i, i + BATCH_SIZE);
+          const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+          console.log(`  → Bulk batch #${batchNum}: ${batch.length} docs`);
+          await OpenSearchVectorStore.fromDocuments(batch, embeddings, {
+            client: openSearchClient,
+            indexName: OPENSEARCH_INDEX_NAME,
+          });
+        }
       }
       console.log(
         `[Success] Finished ${file.originalname}: ${parentChunks.length} parent chunks, ${childChunks.length} child chunks.`
