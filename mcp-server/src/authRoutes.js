@@ -7,8 +7,16 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const router = Router();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-key-that-is-long-and-random';
+const JWT_SECRET = process.env.JWT_SECRET;
 
+if (!JWT_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET must be set in production environments.');
+  } else {
+    console.warn('Warning: JWT_SECRET is not set. Using an insecure default value for development.');
+    JWT_SECRET = 'insecure-default-secret-for-dev';
+  }
+}
 // === POST /api/auth/register ===
 router.post('/register', async (req, res) => {
   // ... (The logic inside this function remains exactly the same)
