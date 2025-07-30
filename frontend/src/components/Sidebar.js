@@ -8,7 +8,7 @@ import ChatIcon from '@mui/icons-material/Chat';
 import DocumentIcon from '@mui/icons-material/Description';
 import LogoutIcon from '@mui/icons-material/Logout';
 
-const DRAWER_WIDTH = 200;
+import { DRAWER_WIDTH } from '../../constants/layout';
 
 const Sidebar = ({ selectedTab, setSelectedTab, uploadedDocuments, onLogout }) => {
   const menuItems = [
