@@ -2,11 +2,11 @@ version: '3.8'
 
 # Defines a reusable configuration block for environment variables
 # This will be used by services that need access to the config file values
-x-environment: &default-env
+x-environment:
   # Secrets are loaded from the root .env file by Docker Compose automatically
+  &default-env
   OPENAI_API_KEY: ${OPENAI_API_KEY}
   GEMINI_API_KEY: ${GEMINI_API_KEY}
-  
   # Non-secret configs are now read from the mounted config.yml
   # The services will need to be updated to read these from env vars
   # which we will populate below.
@@ -36,7 +36,7 @@ services:
     networks:
       - rass_network
     healthcheck:
-      test: ["CMD-SHELL", "curl -sS -k http://localhost:9200/_cluster/health | grep -vq '\"status\":\"red\"'"]
+      test: [ "CMD-SHELL", "curl -sS -k http://localhost:9200/_cluster/health | grep -vq '\"status\":\"red\"'" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -51,7 +51,7 @@ services:
     networks:
       - rass_network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -96,13 +96,14 @@ services:
     depends_on:
       opensearch:
         condition: service_healthy
-    links: # <-- ADD THIS SECTION
+    links:
+      # <-- ADD THIS SECTION
       - opensearch:opensearch_node # <-- ADD THIS LINE
     networks:
       - rass_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8000" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -127,13 +128,35 @@ services:
     environment:
       - MCP_DEFAULT_TOP_K=50
 
+  db:
+    image: postgres:15
+    container_name: postgres_db_node # I've given it a specific name
+    restart: always
+    environment:
+      POSTGRES_USER: rass_user
+      POSTGRES_PASSWORD: rass_password
+      POSTGRES_DB: rass_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - rass_network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U rass_user -d rass_db" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 networks:
-  rass_network: 
-    name: shared_rass_network 
+  rass_network:
+    name: shared_rass_network
     external: true
 
 volumes:
   opensearch-data:
     driver: local
   redis-data:
+    driver: local
+  postgres_data:
     driver: local
