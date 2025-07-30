@@ -270,7 +270,11 @@ async function ask(query, top_k_param, stream = false, res = null) {
   }
 
   const initial_documents = parentDocs
-    .map((h) => ({ text: h._source?.text, metadata: h._source?.metadata }))
+    .map((h) => ({ 
+      text: h._source?.text, 
+      metadata: h._source?.metadata,
+      initial_score: h._score // Keep the score
+    }))
     .filter((doc) => doc.text?.trim());
   const source_documents = initial_documents.slice(0, top_k_for_generation);
   console.log(
