@@ -115,7 +115,7 @@ app.post("/api/embed-upload", upload.single("file"), async (req, res) => {
         ...form.getHeaders(),
       },
       // It can take a while to embed large docs
-      timeout: 300000, // 5 minutes
+      timeout: process.env.EMBEDDING_SERVICE_TIMEOUT || 300000, // 5 minutes
     });
 
     console.log("[Upload Proxy] File forwarded to embedding-service successfully.");
