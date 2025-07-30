@@ -57,7 +57,7 @@ function MainLayout() {
             ) : (
               <DocumentManager
                 uploadedDocuments={uploadedDocuments}
-                onDocument-upload={handleDocumentUpload}
+                onDocumentUpload={handleDocumentUpload}
               />
             )}
           </motion.div>
