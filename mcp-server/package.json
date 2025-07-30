@@ -19,5 +19,9 @@
     "js-yaml": "^4.1.0",
     "multer": "^2.0.2",
     "zod": "^3.25.56"
+  },
+  "devDependencies": {
+    "@prisma/client": "^6.13.0",
+    "prisma": "^6.13.0"
   }
 }

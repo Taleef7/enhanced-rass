@@ -11,6 +11,7 @@ const FormData = require("form-data");
 const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
+const authRoutes = require('./src/authRoutes.js');
 
 const DEFAULT_TOP_K = Number(process.env.MCP_DEFAULT_TOP_K) || 10;
 const storage = multer.memoryStorage();
@@ -282,6 +283,9 @@ app.post("/mcp", async (req, res) => {
     }
   }
 });
+
+// --- Auth Routes ---
+app.use('/api/auth', authRoutes);
 
 // --- Health Check and Server Start ---
 app.get("/", (req, res) => {
