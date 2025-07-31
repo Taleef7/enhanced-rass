@@ -4,7 +4,7 @@ import { AppBar, Toolbar, Typography, Box } from '@mui/material';
 import { motion } from 'framer-motion';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 
-import { DRAWER_WIDTH } from '../constants';
+import { DRAWER_WIDTH } from '../constants/layout';
 
 const Header = () => {
   return (
