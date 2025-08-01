@@ -37,7 +37,8 @@
           activeChat.documents,
           (textChunk) => { // onTextChunk
             // Use the new context function to append text to the last message
-            updateLastMessage(activeChat.id, { text: (activeChat.messages[activeChat.messages.length - 1].text || '') + textChunk });
+            const lastMessage = activeChat.messages[activeChat.messages.length - 1];
+            updateLastMessage(activeChat.id, { text: (lastMessage.text || '') + textChunk });
           },
           (sources) => { // onSources
             // Use the new context function to add sources to the last message
