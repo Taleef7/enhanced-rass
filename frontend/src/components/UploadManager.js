@@ -40,7 +40,6 @@ const getFileIcon = (fileName) => {
   const [messageType, setMessageType] = useState('info');
   const fileInputRef = useRef(null);
   const dropZoneRef = useRef(null);
-  const progressIntervalRef = useRef(null);
 
   const handleFileSelect = (selectedFile) => {
     if (selectedFile) {
