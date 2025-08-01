@@ -1,62 +1,37 @@
+// In frontend/src/theme.js
 import { createTheme } from '@mui/material';
 
 export const darkTheme = createTheme({
   palette: {
     mode: 'dark',
     primary: {
-      main: '#6366f1', // Indigo
-      light: '#818cf8',
-      dark: '#4f46e5',
-    },
-    secondary: {
-      main: '#ec4899', // Pink
-      light: '#f472b6',
-      dark: '#db2777',
+      main: '#8ab4f8', // Gemini's blue for interactive elements
     },
     background: {
-      default: '#0f0f23',
-      paper: '#1a1a2e',
+      default: '#131314', // Gemini's main background
+      paper: '#1e1f20',   // Gemini's card/sidebar background
     },
     text: {
-      primary: '#ffffff',
-      secondary: '#a1a1aa',
+      primary: '#e8eaed',   // Light grey for primary text
+      secondary: '#969ba1', // Dimmer grey for secondary text
     },
-    divider: '#2d2d44',
+    divider: 'rgba(255, 255, 255, 0.12)',
   },
   typography: {
     fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
-    h1: { fontWeight: 700 },
-    h2: { fontWeight: 600 },
-    h3: { fontWeight: 600 },
-    h4: { fontWeight: 600 },
-    h5: { fontWeight: 600 },
-    h6: { fontWeight: 600 },
+    h4: { fontWeight: 500 },
+    h6: { fontWeight: 500 },
   },
   shape: {
-    borderRadius: 12,
+    borderRadius: 8,
   },
   components: {
-    MuiPaper: {
+    MuiButton: {
       styleOverrides: {
-        root: {
-          backgroundImage: 'none',
-        },
+        root: { textTransform: 'none', borderRadius: '100px' },
       },
     },
-    MuiAppBar: {
-      styleOverrides: {
-        root: {
-          backgroundImage: 'none',
-        },
-      },
-    },
-    MuiDrawer: {
-      styleOverrides: {
-        paper: {
-          backgroundImage: 'none',
-          borderRight: '1px solid #2d2d44',
-        },
-      },
-    },
+    MuiPaper: { styleOverrides: { root: { backgroundImage: 'none' } } },
+    MuiAppBar: { styleOverrides: { root: { backgroundImage: 'none' } } },
   },
 });

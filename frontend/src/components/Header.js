@@ -1,44 +1,37 @@
 // In frontend/src/components/Header.js
 import React from 'react';
-import { AppBar, Toolbar, Typography, Box } from '@mui/material';
-import { motion } from 'framer-motion';
-import PsychologyIcon from '@mui/icons-material/Psychology';
+import { AppBar, Toolbar, Typography, Box, IconButton } from '@mui/material';
+import MenuIcon from '@mui/icons-material/Menu';
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import FolderIcon from '@mui/icons-material/Folder';
 
-import { DRAWER_WIDTH } from '../constants';
-
-const Header = () => {
+const Header = ({ onToggleSidebar, onToggleDocumentSidebar }) => {
   return (
     <AppBar
       position="fixed"
-      elevation={0}
+      // elevation={0}
       sx={{
         zIndex: (theme) => theme.zIndex.drawer + 1,
         borderBottom: 1,
         borderColor: 'divider',
-        width: `calc(100% - ${DRAWER_WIDTH}px)`,
-        left: DRAWER_WIDTH,
-        backgroundImage: 'none',
+        backgroundColor: 'background.default',
       }}
     >
-      <Toolbar>
-        <motion.div
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ duration: 0.5, type: "spring" }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <PsychologyIcon sx={{ fontSize: 28, color: 'primary.main' }} />
-            <Typography variant="h6" sx={{
-              fontWeight: 700,
-              background: 'linear-gradient(45deg, #6366f1 30%, #ec4899 90%)',
-              backgroundClip: 'text',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent'
-            }}>
-              Enhanced RASS
-            </Typography>
-          </Box>
-        </motion.div>
+      <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <IconButton onClick={onToggleSidebar} edge="start" color="inherit">
+            <MenuIcon />
+          </IconButton>
+          <IconButton onClick={onToggleDocumentSidebar} color="inherit">
+            <FolderIcon />
+          </IconButton>
+          <Typography variant="h6">Enhanced RASS</Typography>
+        </Box>
+        <Box>
+          <IconButton color="inherit">
+            <AccountCircleIcon />
+          </IconButton>
+        </Box>
       </Toolbar>
     </AppBar>
   );

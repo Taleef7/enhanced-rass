@@ -1,10 +1,14 @@
 import React, { useState, useRef } from 'react';
 import { Box, Typography, Tooltip, IconButton, TextField, Chip } from '@mui/material';
 import { AttachFile as AttachFileIcon, Send as SendIcon, Stop as StopIcon } from '@mui/icons-material';
+import { useChat } from '../context/ChatContext';
+import { uploadFile } from '../apiClient';
 
-const ChatInput = ({ query, setQuery, onSend, onFileUpload, isTyping, uploadedDocuments }) => {
+const ChatInput = ({ query, setQuery, onSend, isTyping  }) => {
     const [isDragging, setIsDragging] = useState(false);
     const fileInputRef = useRef(null);
+    const { activeChat, addDocumentToChat } = useChat();
+    const uploadedDocuments = activeChat ? activeChat.documents : [];
   
     const handleKeyPress = (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -13,9 +17,20 @@ const ChatInput = ({ query, setQuery, onSend, onFileUpload, isTyping, uploadedDo
       }
     };
   
-    const handleFileSelect = (file) => {
-      if (file) {
-        onFileUpload(file);
+    const handleFileSelect = async (file) => {
+      if (file && activeChat) {
+          try {
+              await uploadFile(file); // Upload the file via API
+              // On success, add document info to the current chat's state
+              addDocumentToChat(activeChat.id, {
+                  name: file.name,
+                  size: file.size,
+                  type: file.type,
+              });
+          } catch (error) {
+              console.error("File upload failed in ChatInput:", error);
+              // Optionally, show an error to the user
+          }
       }
     };
   

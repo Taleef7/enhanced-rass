@@ -40,11 +40,11 @@ export const uploadFile = (file) => {
     });
   };
   
-  export const streamQuery = async (query, onTextChunk, onSources, signal) => {
+  export const streamQuery = async (query, documents = [], onTextChunk, onSources, signal) => {
     const response = await fetch('/api/stream-ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({ query, documents: documents.map(d => d.name) }),
       signal,
     });
   
