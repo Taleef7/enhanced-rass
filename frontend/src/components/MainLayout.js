@@ -1,70 +1,68 @@
-// In frontend/src/components/MainLayout.js (Refactored)
+// In frontend/src/components/MainLayout.js
 import React, { useState } from 'react';
+import { ChatProvider } from '../context/ChatContext';
+import { ThemeProvider, CssBaseline, Box, Toolbar } from '@mui/material';
 import { useAuth } from '../context/AuthContext';
-import { ThemeProvider, CssBaseline, Box } from '@mui/material';
-import { motion } from 'framer-motion';
-import { darkTheme } from '../theme'; // Import the theme
-import Header from './Header'; // Import new components
-import Sidebar from './Sidebar'; // Import new components
+import { darkTheme } from '../theme';
+import Header from './Header';
+import Sidebar from './Sidebar';
 import Chat from './Chat';
-import DocumentManager from './DocumentManager';
+import DocumentPanel from './DocumentPanel';
+import { DRAWER_WIDTH } from '../constants/layout';
 
-const DRAWER_WIDTH = 280;
+const MainLayout = () => {
+  const { logout } = useAuth();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isDocumentPanelOpen, setIsDocumentPanelOpen] = useState(false);
 
-function MainLayout() {
-  const [selectedTab, setSelectedTab] = useState('chat');
-  const [uploadedDocuments, setUploadedDocuments] = useState([]);
-  const { logout } = useAuth(); // <-- 2. Get the logout function
-
-  const handleDocumentUpload = (document) => {
-    setUploadedDocuments(prev => [...prev, document]);
+  const handleToggleSidebar = () => {
+    setIsSidebarOpen(!isSidebarOpen);
   };
+
+  const handleToggleDocumentPanel = () => setIsDocumentPanelOpen(!isDocumentPanelOpen);
 
   return (
     <ThemeProvider theme={darkTheme}>
       <CssBaseline />
+      <ChatProvider>
       <Box sx={{ display: 'flex', height: '100vh' }}>
-        <Header />
-        <Sidebar
-          selectedTab={selectedTab}
-          setSelectedTab={setSelectedTab}
-          uploadedDocuments={uploadedDocuments}
-          onLogout={logout}
-        />
-        {/* Main Content */}
+        <Header onToggleSidebar={handleToggleSidebar} onToggleDocumentSidebar={handleToggleDocumentPanel} />
+        <Sidebar isSidebarOpen={isSidebarOpen} onLogout={logout} />
+
         <Box
           component="main"
           sx={{
             flexGrow: 1,
-            ml: `${DRAWER_WIDTH}px`,
-            pt: '64px',
-            height: '100vh',
-            overflow: 'hidden'
+            p: 3,
+            transition: (theme) => theme.transitions.create('margin', {
+              easing: theme.transitions.easing.sharp,
+              duration: theme.transitions.duration.leavingScreen,
+            }),
+            marginLeft: `-${DRAWER_WIDTH}px`,
+            ...(isSidebarOpen && {
+              transition: (theme) => theme.transitions.create('margin', {
+                easing: theme.transitions.easing.easeOut,
+                duration: theme.transitions.duration.enteringScreen,
+              }),
+              marginLeft: 0,
+            }),
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
-          <motion.div
-            key={selectedTab} // Add key to re-trigger animation on tab change
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.3 }}
-            style={{ height: '100%' }}
-          >
-            {selectedTab === 'chat' ? (
-              <Chat
-                uploadedDocuments={uploadedDocuments}
-                onDocumentUpload={handleDocumentUpload}
-              />
-            ) : (
-              <DocumentManager
-                uploadedDocuments={uploadedDocuments}
-                onDocumentUpload={handleDocumentUpload}
-              />
-            )}
-          </motion.div>
+          <Toolbar /> {/* This is a crucial spacer */}
+          <Chat />
         </Box>
+        {/* 5. Render the new DocumentPanel */}
+        <DocumentPanel
+            isOpen={isDocumentPanelOpen}
+            onClose={() => setIsDocumentPanelOpen(false)}
+          />
       </Box>
+      </ChatProvider>
     </ThemeProvider>
   );
-}
+};
 
 export default MainLayout;
