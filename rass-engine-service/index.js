@@ -377,7 +377,7 @@ app.post("/stream-ask", async (req, res) => {
     console.log("---------------------------------");
 
     // Call ask function in streaming mode
-    await ask(query, top_k, stream = true, res, userId, documents);
+    await ask(query, top_k, true, res, userId, documents);
 
     res.on("close", () => {
       console.log("[API /stream-ask] Client closed connection.");
