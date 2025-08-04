@@ -24,5 +24,5 @@ RUN npx prisma generate
 # Your app binds to port 8080
 EXPOSE 8080
 
-# Define the command to run your app
-CMD [ "node", "index.js" ]
+# Define the command to run your app - with database migration
+CMD ["sh", "-c", "npx prisma migrate deploy && node index.js"]
