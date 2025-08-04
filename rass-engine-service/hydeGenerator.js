@@ -17,17 +17,12 @@ async function generateHypotheticalDocument(
   console.log(`[HyDE] Generating hypothetical document for query: "${query}"`);
 
   // Enhanced prompt that encourages more detailed and contextual responses
-  const prompt = `You are tasked with writing a detailed, informative passage that would perfectly answer the following question. Write as if you are an expert providing a comprehensive answer with specific details, examples, and context.
+  const prompt = `Based on the context of a user's documents, write a short, hypothetical passage that perfectly answers the following user question.
+The passage should sound like it was extracted directly from one of the user's documents. Do not use general knowledge.
 
-Question: "${query}"
+User Question: "${query}"
 
-Write a detailed passage (150-250 words) that:
-- Directly answers the question with specific information
-- Includes relevant details and context
-- Uses terminology and style consistent with authoritative sources
-- Provides concrete examples or evidence where appropriate
-
-Passage:`;
+Hypothetical Passage:`;
 
   try {
     if (llmProvider === "openai") {
