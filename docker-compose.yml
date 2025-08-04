@@ -124,9 +124,12 @@ services:
     depends_on:
       rass-engine-service:
         condition: service_healthy
+      db:
+        condition: service_healthy
     restart: unless-stopped
     environment:
       - MCP_DEFAULT_TOP_K=50
+      - DATABASE_URL=postgresql://rass_user:rass_password@db:5432/rass_db
 
   db:
     image: postgres:15

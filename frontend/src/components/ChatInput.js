@@ -1,49 +1,59 @@
 import React, { useState, useRef } from 'react';
-import { Box, Typography, Tooltip, IconButton, TextField, Chip } from '@mui/material';
+import { Box, Typography, Tooltip, IconButton, TextField, Chip, CircularProgress } from '@mui/material';
 import { AttachFile as AttachFileIcon, Send as SendIcon, Stop as StopIcon } from '@mui/icons-material';
 import { useChat } from '../context/ChatContext';
 import { uploadFile } from '../apiClient';
 
-const ChatInput = ({ query, setQuery, onSend, isTyping  }) => {
+const ChatInput = ({ query, setQuery, onSend, isTyping }) => {
     const [isDragging, setIsDragging] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
     const fileInputRef = useRef(null);
-    const { activeChat, addDocumentToChat } = useChat();
+    // --- 1. THE FIX: Get addMessageToChat from the context ---
+    const { activeChat, addDocumentToChat, addMessageToChat } = useChat();
     const uploadedDocuments = activeChat ? activeChat.documents : [];
-  
+
     const handleKeyPress = (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         onSend();
       }
     };
-  
+
     const handleFileSelect = async (file) => {
-      if (file && activeChat) {
-          try {
-              await uploadFile(file); // Upload the file via API
-              // On success, add document info to the current chat's state
-              addDocumentToChat(activeChat.id, {
-                  name: file.name,
-                  size: file.size,
-                  type: file.type,
-              });
-          } catch (error) {
-              console.error("File upload failed in ChatInput:", error);
-              // Optionally, show an error to the user
-          }
+      if (!file || !activeChat) return;
+
+      setIsUploading(true);
+      try {
+        await uploadFile(file);
+        const newDoc = { name: file.name, size: file.size, type: file.type };
+        addDocumentToChat(activeChat.id, newDoc);
+        // --- 2. THE FIX: Use the function to add a system message ---
+        addMessageToChat(activeChat.id, {
+          sender: 'system',
+          text: `📄 Document "${file.name}" has been successfully uploaded and is ready for use in this chat.`,
+        });
+      } catch (error) {
+        console.error("File upload failed in ChatInput:", error);
+        // --- 3. THE FIX: Also use it for error messages ---
+        addMessageToChat(activeChat.id, {
+          sender: 'system',
+          text: `Error uploading "${file.name}": ${error.message}`,
+        });
+      } finally {
+        setIsUploading(false);
       }
     };
-  
+
     const handleDragOver = (e) => {
       e.preventDefault();
       setIsDragging(true);
     };
-  
+
     const handleDragLeave = (e) => {
       e.preventDefault();
       setIsDragging(false);
     };
-  
+
     const handleDrop = (e) => {
       e.preventDefault();
       setIsDragging(false);
@@ -52,7 +62,7 @@ const ChatInput = ({ query, setQuery, onSend, isTyping  }) => {
         handleFileSelect(files[0]);
       }
     };
-  
+
     return (
       <Box
         sx={{
@@ -88,12 +98,12 @@ const ChatInput = ({ query, setQuery, onSend, isTyping  }) => {
             )}
           </Box>
         )}
-  
+
         {/* Input Area */}
-        <Box 
-          sx={{ 
-            display: 'flex', 
-            gap: 1, 
+        <Box
+          sx={{
+            display: 'flex',
+            gap: 1,
             alignItems: 'flex-end',
             border: isDragging ? 2 : 1,
             borderColor: isDragging ? 'primary.main' : 'divider',
@@ -111,11 +121,12 @@ const ChatInput = ({ query, setQuery, onSend, isTyping  }) => {
               size="small"
               onClick={() => fileInputRef.current?.click()}
               sx={{ color: 'text.secondary' }}
+              disabled={isUploading || isTyping}
             >
-              <AttachFileIcon />
+              {isUploading ? <CircularProgress size={24} /> : <AttachFileIcon />}
             </IconButton>
           </Tooltip>
-          
+
           <input
             ref={fileInputRef}
             type="file"
@@ -123,7 +134,7 @@ const ChatInput = ({ query, setQuery, onSend, isTyping  }) => {
             style={{ display: 'none' }}
             accept=".pdf,.txt,.md,.doc,.docx"
           />
-  
+
           <TextField
             fullWidth
             multiline
@@ -133,7 +144,7 @@ const ChatInput = ({ query, setQuery, onSend, isTyping  }) => {
             onKeyPress={handleKeyPress}
             placeholder="Ask anything about your documents..."
             variant="standard"
-            disabled={isTyping}
+            disabled={isTyping || isUploading}
             sx={{
               '& .MuiInput-root': {
                 fontSize: '1rem',
@@ -144,28 +155,30 @@ const ChatInput = ({ query, setQuery, onSend, isTyping  }) => {
               }
             }}
           />
-          
+
           <Tooltip title={isTyping ? "Stop generation" : "Send message"}>
-            <IconButton
-              onClick={isTyping ? null : onSend}
-              disabled={!query.trim() && !isTyping}
-              color={isTyping ? "error" : "primary"}
-              sx={{
-                width: 40,
-                height: 40,
-                backgroundColor: isTyping ? 'error.main' : 'primary.main',
-                color: 'white',
-                '&:hover': {
-                  backgroundColor: isTyping ? 'error.dark' : 'primary.dark'
-                },
-                '&:disabled': {
-                  backgroundColor: 'action.disabledBackground',
-                  color: 'action.disabled'
-                }
-              }}
-            >
-              {isTyping ? <StopIcon /> : <SendIcon />}
-            </IconButton>
+            <span>
+              <IconButton
+                onClick={isTyping ? null : onSend}
+                disabled={!query.trim() || isTyping || isUploading}
+                color={isTyping ? "error" : "primary"}
+                sx={{
+                  width: 40,
+                  height: 40,
+                  backgroundColor: isTyping ? 'error.main' : 'primary.main',
+                  color: 'white',
+                  '&:hover': {
+                    backgroundColor: isTyping ? 'error.dark' : 'primary.dark'
+                  },
+                  '&:disabled': {
+                    backgroundColor: 'action.disabledBackground',
+                    color: 'action.disabled'
+                  }
+                }}
+              >
+                {isTyping ? <StopIcon /> : <SendIcon />}
+              </IconButton>
+            </span>
           </Tooltip>
         </Box>
       </Box>

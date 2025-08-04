@@ -11,7 +11,8 @@ const FormData = require("form-data");
 const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
-const authRoutes = require('./src/authRoutes.js');
+const authRoutes = require("./src/authRoutes.js");
+const authMiddleware = require("./src/authMiddleware.js");
 
 const DEFAULT_TOP_K = Number(process.env.MCP_DEFAULT_TOP_K) || 10;
 const storage = multer.memoryStorage();
@@ -95,86 +96,102 @@ app.post("/api/chat/completions", async (req, res) => {
 // --- END: NEW LibreChat OpenAI-Compatible Endpoint ---
 
 // --- START: NEW File Upload Endpoint ---
-app.post("/api/embed-upload", upload.single("file"), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: "No file uploaded." });
+app.post(
+  "/api/embed-upload",
+  authMiddleware,
+  upload.single("file"),
+  async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded." });
+    }
+
+    console.log(`[Upload Proxy] Received file: ${req.file.originalname}`);
+
+    try {
+      const form = new FormData();
+      // The embedding-service expects the field name to be 'files'
+      form.append("files", req.file.buffer, {
+        filename: req.file.originalname,
+        contentType: req.file.mimetype,
+      });
+
+      // We must forward the userId to the embedding-service.
+      form.append("userId", req.user.userId); // Get from authenticated user
+
+      const embeddingServiceUrl = "http://embedding-service:8001/upload";
+      const response = await axios.post(embeddingServiceUrl, form, {
+        headers: {
+          ...form.getHeaders(),
+        },
+        // It can take a while to embed large docs
+        timeout: process.env.EMBEDDING_SERVICE_TIMEOUT || 300000, // 5 minutes
+      });
+
+      console.log(
+        "[Upload Proxy] File forwarded to embedding-service successfully."
+      );
+      // Forward the success response from the embedding service to the client
+      res.status(response.status).json(response.data);
+    } catch (e) {
+      console.error(
+        "[Upload Proxy] Error forwarding file to embedding-service:",
+        e.message
+      );
+      res.status(500).json({
+        error: "Failed to upload and embed file.",
+        details: e.message,
+      });
+    }
   }
-
-  console.log(`[Upload Proxy] Received file: ${req.file.originalname}`);
-
-  try {
-    const form = new FormData();
-    // The embedding-service expects the field name to be 'files'
-    form.append("files", req.file.buffer, {
-      filename: req.file.originalname,
-      contentType: req.file.mimetype,
-    });
-
-    const embeddingServiceUrl = "http://embedding-service:8001/upload";
-    const response = await axios.post(embeddingServiceUrl, form, {
-      headers: {
-        ...form.getHeaders(),
-      },
-      // It can take a while to embed large docs
-      timeout: process.env.EMBEDDING_SERVICE_TIMEOUT || 300000, // 5 minutes
-    });
-
-    console.log("[Upload Proxy] File forwarded to embedding-service successfully.");
-    // Forward the success response from the embedding service to the client
-    res.status(response.status).json(response.data);
-  } catch (e) {
-    console.error(
-      "[Upload Proxy] Error forwarding file to embedding-service:",
-      e.message
-    );
-    res.status(500).json({
-      error: "Failed to upload and embed file.",
-      details: e.message,
-    });
-  }
-});
+);
 // --- END: NEW File Upload Endpoint ---
 
 // --- START: NEW Streaming Query Endpoint ---
-app.post('/api/stream-ask', async (req, res) => {
-  const { query, top_k } = req.body;
-  console.log(`[Stream Proxy] Received query: "${query}"`);
+app.post("/api/stream-ask", authMiddleware, async (req, res) => {
+  const { query, documents } = req.body;
+  const userId = req.user.userId; // Get from authenticated user
+
+  console.log(`[Stream Proxy] Received query from user: ${userId}`);
 
   if (!query) {
-    return res.status(400).json({ error: 'Query is required' });
+    return res.status(400).json({ error: "Query is required" });
   }
 
   try {
-    const rassEngineStreamUrl = 'http://rass-engine-service:8000/stream-ask';
+    const rassEngineStreamUrl = "http://rass-engine-service:8000/stream-ask";
 
     const response = await axios.post(
       rassEngineStreamUrl,
-      { query: query, top_k: top_k || DEFAULT_TOP_K },
-      { responseType: 'stream' }
+      { query, documents, userId },
+      { responseType: "stream" }
     );
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
     response.data.pipe(res);
 
-    req.on('close', () => {
-      console.log('[Stream Proxy] Client closed connection.');
+    req.on("close", () => {
+      console.log("[Stream Proxy] Client closed connection.");
       response.data.destroy();
     });
   } catch (e) {
-    console.error('[Stream Proxy] Error calling RASS engine stream:', e.message);
+    console.error(
+      "[Stream Proxy] Error calling RASS engine stream:",
+      e.message
+    );
     if (!res.headersSent) {
-      res.status(500).json({ error: 'Failed to process stream in RASS engine.' });
+      res
+        .status(500)
+        .json({ error: "Failed to process stream in RASS engine." });
     } else {
       res.end();
     }
   }
 });
 // --- END: NEW Streaming Query Endpoint ---
-
 
 // --- OLD Simple REST Endpoint for Web Frontend (can be removed later) ---
 app.post("/simple-ask", async (req, res) => {
@@ -285,7 +302,7 @@ app.post("/mcp", async (req, res) => {
 });
 
 // --- Auth Routes ---
-app.use('/api/auth', authRoutes);
+app.use("/api/auth", authRoutes);
 
 // --- Health Check and Server Start ---
 app.get("/", (req, res) => {

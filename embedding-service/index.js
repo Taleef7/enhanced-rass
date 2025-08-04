@@ -283,7 +283,19 @@ async function ensureIndexExists() {
         settings: { index: { knn: true, "knn.algo_param.ef_search": 100 } },
         mappings: {
           properties: {
-            embedding: { type: "knn_vector", dimension: EMBED_DIM },
+            embedding: {
+              type: "knn_vector",
+              dimension: EMBED_DIM,
+              method: {
+                name: "hnsw",
+                space_type: "l2",
+                engine: "faiss", // Use the faiss engine
+                parameters: {
+                  ef_construction: 256,
+                  m: 48,
+                },
+              },
+            },
           },
         },
       },
@@ -294,7 +306,16 @@ async function ensureIndexExists() {
 
 app.post("/upload", upload.array("files"), async (req, res) => {
   const files = req.files;
-  console.log(`[Upload] Received ${files.length} file(s)`);
+
+  // Get the userId from the multipart form data body
+  const { userId } = req.body;
+  if (!userId) {
+    return res
+      .status(400)
+      .json({ error: "Missing userId for document upload." });
+  }
+  console.log(`[Upload] Received ${files.length} file(s) from user: ${userId}`);
+
   if (!files || files.length === 0)
     return res.status(400).json({ error: "No files uploaded." });
 
@@ -319,6 +340,12 @@ app.post("/upload", upload.array("files"), async (req, res) => {
           : TextLoader
       )(file.path);
       const docs = await loader.load();
+
+      // Add the userId to the metadata of all original documents
+      docs.forEach((doc) => {
+        doc.metadata.userId = userId;
+      });
+
       const parentChunks = await parentSplitter.splitDocuments(docs);
       const parentDocIds = parentChunks.map(() => uuidv4());
       await docstore.mset(
@@ -330,6 +357,7 @@ app.post("/upload", upload.array("files"), async (req, res) => {
         const subDocs = await childSplitter.splitDocuments([parentChunks[i]]);
         subDocs.forEach((doc) => {
           doc.metadata.parentId = parentDocIds[i];
+          doc.metadata.userId = parentChunks[i].metadata.userId;
           childChunks.push(doc);
         });
       }

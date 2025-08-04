@@ -6,7 +6,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const fs = require("fs");
 const yaml = require("js-yaml");
 const { v4: uuidv4 } = require("uuid"); // Import uuid
-const { runSteps } = require("./executePlan");
+const { runSteps, simpleSearch  } = require("./executePlan");
 const { generateHypotheticalDocument } = require("./hydeGenerator.js");
 
 // --- Centralized Configuration Loading ---
@@ -75,6 +75,57 @@ const osClient = new Client({
   node: `http://${OPENSEARCH_HOST}:${OPENSEARCH_PORT}`,
 });
 
+
+
+// --- START: NEW CONTEXT-AWARE SEARCH PLANNER ---
+async function createRefinedSearchPlan(llmClient, llmProvider, modelName, originalQuery, initialContext) {
+  console.log(`[Refined Plan] Creating context-aware search plan for: "${originalQuery}"`);
+
+  const planningPrompt = `You are a search query refinement expert. Based on the user's original query and the provided initial search results, generate a JSON array of 3-4 new, highly specific search terms that will find the definitive answer.
+
+Focus on extracting key entities, concepts, and relationships from the initial context.
+
+User Query: "${originalQuery}"
+
+Initial Context:
+---
+${initialContext}
+---
+
+Generate a JSON array of specific search terms now. Your entire response must be ONLY the JSON array.`;
+
+  try {
+    let searchTerms = [];
+    if (llmProvider === "openai") {
+      const completion = await llmClient.chat.completions.create({
+        model: modelName,
+        messages: [{ role: "user", content: planningPrompt }],
+        temperature: 0.5,
+      });
+      searchTerms = JSON.parse(completion.choices[0].message.content);
+    } else {
+      const result = await llmClient.generateContent(planningPrompt);
+      const response = result.response.text();
+      searchTerms = JSON.parse(response);
+    }
+
+    const plan = searchTerms.map((term, index) => ({
+      step_id: `refined_search_${index + 1}`,
+      search_term: term.trim(),
+      knn_k: DEFAULT_K_OPENSEARCH_HITS,
+    }));
+    
+    console.log(`[Refined Plan] Created ${plan.length} new search steps.`);
+    return plan;
+  } catch (error) {
+    console.warn(`[Refined Plan] Could not create refined plan, falling back to original query.`);
+    return [{ step_id: "fallback_original", search_term: originalQuery, knn_k: DEFAULT_K_OPENSEARCH_HITS }];
+  }
+}
+// --- END: NEW CONTEXT-AWARE SEARCH PLANNER ---
+
+
+
 async function embedText(text) {
   if (!text?.trim()) throw new Error("Empty text provided for embedding");
   console.log(`[EmbedSearchTerm] Embedding text...`);
@@ -101,185 +152,75 @@ async function embedText(text) {
   }
 }
 
-/**
- * Extracts the first JSON array in a string and parses it.
- * Throws if it can’t find a bracketed array or parse it.
- */
-function parseJsonArray(raw) {
-  const firstBracket = raw.indexOf("[");
-  const lastBracket = raw.lastIndexOf("]");
-  if (firstBracket < 0 || lastBracket < 0) {
-    throw new Error("No JSON array found in planner response");
-  }
-  const json = raw.slice(firstBracket, lastBracket + 1);
-  return JSON.parse(json);
-}
-
-// Enhanced search plan creation function
-async function createEnhancedSearchPlan(
-  llmClient,
-  llmProvider,
-  modelName,
-  originalQuery,
-  hypotheticalDoc
-) {
-  console.log(
-    `[Search Plan] Creating enhanced search plan for: "${originalQuery}"`
-  );
-
-  const planningPrompt = `You are an expert search planner. Your task is to generate a JSON array of 3-4 diverse and high-quality search terms based on a user's query.
-
-User Query: "${originalQuery}"
-
-Instructions:
-1. Create a concise list of 3 to 4 search terms.
-2. The terms should cover the most important concepts, entities, and the direct question.
-3. Your entire response must be ONLY the JSON array of strings. Do not include any other text, explanations, or markdown formatting.
-
-Example response format:
-["term1", "term2", "term3"]
-
-Generate the JSON array for the user query now.`;
-
-  try {
-    let searchTerms = [];
-
-    if (llmProvider === "openai") {
-      const completion = await llmClient.chat.completions.create({
-        model: modelName,
-        messages: [{ role: "user", content: planningPrompt }],
-        temperature: 0.7,
-        max_tokens: 200,
-      });
-      const response = completion.choices[0].message.content;
-      // safe-parse out stray markdown fences, stray backticks, etc.
-      searchTerms = parseJsonArray(response);
-    } else {
-      const result = await llmClient.generateContent(planningPrompt);
-      const response = result.response.text();
-      searchTerms = parseJsonArray(response);
-    }
-
-    // Create search plan from terms
-    const plan = searchTerms.map((term, index) => ({
-      step_id: `search_step_${index + 1}`,
-      search_term: term.trim(),
-      knn_k: DEFAULT_K_OPENSEARCH_HITS,
-    }));
-
-    // Add the HyDE document as an additional search step
-    plan.push({
-      step_id: "hyde_search",
-      search_term: hypotheticalDoc,
-      knn_k: DEFAULT_K_OPENSEARCH_HITS,
-    });
-
-    console.log(
-      `[Search Plan] Created ${plan.length} search steps:`,
-      plan.map((p) => p.search_term)
-    );
-    return plan;
-  } catch (error) {
-    console.warn(
-      `[Search Plan] Could not parse planner JSON (${error.message}), falling back.`
-    );
-
-    // Fallback to manual decomposition
-    const fallbackPlan = [
-      {
-        step_id: "original_query",
-        search_term: originalQuery,
-        knn_k: DEFAULT_K_OPENSEARCH_HITS,
-      },
-      {
-        step_id: "hyde_search",
-        search_term: hypotheticalDoc,
-        knn_k: DEFAULT_K_OPENSEARCH_HITS,
-      },
-    ];
-
-    // Add some manual query variations for better coverage
-    const queryLower = originalQuery.toLowerCase();
-    if (queryLower.includes("martian") && queryLower.includes("die")) {
-      fallbackPlan.push({
-        step_id: "manual_terms_1",
-        search_term: "bacteria killed Martians War of the Worlds",
-        knn_k: DEFAULT_K_OPENSEARCH_HITS,
-      });
-      fallbackPlan.push({
-        step_id: "manual_terms_2",
-        search_term: "terrestrial microorganisms Martian death",
-        knn_k: DEFAULT_K_OPENSEARCH_HITS,
-      });
-    }
-
-    console.log(
-      `[Search Plan] Using fallback plan with ${fallbackPlan.length} steps`
-    );
-    return fallbackPlan;
-  }
-}
 
 // REFACTORED 'ask' function to support both streaming and non-streaming
-async function ask(query, top_k_param, stream = false, res = null) {
+async function ask(query, top_k_param, stream = false, res = null, userId, documents) {
   if (!query?.trim()) throw new Error("Empty query");
   // if the API caller passed in `top_k_param`, use that; otherwise fall back to our config
-  const top_k_for_generation =
-    typeof top_k_param === "number" ? top_k_param : DEFAULT_TOP_K;
-  console.log(`[Ask] Query: "${query}", Streaming: ${stream}`);
+  const top_k_for_generation = typeof top_k_param === "number" ? top_k_param : DEFAULT_TOP_K;
+  console.log(`[Ask] Query: "${query}", User: ${userId}`);
 
-  // --- Step 1: Retrieval (HyDE, Plan, Execute, Rerank) ---
-  const hypotheticalDocument = await generateHypotheticalDocument(
-    llmClient,
-    LLM_PROVIDER,
-    LLM_PROVIDER === "openai" ? OPENAI_MODEL_NAME : GEMINI_MODEL_NAME,
-    query
-  );
-  const enhancedPlan = await createEnhancedSearchPlan(
-    llmClient,
-    LLM_PROVIDER,
-    LLM_PROVIDER === "openai" ? OPENAI_MODEL_NAME : GEMINI_MODEL_NAME,
-    query,
-    hypotheticalDocument
-  );
-  const parentDocs = await runSteps({
-    plan: enhancedPlan,
+  console.log("[Retrieval Stage 1] Performing initial broad search...");
+  const initialHits = await simpleSearch({
+    term: query,
     embed: embedText,
     os: osClient,
     index: OPENSEARCH_INDEX_NAME,
+    userId,
+    documents,
   });
 
-  if (!parentDocs || !parentDocs.length) {
-    console.warn("[Ask] No documents found.");
-    const emptyResponse = {
-      answer: "I could not find any relevant information.",
-      source_documents: [],
-    };
+  if (!initialHits || initialHits.length === 0) {
+    console.warn("[Ask] No documents found in initial search.");
+    const emptyResponse = { answer: "I could not find any relevant information.", source_documents: [] };
     if (stream) {
-      writeSSE(res, {
-        choices: [{ delta: { content: emptyResponse.answer } }],
-      });
-      writeSSE(res, {
-        choices: [{ delta: { custom_meta: { citations: [] } } }],
-      });
-      writeSSE(res, "[DONE]");
-      res.end();
-      return;
+        writeSSE(res, { choices: [{ delta: { content: emptyResponse.answer } }] });
+        writeSSE(res, { choices: [{ delta: { custom_meta: { citations: [] } } }] });
+        writeSSE(res, "[DONE]");
+        res.end();
     }
     return emptyResponse;
   }
 
-  const initial_documents = parentDocs
-    .map((h) => ({ 
-      text: h._source?.text, 
-      metadata: h._source?.metadata,
-      initial_score: h._score // Keep the score
-    }))
-    .filter((doc) => doc.text?.trim());
-  const source_documents = initial_documents.slice(0, top_k_for_generation);
-  console.log(
-    `[Generation] Generating with ${source_documents.length} documents...`
-  );
+  const initialContext = initialHits.map(hit => hit._source.text).join("\n\n---\n\n");
+
+  // Stage 2: Context-aware search refinement
+  console.log("[Retrieval Stage 2] Performing context-aware refined search...");
+  // Determine LLM client, provider, and model name from config or context
+  let llmClient, llmProvider, modelName;
+  if (config.llm_provider === "openai") {
+    llmClient = new OpenAI({ apiKey: config.openai_api_key });
+    llmProvider = "openai";
+    modelName = config.openai_model || "gpt-3.5-turbo";
+  } else if (config.llm_provider === "google") {
+    llmClient = new GoogleGenerativeAI(config.google_api_key);
+    llmProvider = "google";
+    modelName = config.google_model || "gemini-pro";
+  } else {
+    throw new Error("Unsupported LLM provider in config");
+  }
+  const refinedPlan = await createRefinedSearchPlan(llmClient, llmProvider, modelName, query, initialContext);
+
+  const finalParentDocs = await runSteps({
+    plan: refinedPlan,
+    embed: embedText,
+    os: osClient,
+    index: OPENSEARCH_INDEX_NAME,
+    userId,
+    documents,
+  });
+
+  const parentDocsToUse = (finalParentDocs && finalParentDocs.length > 0)
+    ? finalParentDocs
+    : initialHits.map(h => ({ _source: h._source, _score: h._score }));
+
+
+  const source_documents = parentDocsToUse
+    .map((h) => ({ text: h._source?.text, metadata: h._source?.metadata, initial_score: h._score }))
+    .filter((doc) => doc.text?.trim())
+    .slice(0, top_k_for_generation);
+  
+  console.log(`[Generation] Generating with ${source_documents.length} documents...`);
 
   const context = source_documents.map((doc) => doc.text).join("\n\n---\n\n");
   const generationPrompt = `
@@ -416,8 +357,11 @@ app.post("/ask", async (req, res) => {
 // NEW Streaming endpoint for LibreChat
 app.post("/stream-ask", async (req, res) => {
   try {
-    const { query, top_k } = req.body;
-    if (!query) return res.status(400).json({ error: "Missing query" });
+
+    const { query, documents, userId, top_k } = req.body;
+    if (!query || !userId) {
+      return res.status(400).json({ error: "Missing query or userId" });
+    }
 
     // Set headers for SSE
     res.setHeader("Content-Type", "text/event-stream");
@@ -429,10 +373,11 @@ app.post("/stream-ask", async (req, res) => {
     console.log(
       `[API /stream-ask] Received query: "${query}", top_k: ${top_k}`
     );
+    console.log(`[API /stream-ask] Received query from user: ${userId}`);
     console.log("---------------------------------");
 
     // Call ask function in streaming mode
-    await ask(query, top_k, true, res);
+    await ask(query, top_k, true, res, userId, documents);
 
     res.on("close", () => {
       console.log("[API /stream-ask] Client closed connection.");

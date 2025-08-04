@@ -1,9 +1,9 @@
 // In frontend/src/components/MessageList.js
-import React, { useRef, useEffect } from 'react';
-import { Box } from '@mui/material';
-import { AnimatePresence } from 'framer-motion';
-import MessageBubble from './MessageBubble';
-import TypingIndicator from './TypingIndicator';
+import React, { useRef, useEffect } from "react";
+import { Box } from "@mui/material";
+import { AnimatePresence } from "framer-motion";
+import MessageBubble from "./MessageBubble";
+import TypingIndicator from "./TypingIndicator";
 
 const MessageList = ({ messages, isTyping }) => {
   const chatBoxRef = useRef(null);
@@ -20,19 +20,16 @@ const MessageList = ({ messages, isTyping }) => {
       ref={chatBoxRef}
       sx={{
         flex: 1,
-        overflowY: 'auto',
+        overflowY: "auto",
         p: 2,
-        display: 'flex',
-        flexDirection: 'column'
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 0, // This is crucial for flex scrolling
       }}
     >
       <AnimatePresence>
         {messages.map((message, index) => (
-          <MessageBubble
-            key={index}
-            message={message}
-            index={index}
-          />
+          <MessageBubble key={index} message={message} index={index} />
         ))}
       </AnimatePresence>
       {isTyping && <TypingIndicator />}
