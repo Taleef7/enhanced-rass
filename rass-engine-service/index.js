@@ -155,7 +155,7 @@ async function embedText(text) {
 
 // REFACTORED 'ask' function to support both streaming and non-streaming
 async function ask(query, top_k_param, stream = false, res = null, userId, documents) {
-  // if (!query?.trim()) throw new Error("Empty query");
+  if (!query?.trim()) throw new Error("Empty query");
   // if the API caller passed in `top_k_param`, use that; otherwise fall back to our config
   const top_k_for_generation = typeof top_k_param === "number" ? top_k_param : DEFAULT_TOP_K;
   console.log(`[Ask] Query: "${query}", User: ${userId}`);
