@@ -6,11 +6,19 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
+import { useAuth } from '../context/AuthContext';
 
 const MessageBubble = ({ message, index }) => {
     const [copied, setCopied] = useState(false);
     const [sourcesExpanded, setSourcesExpanded] = useState(false);
+    const { user } = useAuth();
     const isUser = message.sender === 'user';
+
+    // Get user's initials for avatar
+    const getInitials = (username) => {
+      if (!username) return 'U';
+      return username.charAt(0).toUpperCase();
+    };
   
     const handleCopy = async () => {
       await navigator.clipboard.writeText(message.text);
@@ -182,7 +190,7 @@ const MessageBubble = ({ message, index }) => {
                 flexShrink: 0
               }}
             >
-              U
+              {getInitials(user?.username)}
             </Avatar>
           )}
         </Box>
