@@ -186,7 +186,20 @@ async function ask(query, top_k_param, stream = false, res = null, userId, docum
 
   // Stage 2: Context-aware search refinement
   console.log("[Retrieval Stage 2] Performing context-aware refined search...");
-  const refinedPlan = await createRefinedSearchPlan(query, initialContext);
+  // Determine LLM client, provider, and model name from config or context
+  let llmClient, llmProvider, modelName;
+  if (config.llm_provider === "openai") {
+    llmClient = new OpenAI({ apiKey: config.openai_api_key });
+    llmProvider = "openai";
+    modelName = config.openai_model || "gpt-3.5-turbo";
+  } else if (config.llm_provider === "google") {
+    llmClient = new GoogleGenerativeAI(config.google_api_key);
+    llmProvider = "google";
+    modelName = config.google_model || "gemini-pro";
+  } else {
+    throw new Error("Unsupported LLM provider in config");
+  }
+  const refinedPlan = await createRefinedSearchPlan(llmClient, llmProvider, modelName, query, initialContext);
 
   const finalParentDocs = await runSteps({
     plan: refinedPlan,
