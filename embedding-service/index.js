@@ -357,7 +357,6 @@ app.post("/upload", upload.array("files"), async (req, res) => {
         const subDocs = await childSplitter.splitDocuments([parentChunks[i]]);
         subDocs.forEach((doc) => {
           doc.metadata.parentId = parentDocIds[i];
-          // IMPORTANT: Inherit userId from parent chunk
           doc.metadata.userId = parentChunks[i].metadata.userId;
           childChunks.push(doc);
         });
