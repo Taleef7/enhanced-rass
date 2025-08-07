@@ -45,7 +45,7 @@ const Sidebar = ({ isSidebarOpen }) => {
       >
         <Box sx={{ p: 1 }}>
           <ListItemButton
-            onClick={createNewChat}
+            onClick={() => createNewChat()}
             sx={{
               borderRadius: 1,
               border: "1px solid",

@@ -14,6 +14,43 @@ model User {
   id        String   @id @default(cuid())
   username  String   @unique
   password  String   // This will store the HASHED password
+  chats     Chat[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Chat {
+  id        String   @id @default(cuid())
+  title     String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  documents ChatDocument[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("chats")
+}
+
+model Message {
+  id       String @id @default(cuid())
+  text     String @db.Text
+  sender   String // 'user' or 'assistant'
+  chatId   String
+  chat     Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sources  Json?  // Store message sources as JSON
+  createdAt DateTime @default(now())
+
+  @@map("messages")
+}
+
+model ChatDocument {
+  id       String @id @default(cuid())
+  name     String
+  size     Int?
+  chatId   String
+  chat     Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  uploadedAt DateTime @default(now())
+
+  @@map("chat_documents")
 }

@@ -127,7 +127,7 @@ const MessageBubble = ({ message, index }) => {
               )}
             </Box>
   
-            {message.sources && message.sources.length > 0 && (
+            {Array.isArray(message.sources) && message.sources.length > 0 && (
               <Box sx={{ mt: 2 }}>
                 <Button
                   size="small"
@@ -146,7 +146,7 @@ const MessageBubble = ({ message, index }) => {
                 <Collapse in={sourcesExpanded}>
                   <Box sx={{ mt: 1, pt: 1, borderTop: 1, borderColor: 'divider' }}>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                      {message.sources.slice(0, 10).map((source, i) => (
+                      {Array.isArray(message.sources) && message.sources.slice(0, 10).map((source, i) => (
                         <Chip
                           key={i}
                           label={`${source.metadata?.source || 'Unknown'} (${source.initial_score?.toFixed(3) ?? 'N/A'})`}
@@ -165,7 +165,7 @@ const MessageBubble = ({ message, index }) => {
                           }}
                         />
                       ))}
-                      {message.sources.length > 10 && (
+                      {Array.isArray(message.sources) && message.sources.length > 10 && (
                         <Chip
                           label={`+${message.sources.length - 10} more`}
                           size="small"
