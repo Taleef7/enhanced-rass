@@ -43,7 +43,7 @@ const MainLayout = () => {
                   duration: theme.transitions.duration.leavingScreen,
                 }),
               marginLeft: `-${DRAWER_WIDTH}px`,
-              marginRight: isDocumentPanelOpen ? "320px" : "0px", // Account for document panel
+              marginRight: isDocumentPanelOpen ? "0px" : "0px", // Account for document panel
               ...(isSidebarOpen && {
                 transition: (theme) =>
                   theme.transitions.create(["margin"], {
