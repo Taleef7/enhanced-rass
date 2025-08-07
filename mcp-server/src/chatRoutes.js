@@ -191,7 +191,7 @@ router.post("/:chatId/messages", async (req, res) => {
         text,
         sender,
         chatId,
-        sources: sources ? JSON.stringify(sources) : null, // Store sources as JSON
+        sources: sources ? sources : null, // Store sources as JSON
       },
     });
 
