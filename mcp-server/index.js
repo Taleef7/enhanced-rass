@@ -12,6 +12,7 @@ const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
 const authRoutes = require("./src/authRoutes.js");
+const chatRoutes = require("./src/chatRoutes.js");
 const authMiddleware = require("./src/authMiddleware.js");
 
 const DEFAULT_TOP_K = Number(process.env.MCP_DEFAULT_TOP_K) || 10;
@@ -193,6 +194,93 @@ app.post("/api/stream-ask", authMiddleware, async (req, res) => {
 });
 // --- END: NEW Streaming Query Endpoint ---
 
+// --- START: NEW User Documents Endpoint ---
+app.get("/api/user-documents", authMiddleware, async (req, res) => {
+  const userId = req.user.userId;
+  
+  console.log(`[User Documents] Fetching documents for user: ${userId}`);
+
+  try {
+    // Query OpenSearch to get all unique documents for this user
+    // Use source field for aggregation since existing documents may not have originalFilename
+    const axios = require('axios');
+    const openSearchQuery = {
+      size: 0,
+      query: {
+        bool: {
+          filter: [
+            { term: { "metadata.userId.keyword": userId } }
+          ]
+        }
+      },
+      aggs: {
+        documents: {
+          terms: {
+            field: "metadata.source.keyword",
+            size: 1000
+          },
+          aggs: {
+            latest: {
+              top_hits: {
+                size: 1,
+                sort: [{ "_score": { order: "desc" } }],
+                _source: ["metadata"]
+              }
+            }
+          }
+        }
+      }
+    };
+
+    // Use the environment variable for OpenSearch URL, with fallback
+    const openSearchUrl = process.env.OPENSEARCH_URL || 'http://opensearch:9200';
+    const indexName = process.env.OPENSEARCH_INDEX_NAME || 'knowledge_base';
+    
+    const response = await axios.post(`${openSearchUrl}/${indexName}/_search`, openSearchQuery, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+
+    const documents = response.data.aggregations.documents.buckets.map(bucket => {
+      const latestDoc = bucket.latest.hits.hits[0];
+      const metadata = latestDoc ? latestDoc._source.metadata : {};
+      
+      // Use original filename if available, otherwise extract from source path
+      let displayName = metadata.originalFilename;
+      
+      if (!displayName && metadata.source) {
+        // For temp files, use a more descriptive name
+        if (metadata.source.includes('temp/')) {
+          displayName = `Document (${metadata.source.split('/').pop().substring(0, 8)}...)`;
+        } else {
+          displayName = metadata.source.split('/').pop();
+        }
+      }
+      
+      if (!displayName) {
+        displayName = "Unknown Document";
+      }
+      
+      return {
+        name: displayName,
+        source: metadata.source || "Unknown",
+        uploadedAt: metadata.uploadedAt || new Date().toISOString(),
+        chunkCount: bucket.doc_count
+      };
+    });
+
+    console.log(`[User Documents] Found ${documents.length} documents for user ${userId}`);
+    res.json({ documents });
+  } catch (error) {
+    console.error("[User Documents] Error fetching documents:", error);
+    res.status(500).json({ 
+      error: "Failed to fetch user documents",
+      details: error.message 
+    });
+  }
+});
+// --- END: NEW User Documents Endpoint ---
+
 // --- OLD Simple REST Endpoint for Web Frontend (can be removed later) ---
 app.post("/simple-ask", async (req, res) => {
   const { query, top_k } = req.body;
@@ -303,6 +391,9 @@ app.post("/mcp", async (req, res) => {
 
 // --- Auth Routes ---
 app.use("/api/auth", authRoutes);
+
+// --- Chat Routes (with authentication middleware) ---
+app.use("/api/chats", authMiddleware, chatRoutes);
 
 // --- Health Check and Server Start ---
 app.get("/", (req, res) => {
