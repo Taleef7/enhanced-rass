@@ -4,6 +4,11 @@ import axios from "axios";
 // The base URL for all our backend requests
 const API_BASE_URL = "http://localhost:8080/api";
 
+// Helper function to get auth token
+export const getAuthToken = () => {
+  return localStorage.getItem("authToken");
+};
+
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -101,3 +106,6 @@ export const streamQuery = async (
 };
 
 export default apiClient;
+
+// Export API_BASE_URL for use in other modules
+export { API_BASE_URL };
