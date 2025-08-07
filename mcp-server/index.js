@@ -393,7 +393,7 @@ app.post("/mcp", async (req, res) => {
 app.use("/api/auth", authRoutes);
 
 // --- Chat Routes (with authentication middleware) ---
-app.use("/api/chats", authMiddleware, chatRoutes);
+app.use("/api/chats", chatRoutes);
 
 // --- Health Check and Server Start ---
 app.get("/", (req, res) => {
