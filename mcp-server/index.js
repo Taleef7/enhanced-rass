@@ -196,7 +196,7 @@ app.post("/api/stream-ask", authMiddleware, async (req, res) => {
 
 // --- START: NEW User Documents Endpoint ---
 app.get("/api/user-documents", authMiddleware, async (req, res) => {
-  const userId = req.user.userId;
+  const userId = req.userId;
   
   console.log(`[User Documents] Fetching documents for user: ${userId}`);
 
