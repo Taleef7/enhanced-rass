@@ -108,7 +108,7 @@ export const ChatProvider = ({ children }) => {
       }
     }
     setIsLoading(false);
-  }, [user?.userId, token, isServerAvailable]); // Remove activeChatId from deps to prevent infinite loop
+  }, [user?.userId, token]); // Remove isServerAvailable from deps to prevent infinite loop
 
   // Load chats when user changes or on mount
   useEffect(() => {
