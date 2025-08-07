@@ -27,13 +27,7 @@ function Chat() {
     abortControllerRef.current = new AbortController();
     
     // Add empty bot message to local state only
-    setChats(prev => ({
-      ...prev,
-      [activeChat.id]: {
-        ...prev[activeChat.id],
-        messages: [...prev[activeChat.id].messages, { sender: "bot", text: "", sources: [] }]
-      }
-    }));
+    addMessageToChat(activeChat.id, { sender: "bot", text: "", sources: [] });
 
     let finalBotText = "";
     let finalBotSources = [];
