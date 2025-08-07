@@ -103,7 +103,7 @@ const ChatInput = ({ query, setQuery, onSend, isTyping }) => {
         <Box
           sx={{
             display: 'flex',
-            gap: 1,
+            gap: 2,
             alignItems: 'flex-end',
             border: isDragging ? 2 : 1,
             borderColor: isDragging ? 'primary.main' : 'divider',
@@ -151,7 +151,7 @@ const ChatInput = ({ query, setQuery, onSend, isTyping }) => {
                 lineHeight: 1.5
               },
               '& .MuiInput-input': {
-                padding: '8px 0'
+                padding: '4px 0'
               }
             }}
           />
