@@ -235,7 +235,7 @@ router.patch("/:chatId/messages/:messageId", async (req, res) => {
       },
       data: {
         ...(text !== undefined && { text }),
-        ...(sources !== undefined && { sources: sources ? JSON.stringify(sources) : null }),
+        ...(sources !== undefined && { sources: sources ? sources : null }),
       },
     });
 
