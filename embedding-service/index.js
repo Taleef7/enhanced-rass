@@ -341,9 +341,11 @@ app.post("/upload", upload.array("files"), async (req, res) => {
       )(file.path);
       const docs = await loader.load();
 
-      // Add the userId to the metadata of all original documents
+      // Add the userId and original filename to the metadata of all original documents
       docs.forEach((doc) => {
         doc.metadata.userId = userId;
+        doc.metadata.originalFilename = file.originalname;
+        doc.metadata.uploadedAt = new Date().toISOString();
       });
 
       const parentChunks = await parentSplitter.splitDocuments(docs);
@@ -357,7 +359,10 @@ app.post("/upload", upload.array("files"), async (req, res) => {
         const subDocs = await childSplitter.splitDocuments([parentChunks[i]]);
         subDocs.forEach((doc) => {
           doc.metadata.parentId = parentDocIds[i];
+          // IMPORTANT: Inherit all metadata from parent chunk
           doc.metadata.userId = parentChunks[i].metadata.userId;
+          doc.metadata.originalFilename = parentChunks[i].metadata.originalFilename;
+          doc.metadata.uploadedAt = parentChunks[i].metadata.uploadedAt;
           childChunks.push(doc);
         });
       }
