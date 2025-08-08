@@ -216,16 +216,6 @@ async function ask(
   console.log(
     "[Retrieval Stage 2] Skipping refined search - using initial hits"
   );
-  // TODO: Fix LLM provider configuration
-  // const refinedPlan = await createRefinedSearchPlan(llmClient, llmProvider, modelName, query, initialContext);
-  // const finalParentDocs = await runSteps({
-  //   plan: refinedPlan,
-  //   embed: embedText,
-  //   os: osClient,
-  //   index: OPENSEARCH_INDEX_NAME,
-  //   userId,
-  //   documents,
-  // });
   const finalParentDocs = initialHits;
 
   const parentDocsToUse =
