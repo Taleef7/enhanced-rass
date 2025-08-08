@@ -1,11 +1,23 @@
 // In frontend/src/components/DocumentPanel.js
-import React, { useState, useEffect } from 'react';
-import { Drawer, Box, Typography, List, ListItem, ListItemText, IconButton, Toolbar, Divider, CircularProgress, Alert, Chip } from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
-import DescriptionIcon from '@mui/icons-material/Description';
-import { chatAPI } from '../api/chatApi';
-
-const DOCUMENT_PANEL_WIDTH = 320;
+import React, { useState, useEffect } from "react";
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  Box,
+  Typography,
+  List,
+  ListItem,
+  ListItemText,
+  IconButton,
+  Divider,
+  CircularProgress,
+  Alert,
+  Chip,
+} from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";
+import DescriptionIcon from "@mui/icons-material/Description";
+import { chatAPI } from "../api/chatApi";
 
 const DocumentPanel = ({ isOpen, onClose }) => {
   const [documents, setDocuments] = useState([]);
@@ -14,16 +26,16 @@ const DocumentPanel = ({ isOpen, onClose }) => {
 
   // Format file size helper
   const formatFileSize = (bytes) => {
-    if (!bytes) return 'Unknown size';
+    if (!bytes) return "Unknown size";
     const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
   // Format date helper
   const formatDate = (dateString) => {
-    if (!dateString) return 'Unknown date';
+    if (!dateString) return "Unknown date";
     const date = new Date(dateString);
     return date.toLocaleDateString();
   };
@@ -50,36 +62,47 @@ const DocumentPanel = ({ isOpen, onClose }) => {
   };
 
   return (
-    <Drawer
-      variant="persistent"
-      anchor="right"
+    <Dialog
       open={isOpen}
-      sx={{
-        width: DOCUMENT_PANEL_WIDTH,
-        flexShrink: 0,
-        '& .MuiDrawer-paper': {
-          width: DOCUMENT_PANEL_WIDTH,
-          boxSizing: 'border-box',
-          backgroundColor: 'background.paper',
-          borderLeft: '1px solid',
-          borderColor: 'divider',
+      onClose={onClose}
+      maxWidth="md"
+      fullWidth
+      PaperProps={{
+        sx: {
+          height: "80vh",
+          backgroundColor: "background.paper",
         },
       }}
     >
-      <Toolbar /> {/* Spacer */}
-      <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <DialogTitle
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          borderBottom: "1px solid",
+          borderColor: "divider",
+        }}
+      >
         <Typography variant="h6">Your Documents</Typography>
-        <IconButton onClick={onClose}>
+        <IconButton onClick={onClose} size="small">
           <CloseIcon />
         </IconButton>
-      </Box>
-      <Divider />
-      
-      <Box sx={{ flex: 1, overflow: 'auto' }}>
+      </DialogTitle>
+
+      <DialogContent sx={{ p: 0, display: "flex", flexDirection: "column" }}>
         {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 3 }}>
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              p: 3,
+            }}
+          >
             <CircularProgress size={24} />
-            <Typography variant="body2" sx={{ ml: 2 }}>Loading documents...</Typography>
+            <Typography variant="body2" sx={{ ml: 2 }}>
+              Loading documents...
+            </Typography>
           </Box>
         ) : error ? (
           <Box sx={{ p: 2 }}>
@@ -92,46 +115,68 @@ const DocumentPanel = ({ isOpen, onClose }) => {
                 Documents available in RASS knowledge base ({documents.length})
               </Typography>
             </Box>
-            <List sx={{ pt: 0 }}>
-              {documents.length > 0 ? (
-                documents.map((doc, index) => (
-                  <ListItem key={index} sx={{ py: 1.5 }}>
-                    <DescriptionIcon sx={{ mr: 2, color: 'primary.main' }} />
-                    <ListItemText 
-                      primary={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Typography variant="body2" sx={{ fontWeight: 500, flex: 1 }}>
-                            {doc.name}
-                          </Typography>
-                        </Box>
-                      }
-                      secondary={
-                        <Box component="span" sx={{ mt: 0.5, display: 'block' }}>
-                          <Typography variant="caption" color="text.secondary" display="block">
-                            {formatFileSize(doc.chunkCount)} chunks
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" display="block">
-                            Uploaded: {formatDate(doc.uploadedAt)}
-                          </Typography>
-                        </Box>
-                      }
+            <Box sx={{ flex: 1, overflow: "auto" }}>
+              <List sx={{ pt: 0 }}>
+                {documents.length > 0 ? (
+                  documents.map((doc, index) => (
+                    <ListItem key={index} sx={{ py: 1.5 }}>
+                      <DescriptionIcon sx={{ mr: 2, color: "primary.main" }} />
+                      <ListItemText
+                        primary={
+                          <Box
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 1,
+                            }}
+                          >
+                            <Typography
+                              variant="body2"
+                              sx={{ fontWeight: 500, flex: 1 }}
+                            >
+                              {doc.name}
+                            </Typography>
+                          </Box>
+                        }
+                        secondary={
+                          <Box
+                            component="span"
+                            sx={{ mt: 0.5, display: "block" }}
+                          >
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              display="block"
+                            >
+                              {formatFileSize(doc.chunkCount)} chunks
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              display="block"
+                            >
+                              Uploaded: {formatDate(doc.uploadedAt)}
+                            </Typography>
+                          </Box>
+                        }
+                      />
+                    </ListItem>
+                  ))
+                ) : (
+                  <ListItem>
+                    <ListItemText
+                      primary="No documents found"
+                      secondary="Upload documents to get started with RASS"
+                      sx={{ textAlign: "center", py: 3 }}
                     />
                   </ListItem>
-                ))
-              ) : (
-                <ListItem>
-                  <ListItemText 
-                    primary="No documents found"
-                    secondary="Upload documents to get started with RASS"
-                    sx={{ textAlign: 'center', py: 3 }}
-                  />
-                </ListItem>
-              )}
-            </List>
+                )}
+              </List>
+            </Box>
           </>
         )}
-      </Box>
-    </Drawer>
+      </DialogContent>
+    </Dialog>
   );
 };
 

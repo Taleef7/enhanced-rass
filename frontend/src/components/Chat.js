@@ -1,21 +1,62 @@
 // In frontend/src/components/Chat.js (Refactored)
-import React, { useState, useRef, useEffect } from "react";
-import { Box, Typography, Tooltip, IconButton } from "@mui/material";
-import RefreshIcon from "@mui/icons-material/Refresh";
+import React, { useState, useRef } from "react";
+import {
+  Box,
+  IconButton,
+  Avatar,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
+  Divider,
+  Badge,
+  Typography,
+} from "@mui/material";
+import MenuIcon from "@mui/icons-material/Menu";
+import FolderIcon from "@mui/icons-material/Folder";
+import LogoutIcon from "@mui/icons-material/Logout";
+import PersonIcon from "@mui/icons-material/Person";
 import { useChat } from "../context/ChatContext";
+import { useAuth } from "../context/AuthContext";
 import { streamQuery } from "../apiClient"; // We'll update apiClient next
 import { chatAPI } from "../api/chatApi";
 import MessageList from "./MessageList";
 import ChatInput from "./ChatInput";
 import WelcomeScreen from "./WelcomeScreen";
+import DocumentPanel from "./DocumentPanel";
 
-function Chat() {
+function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
   const [query, setQuery] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [isDocumentPanelOpen, setIsDocumentPanelOpen] = useState(false);
   const abortControllerRef = useRef(null);
+  const open = Boolean(anchorEl);
 
-  const { activeChat, addMessageToChat, createNewChat, updateLastMessage, setChats } =
-    useChat();
+  const { activeChat, addMessageToChat, updateLastMessage } = useChat();
+  const { user, logout } = useAuth();
+
+  const handleProfileClick = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleClose = () => {
+    setAnchorEl(null);
+  };
+
+  const handleLogout = () => {
+    handleClose();
+    logout();
+  };
+
+  // Get user's initials for avatar
+  const getInitials = (username) => {
+    if (!username) return "U";
+    return username.charAt(0).toUpperCase();
+  };
+
+  // Get document count for badge
+  const documentCount = activeChat ? activeChat.documents.length : 0;
 
   const handleSendQuery = async () => {
     if (!query.trim() || isTyping || !activeChat) return;
@@ -25,7 +66,7 @@ function Chat() {
     setQuery("");
     setIsTyping(true);
     abortControllerRef.current = new AbortController();
-    
+
     // Add empty bot message to local state only
     addMessageToChat(activeChat.id, { sender: "bot", text: "", sources: [] });
 
@@ -48,11 +89,16 @@ function Chat() {
         },
         abortControllerRef.current.signal
       );
-      
+
       // After streaming completes, save the complete bot message to database
       if (finalBotText || finalBotSources.length > 0) {
         try {
-          await chatAPI.addMessage(activeChat.id, finalBotText, "bot", finalBotSources);
+          await chatAPI.addMessage(
+            activeChat.id,
+            finalBotText,
+            "bot",
+            finalBotSources
+          );
           console.log("[CHAT] Successfully saved bot message to database");
         } catch (error) {
           console.warn("[CHAT] Failed to save bot message to database:", error);
@@ -67,7 +113,10 @@ function Chat() {
         try {
           await chatAPI.addMessage(activeChat.id, errorMessage, "bot", []);
         } catch (dbError) {
-          console.warn("[CHAT] Failed to save error message to database:", dbError);
+          console.warn(
+            "[CHAT] Failed to save error message to database:",
+            dbError
+          );
         }
       }
     } finally {
@@ -80,14 +129,107 @@ function Chat() {
     return (
       <Box
         sx={{
+          height: "100vh",
+          width: "100vw",
           display: "flex",
           flexDirection: "column",
-          height: "100%",
-          justifyContent: "center",
-          alignItems: "center",
+          bgcolor: "#0f0f0f",
+          overflow: "hidden",
         }}
       >
-        <WelcomeScreen />
+        {/* Header - Fixed at top */}
+        <Box
+          sx={{
+            flexShrink: 0,
+            height: "60px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            px: 3,
+            borderBottom: "1px solid #333",
+            bgcolor: "#0f0f0f",
+            zIndex: 10,
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <IconButton onClick={onToggleSidebar} sx={{ color: "#fff" }}>
+              <MenuIcon />
+            </IconButton>
+            <Typography variant="h6" sx={{ color: "#fff", fontWeight: 500 }}>
+              Enhanced RASS
+            </Typography>
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Badge
+              badgeContent={documentCount}
+              color="primary"
+              showZero={false}
+            >
+              <IconButton
+                onClick={() => setIsDocumentPanelOpen(true)}
+                sx={{ color: "#fff" }}
+              >
+                <FolderIcon />
+              </IconButton>
+            </Badge>
+            <IconButton
+              onClick={handleProfileClick}
+              sx={{ color: "#fff", p: 0 }}
+            >
+              <Avatar
+                sx={{
+                  width: 32,
+                  height: 32,
+                  backgroundColor: "primary.main",
+                  fontSize: "0.875rem",
+                }}
+              >
+                {getInitials(user?.username)}
+              </Avatar>
+            </IconButton>
+            <Menu
+              anchorEl={anchorEl}
+              open={open}
+              onClose={handleClose}
+              onClick={handleClose}
+              PaperProps={{
+                elevation: 3,
+                sx: {
+                  mt: 1.5,
+                  minWidth: 200,
+                },
+              }}
+            >
+              <MenuItem>
+                <ListItemIcon>
+                  <PersonIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Profile</ListItemText>
+              </MenuItem>
+              <Divider />
+              <MenuItem onClick={handleLogout}>
+                <ListItemIcon>
+                  <LogoutIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Logout</ListItemText>
+              </MenuItem>
+            </Menu>
+          </Box>
+        </Box>
+
+        {/* Main Content - Centered welcome screen */}
+        <Box
+          sx={{
+            flex: 1,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          <Box sx={{ width: "100%", maxWidth: "768px", px: 2 }}>
+            <WelcomeScreen />
+          </Box>
+        </Box>
       </Box>
     );
   }
@@ -95,44 +237,167 @@ function Chat() {
   return (
     <Box
       sx={{
-        height: "100%",
+        height: "100vh",
+        width: "100vw", // Full viewport width
         display: "flex",
         flexDirection: "column",
-        backgroundColor: "background.default",
+        bgcolor: "#0f0f0f", // Dark background like Gemini
+        overflow: "hidden", // Prevent outer scroll
       }}
     >
+      {/* Header - Fixed at top */}
       <Box
         sx={{
-          p: 1.5,
-          borderBottom: 1,
-          borderColor: "divider",
-          backgroundColor: "background.paper",
+          flexShrink: 0,
+          height: "60px",
           display: "flex",
-          alignItems: "center",
           justifyContent: "space-between",
+          alignItems: "center",
+          px: 3,
+          borderBottom: "1px solid #333",
+          bgcolor: "#0f0f0f",
+          zIndex: 10,
         }}
       >
-        <Typography variant="h6" sx={{ fontWeight: 600 }}>
-          {activeChat.title}
-        </Typography>
-        <Tooltip title="Clear chat (Not implemented)">
-          <IconButton size="small" disabled>
-            <RefreshIcon />
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <IconButton onClick={onToggleSidebar} sx={{ color: "#fff" }}>
+            <MenuIcon />
           </IconButton>
-        </Tooltip>
+          <Typography variant="h6" sx={{ color: "#fff", fontWeight: 500 }}>
+            Enhanced RASS
+          </Typography>
+        </Box>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <Badge badgeContent={documentCount} color="primary" showZero={false}>
+            <IconButton
+              onClick={() => setIsDocumentPanelOpen(true)}
+              sx={{ color: "#fff" }}
+            >
+              <FolderIcon />
+            </IconButton>
+          </Badge>
+          <IconButton onClick={handleProfileClick} sx={{ color: "#fff", p: 0 }}>
+            <Avatar
+              sx={{
+                width: 32,
+                height: 32,
+                backgroundColor: "primary.main",
+                fontSize: "0.875rem",
+              }}
+            >
+              {getInitials(user?.username)}
+            </Avatar>
+          </IconButton>
+          <Menu
+            anchorEl={anchorEl}
+            open={open}
+            onClose={handleClose}
+            onClick={handleClose}
+            PaperProps={{
+              elevation: 3,
+              sx: {
+                mt: 1.5,
+                minWidth: 200,
+              },
+            }}
+          >
+            <MenuItem>
+              <ListItemIcon>
+                <PersonIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Profile</ListItemText>
+            </MenuItem>
+            <Divider />
+            <MenuItem onClick={handleLogout}>
+              <ListItemIcon>
+                <LogoutIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Logout</ListItemText>
+            </MenuItem>
+          </Menu>
+        </Box>
       </Box>
 
-      {activeChat.messages.length === 0 && !isTyping ? (
-        <WelcomeScreen />
-      ) : (
-        <MessageList messages={activeChat.messages} isTyping={isTyping} />
-      )}
+      {/* Main Content Area - Fixed height to stop above input */}
+      <Box
+        sx={{
+          // Calculate exact height: 100vh - header (60px) - input area (120px estimated)
+          height: "calc(100vh - 60px - 120px)",
+          width: "100%",
+          overflow: "auto", // Main scrollbar will be at the edge
+          display: "flex",
+          justifyContent: "center", // Center the content
+          // Custom scrollbar styling for professional look
+          "&::-webkit-scrollbar": {
+            width: "8px",
+          },
+          "&::-webkit-scrollbar-track": {
+            background: "transparent",
+          },
+          "&::-webkit-scrollbar-thumb": {
+            background: "#333",
+            borderRadius: "4px",
+          },
+          "&::-webkit-scrollbar-thumb:hover": {
+            background: "#555",
+          },
+        }}
+      >
+        {/* Centered content container */}
+        <Box
+          sx={{
+            width: "100%",
+            maxWidth: "768px", // Gemini-like max width
+            display: "flex",
+            flexDirection: "column",
+            px: 2,
+          }}
+        >
+          {/* Messages content */}
+          <Box sx={{ py: 3 }}>
+            {activeChat.messages.length === 0 && !isTyping ? (
+              <WelcomeScreen />
+            ) : (
+              <MessageList messages={activeChat.messages} isTyping={isTyping} />
+            )}
+          </Box>
+        </Box>
+      </Box>
 
-      <ChatInput
-        query={query}
-        setQuery={setQuery}
-        onSend={handleSendQuery}
-        isTyping={isTyping}
+      {/* Chat input - Fixed at bottom, centered, Gemini-style */}
+      <Box
+        sx={{
+          position: "fixed",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          display: "flex",
+          justifyContent: "center",
+          // Subtle gradient background like Gemini
+          background:
+            "linear-gradient(to top, #0f0f0f 60%, rgba(15,15,15,0.9) 100%)",
+          backdropFilter: "blur(10px)",
+          // No harsh border - just subtle shadow like Gemini
+          boxShadow: "0 -4px 12px rgba(0,0,0,0.3)",
+          py: 2, // More padding for better spacing
+          px: 2,
+          zIndex: 10,
+        }}
+      >
+        <Box sx={{ width: "100%", maxWidth: "768px" }}>
+          <ChatInput
+            query={query}
+            setQuery={setQuery}
+            onSend={handleSendQuery}
+            isTyping={isTyping}
+          />
+        </Box>
+      </Box>
+
+      {/* Document Panel Modal */}
+      <DocumentPanel
+        open={isDocumentPanelOpen}
+        onClose={() => setIsDocumentPanelOpen(false)}
       />
     </Box>
   );
