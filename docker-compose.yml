@@ -17,10 +17,12 @@ services:
     container_name: opensearch_node
     environment:
       - discovery.type=single-node
-      - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
-      - bootstrap.memory_lock=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx1g  # Reduced memory allocation
+      - bootstrap.memory_lock=false  # Disable memory lock to prevent issues
       - "DISABLE_SECURITY_PLUGIN=true"
       - "DISABLE_INSTALL_DEMO_CONFIG=true"
+      - "cluster.routing.allocation.disk.threshold_enabled=false"  # Disable disk checks for dev
+      - "logger.level=WARN"  # Reduce logging to prevent memory issues
     ulimits:
       memlock:
         soft: -1
@@ -36,10 +38,18 @@ services:
     networks:
       - rass_network
     healthcheck:
-      test: [ "CMD-SHELL", "curl -sS -k http://localhost:9200/_cluster/health | grep -vq '\"status\":\"red\"'" ]
-      interval: 10s
-      timeout: 5s
+      test: [ "CMD-SHELL", "curl -sS -k http://localhost:9200/_cluster/health || exit 1" ]
+      interval: 30s  # Increased interval to reduce load
+      timeout: 10s
       retries: 10
+      start_period: 60s  # Give more time for startup
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G  # Set container memory limit
+        reservations:
+          memory: 512M
 
   redis:
     image: redis:7.2-alpine

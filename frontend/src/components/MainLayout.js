@@ -1,17 +1,13 @@
 // In frontend/src/components/MainLayout.js
 import React, { useState } from "react";
 import { ChatProvider } from "../context/ChatContext";
-import { ThemeProvider, CssBaseline, Box, Toolbar } from "@mui/material";
-import { useAuth } from "../context/AuthContext";
+import { ThemeProvider, CssBaseline, Box } from "@mui/material";
 import { darkTheme } from "../theme";
-import Header from "./Header";
 import Sidebar from "./Sidebar";
 import Chat from "./Chat";
-import DocumentPanel from "./DocumentPanel";
 import { DRAWER_WIDTH } from "../constants/layout";
 
 const MainLayout = () => {
-  const { logout } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isDocumentPanelOpen, setIsDocumentPanelOpen] = useState(false);
 
@@ -26,11 +22,7 @@ const MainLayout = () => {
     <ThemeProvider theme={darkTheme}>
       <CssBaseline />
       <ChatProvider>
-        <Box sx={{ display: "flex", height: "100vh" }}>
-          <Header
-            onToggleSidebar={handleToggleSidebar}
-            onToggleDocumentSidebar={handleToggleDocumentPanel}
-          />
+        <Box sx={{ display: "flex", height: "100vh", overflow: "hidden" }}>
           <Sidebar isSidebarOpen={isSidebarOpen} />
 
           <Box
@@ -43,7 +35,6 @@ const MainLayout = () => {
                   duration: theme.transitions.duration.leavingScreen,
                 }),
               marginLeft: `-${DRAWER_WIDTH}px`,
-              marginRight: isDocumentPanelOpen ? "0px" : "0px", // Account for document panel
               ...(isSidebarOpen && {
                 transition: (theme) =>
                   theme.transitions.create(["margin"], {
@@ -55,17 +46,15 @@ const MainLayout = () => {
               height: "100vh",
               display: "flex",
               flexDirection: "column",
-              minWidth: 0, // Allows flex child to shrink
+              minWidth: 0,
+              overflow: "hidden", // Prevent any scrolling on main container
             }}
           >
-            <Toolbar /> {/* This is a crucial spacer */}
-            <Chat />
+            <Chat
+              onToggleSidebar={handleToggleSidebar}
+              onToggleDocumentPanel={handleToggleDocumentPanel}
+            />
           </Box>
-          {/* 5. Render the new DocumentPanel */}
-          <DocumentPanel
-            isOpen={isDocumentPanelOpen}
-            onClose={() => setIsDocumentPanelOpen(false)}
-          />
         </Box>
       </ChatProvider>
     </ThemeProvider>

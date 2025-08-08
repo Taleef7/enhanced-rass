@@ -20,10 +20,10 @@ const authMiddleware = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    console.log("[AUTH] Decoded JWT:", decoded);
+    // console.log("[AUTH] Decoded JWT:", decoded);  // Commented out to reduce log noise
     req.user = decoded;
     req.userId = decoded.userId; // Extract userId for easy access
-    console.log("[AUTH] Set req.userId:", req.userId);
+    // console.log("[AUTH] Set req.userId:", req.userId);  // Commented out to reduce log noise
     next();
   } catch (error) {
     console.log("[AUTH] JWT verification failed:", error.message);
