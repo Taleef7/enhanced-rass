@@ -6,7 +6,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const fs = require("fs");
 const yaml = require("js-yaml");
 const { v4: uuidv4 } = require("uuid"); // Import uuid
-const { runSteps, simpleSearch  } = require("./executePlan");
+const { runSteps, simpleSearch } = require("./executePlan");
 const { generateHypotheticalDocument } = require("./hydeGenerator.js");
 
 // --- Centralized Configuration Loading ---
@@ -75,11 +75,17 @@ const osClient = new Client({
   node: `http://${OPENSEARCH_HOST}:${OPENSEARCH_PORT}`,
 });
 
-
-
 // --- START: NEW CONTEXT-AWARE SEARCH PLANNER ---
-async function createRefinedSearchPlan(llmClient, llmProvider, modelName, originalQuery, initialContext) {
-  console.log(`[Refined Plan] Creating context-aware search plan for: "${originalQuery}"`);
+async function createRefinedSearchPlan(
+  llmClient,
+  llmProvider,
+  modelName,
+  originalQuery,
+  initialContext
+) {
+  console.log(
+    `[Refined Plan] Creating context-aware search plan for: "${originalQuery}"`
+  );
 
   const planningPrompt = `You are a search query refinement expert. Based on the user's original query and the provided initial search results, generate a JSON array of 3-4 new, highly specific search terms that will find the definitive answer.
 
@@ -114,17 +120,23 @@ Generate a JSON array of specific search terms now. Your entire response must be
       search_term: term.trim(),
       knn_k: DEFAULT_K_OPENSEARCH_HITS,
     }));
-    
+
     console.log(`[Refined Plan] Created ${plan.length} new search steps.`);
     return plan;
   } catch (error) {
-    console.warn(`[Refined Plan] Could not create refined plan, falling back to original query.`);
-    return [{ step_id: "fallback_original", search_term: originalQuery, knn_k: DEFAULT_K_OPENSEARCH_HITS }];
+    console.warn(
+      `[Refined Plan] Could not create refined plan, falling back to original query.`
+    );
+    return [
+      {
+        step_id: "fallback_original",
+        search_term: originalQuery,
+        knn_k: DEFAULT_K_OPENSEARCH_HITS,
+      },
+    ];
   }
 }
 // --- END: NEW CONTEXT-AWARE SEARCH PLANNER ---
-
-
 
 async function embedText(text) {
   if (!text?.trim()) throw new Error("Empty text provided for embedding");
@@ -152,12 +164,19 @@ async function embedText(text) {
   }
 }
 
-
 // REFACTORED 'ask' function to support both streaming and non-streaming
-async function ask(query, top_k_param, stream = false, res = null, userId, documents) {
+async function ask(
+  query,
+  top_k_param,
+  stream = false,
+  res = null,
+  userId,
+  documents
+) {
   if (!query?.trim()) throw new Error("Empty query");
   // if the API caller passed in `top_k_param`, use that; otherwise fall back to our config
-  const top_k_for_generation = typeof top_k_param === "number" ? top_k_param : DEFAULT_TOP_K;
+  const top_k_for_generation =
+    typeof top_k_param === "number" ? top_k_param : DEFAULT_TOP_K;
   console.log(`[Ask] Query: "${query}", User: ${userId}`);
 
   console.log("[Retrieval Stage 1] Performing initial broad search...");
@@ -172,55 +191,60 @@ async function ask(query, top_k_param, stream = false, res = null, userId, docum
 
   if (!initialHits || initialHits.length === 0) {
     console.warn("[Ask] No documents found in initial search.");
-    const emptyResponse = { answer: "I could not find any relevant information.", source_documents: [] };
+    const emptyResponse = {
+      answer: "I could not find any relevant information.",
+      source_documents: [],
+    };
     if (stream) {
-        writeSSE(res, { choices: [{ delta: { content: emptyResponse.answer } }] });
-        writeSSE(res, { choices: [{ delta: { custom_meta: { citations: [] } } }] });
-        writeSSE(res, "[DONE]");
-        res.end();
+      writeSSE(res, {
+        choices: [{ delta: { content: emptyResponse.answer } }],
+      });
+      writeSSE(res, {
+        choices: [{ delta: { custom_meta: { citations: [] } } }],
+      });
+      writeSSE(res, "[DONE]");
+      res.end();
     }
     return emptyResponse;
   }
 
-  const initialContext = initialHits.map(hit => hit._source.text).join("\n\n---\n\n");
+  const initialContext = initialHits
+    .map((hit) => hit._source.text)
+    .join("\n\n---\n\n");
 
   // Stage 2: Context-aware search refinement
-  console.log("[Retrieval Stage 2] Performing context-aware refined search...");
-  // Determine LLM client, provider, and model name from config or context
-  let llmClient, llmProvider, modelName;
-  if (config.llm_provider === "openai") {
-    llmClient = new OpenAI({ apiKey: config.openai_api_key });
-    llmProvider = "openai";
-    modelName = config.openai_model || "gpt-3.5-turbo";
-  } else if (config.llm_provider === "google") {
-    llmClient = new GoogleGenerativeAI(config.google_api_key);
-    llmProvider = "google";
-    modelName = config.google_model || "gemini-pro";
-  } else {
-    throw new Error("Unsupported LLM provider in config");
-  }
-  const refinedPlan = await createRefinedSearchPlan(llmClient, llmProvider, modelName, query, initialContext);
+  console.log(
+    "[Retrieval Stage 2] Skipping refined search - using initial hits"
+  );
+  // TODO: Fix LLM provider configuration
+  // const refinedPlan = await createRefinedSearchPlan(llmClient, llmProvider, modelName, query, initialContext);
+  // const finalParentDocs = await runSteps({
+  //   plan: refinedPlan,
+  //   embed: embedText,
+  //   os: osClient,
+  //   index: OPENSEARCH_INDEX_NAME,
+  //   userId,
+  //   documents,
+  // });
+  const finalParentDocs = initialHits;
 
-  const finalParentDocs = await runSteps({
-    plan: refinedPlan,
-    embed: embedText,
-    os: osClient,
-    index: OPENSEARCH_INDEX_NAME,
-    userId,
-    documents,
-  });
-
-  const parentDocsToUse = (finalParentDocs && finalParentDocs.length > 0)
-    ? finalParentDocs
-    : initialHits.map(h => ({ _source: h._source, _score: h._score }));
-
+  const parentDocsToUse =
+    finalParentDocs && finalParentDocs.length > 0
+      ? finalParentDocs
+      : initialHits.map((h) => ({ _source: h._source, _score: h._score }));
 
   const source_documents = parentDocsToUse
-    .map((h) => ({ text: h._source?.text, metadata: h._source?.metadata, initial_score: h._score }))
+    .map((h) => ({
+      text: h._source?.text,
+      metadata: h._source?.metadata,
+      initial_score: h._score,
+    }))
     .filter((doc) => doc.text?.trim())
     .slice(0, top_k_for_generation);
-  
-  console.log(`[Generation] Generating with ${source_documents.length} documents...`);
+
+  console.log(
+    `[Generation] Generating with ${source_documents.length} documents...`
+  );
 
   const context = source_documents.map((doc) => doc.text).join("\n\n---\n\n");
   const generationPrompt = `
@@ -332,7 +356,12 @@ function writeSSE(res, data) {
             LLM_PROVIDER === "openai" ? OPENAI_MODEL_NAME : GEMINI_MODEL_NAME,
           ...data,
         });
-  console.log("[RASS->SSE]", chunk);
+  console.log(
+    "[RASS->SSE]",
+    typeof data === "string"
+      ? data
+      : JSON.stringify(data).substring(0, 100) + "..."
+  );
   res.write(`data: ${chunk}\n\n`);
 }
 
@@ -357,7 +386,6 @@ app.post("/ask", async (req, res) => {
 // NEW Streaming endpoint for LibreChat
 app.post("/stream-ask", async (req, res) => {
   try {
-
     const { query, documents, userId, top_k } = req.body;
     if (!query || !userId) {
       return res.status(400).json({ error: "Missing query or userId" });

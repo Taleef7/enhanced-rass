@@ -150,9 +150,9 @@ app.post(
 // --- START: NEW Streaming Query Endpoint ---
 app.post("/api/stream-ask", authMiddleware, async (req, res) => {
   const { query, documents } = req.body;
-  const userId = req.user.userId; // Get from authenticated user
+  const userId = req.userId; // Get from authenticated user
 
-  console.log(`[Stream Proxy] Received query from user: ${userId}`);
+  console.log(`[Stream Proxy] Query from user: ${userId}`);
 
   if (!query) {
     return res.status(400).json({ error: "Query is required" });
@@ -197,85 +197,95 @@ app.post("/api/stream-ask", authMiddleware, async (req, res) => {
 // --- START: NEW User Documents Endpoint ---
 app.get("/api/user-documents", authMiddleware, async (req, res) => {
   const userId = req.userId;
-  
+
   console.log(`[User Documents] Fetching documents for user: ${userId}`);
 
   try {
     // Query OpenSearch to get all unique documents for this user
     // Use source field for aggregation since existing documents may not have originalFilename
-    const axios = require('axios');
+    const axios = require("axios");
     const openSearchQuery = {
       size: 0,
       query: {
         bool: {
-          filter: [
-            { term: { "metadata.userId.keyword": userId } }
-          ]
-        }
+          filter: [{ term: { "metadata.userId.keyword": userId } }],
+        },
       },
       aggs: {
         documents: {
           terms: {
             field: "metadata.source.keyword",
-            size: 1000
+            size: 1000,
           },
           aggs: {
             latest: {
               top_hits: {
                 size: 1,
-                sort: [{ "_score": { order: "desc" } }],
-                _source: ["metadata"]
-              }
-            }
-          }
-        }
-      }
+                sort: [{ _score: { order: "desc" } }],
+                _source: ["metadata"],
+              },
+            },
+          },
+        },
+      },
     };
 
     // Use the environment variable for OpenSearch URL, with fallback
-    const openSearchUrl = process.env.OPENSEARCH_URL || 'http://opensearch:9200';
-    const indexName = process.env.OPENSEARCH_INDEX_NAME || 'knowledge_base';
-    
-    const response = await axios.post(`${openSearchUrl}/${indexName}/_search`, openSearchQuery, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000
-    });
+    const openSearchUrl =
+      process.env.OPENSEARCH_URL || "http://opensearch:9200";
+    const indexName = process.env.OPENSEARCH_INDEX_NAME || "knowledge_base";
 
-    const documents = response.data.aggregations.documents.buckets.map(bucket => {
-      const latestDoc = bucket.latest.hits.hits[0];
-      const metadata = latestDoc ? latestDoc._source.metadata : {};
-      
-      // Use original filename if available, otherwise extract from source path
-      let displayName = metadata.originalFilename;
-      
-      if (!displayName && metadata.source) {
-        // For temp files, use a more descriptive name
-        if (metadata.source.includes('temp/')) {
-          displayName = `Document (${metadata.source.split('/').pop().substring(0, 8)}...)`;
-        } else {
-          displayName = metadata.source.split('/').pop();
+    const response = await axios.post(
+      `${openSearchUrl}/${indexName}/_search`,
+      openSearchQuery,
+      {
+        headers: { "Content-Type": "application/json" },
+        timeout: 30000,
+      }
+    );
+
+    const documents = response.data.aggregations.documents.buckets.map(
+      (bucket) => {
+        const latestDoc = bucket.latest.hits.hits[0];
+        const metadata = latestDoc ? latestDoc._source.metadata : {};
+
+        // Use original filename if available, otherwise extract from source path
+        let displayName = metadata.originalFilename;
+
+        if (!displayName && metadata.source) {
+          // For temp files, use a more descriptive name
+          if (metadata.source.includes("temp/")) {
+            displayName = `Document (${metadata.source
+              .split("/")
+              .pop()
+              .substring(0, 8)}...)`;
+          } else {
+            displayName = metadata.source.split("/").pop();
+          }
         }
-      }
-      
-      if (!displayName) {
-        displayName = "Unknown Document";
-      }
-      
-      return {
-        name: displayName,
-        source: metadata.source || "Unknown",
-        uploadedAt: metadata.uploadedAt || new Date().toISOString(),
-        chunkCount: bucket.doc_count
-      };
-    });
 
-    console.log(`[User Documents] Found ${documents.length} documents for user ${userId}`);
+        if (!displayName) {
+          displayName = "Unknown Document";
+        }
+
+        return {
+          name: displayName,
+          source: metadata.source || "Unknown",
+          uploadedAt: metadata.uploadedAt || new Date().toISOString(),
+          chunkCount: bucket.doc_count,
+        };
+      }
+    );
+
+    console.log(
+      `[User Documents] Found ${documents.length} documents for user ${userId}`
+    );
     res.json({ documents });
   } catch (error) {
     console.error("[User Documents] Error fetching documents:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Failed to fetch user documents",
-      details: error.message 
+      details: error.message,
     });
   }
 });
