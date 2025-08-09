@@ -14,6 +14,8 @@ const multer = require("multer");
 const authRoutes = require("./src/authRoutes.js");
 const chatRoutes = require("./src/chatRoutes.js");
 const authMiddleware = require("./src/authMiddleware.js");
+const { OpenAI } = require("openai");
+const { toFile } = require("openai/uploads");
 
 const DEFAULT_TOP_K = Number(process.env.MCP_DEFAULT_TOP_K) || 10;
 const storage = multer.memoryStorage();
@@ -24,6 +26,9 @@ const app = express();
 app.use(cors()); // Use CORS middleware to allow requests from any origin
 app.use(express.json({ limit: "10mb" }));
 const PORT = process.env.MCP_SERVER_PORT || 8080;
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
 
 // --- START: NEW LibreChat OpenAI-Compatible Endpoint ---
 app.post("/api/chat/completions", async (req, res) => {
@@ -147,6 +152,49 @@ app.post(
 );
 // --- END: NEW File Upload Endpoint ---
 
+// --- START: NEW Whisper Transcription Endpoint ---
+app.post(
+  "/api/transcribe",
+  authMiddleware,
+  upload.single("audio"),
+  async (req, res) => {
+    try {
+      if (!openai) {
+        return res.status(503).json({
+          error: "Transcription service unavailable (no OPENAI_API_KEY).",
+        });
+      }
+      if (!req.file) {
+        return res.status(400).json({ error: "No audio file provided." });
+      }
+
+      // Construct a File-like object from buffer for OpenAI SDK
+      const filename = req.file.originalname || "recording.webm";
+      const file = await toFile(req.file.buffer, filename, {
+        type: req.file.mimetype || "audio/webm",
+      });
+
+      const response = await openai.audio.transcriptions.create({
+        file,
+        model: "whisper-1",
+        response_format: "json",
+        temperature: 0,
+        // The SDK infers filename from file.name if present
+        // Set a name on the Blob for better diagnostics
+        // Note: Node 18+ supports Blob; else we'd use FormData with fs
+      });
+
+      return res.json({ text: response.text || "" });
+    } catch (e) {
+      console.error("[Transcribe] Error:", e);
+      return res
+        .status(500)
+        .json({ error: "Transcription failed.", details: e.message });
+    }
+  }
+);
+// --- END: NEW Whisper Transcription Endpoint ---
+
 // --- START: NEW Streaming Query Endpoint ---
 app.post("/api/stream-ask", authMiddleware, async (req, res) => {
   const { query, documents } = req.body;
@@ -201,36 +249,31 @@ app.get("/api/user-documents", authMiddleware, async (req, res) => {
   console.log(`[User Documents] Fetching documents for user: ${userId}`);
 
   try {
-    // Query OpenSearch to get all unique documents for this user
-    // Use source field for aggregation since existing documents may not have originalFilename
+    // We intentionally avoid terms aggregations on text fields because
+    // the index mapping may not provide `.keyword` subfields.
+    // Instead, we fetch a sample of chunks for this user and group in-process.
     const axios = require("axios");
-    const openSearchQuery = {
-      size: 0,
-      query: {
-        bool: {
-          filter: [{ term: { "metadata.userId.keyword": userId } }],
-        },
-      },
-      aggs: {
-        documents: {
-          terms: {
-            field: "metadata.source.keyword",
-            size: 1000,
-          },
-          aggs: {
-            latest: {
-              top_hits: {
-                size: 1,
-                sort: [{ _score: { order: "desc" } }],
-                _source: ["metadata"],
-              },
-            },
-          },
-        },
+
+    // Build a robust filter that works whether metadata.userId is mapped as
+    // keyword or text.
+    const userFilter = {
+      bool: {
+        should: [
+          { term: { "metadata.userId.keyword": userId } },
+          { term: { "metadata.userId": userId } },
+          { match_phrase: { "metadata.userId": userId } },
+        ],
+        minimum_should_match: 1,
       },
     };
 
-    // Use the environment variable for OpenSearch URL, with fallback
+    const openSearchQuery = {
+      size: Number(process.env.DOCUMENT_LIST_SAMPLE_SIZE) || 2000,
+      _source: ["metadata"],
+      query: { bool: { filter: [userFilter] } },
+      sort: [{ "metadata.uploadedAt": { order: "desc" } }],
+    };
+
     const openSearchUrl =
       process.env.OPENSEARCH_URL || "http://opensearch:9200";
     const indexName = process.env.OPENSEARCH_INDEX_NAME || "knowledge_base";
@@ -244,39 +287,36 @@ app.get("/api/user-documents", authMiddleware, async (req, res) => {
       }
     );
 
-    const documents = response.data.aggregations.documents.buckets.map(
-      (bucket) => {
-        const latestDoc = bucket.latest.hits.hits[0];
-        const metadata = latestDoc ? latestDoc._source.metadata : {};
+    const hits = response.data?.hits?.hits || [];
 
-        // Use original filename if available, otherwise extract from source path
-        let displayName = metadata.originalFilename;
-
-        if (!displayName && metadata.source) {
-          // For temp files, use a more descriptive name
-          if (metadata.source.includes("temp/")) {
-            displayName = `Document (${metadata.source
-              .split("/")
-              .pop()
-              .substring(0, 8)}...)`;
-          } else {
-            displayName = metadata.source.split("/").pop();
-          }
-        }
-
-        if (!displayName) {
-          displayName = "Unknown Document";
-        }
-
-        return {
-          name: displayName,
-          source: metadata.source || "Unknown",
-          uploadedAt: metadata.uploadedAt || new Date().toISOString(),
-          chunkCount: bucket.doc_count,
-        };
+    // Group by the physical source (file path) so chunks from the same upload are grouped.
+    const groups = new Map();
+    for (const h of hits) {
+      const md = h._source?.metadata || {};
+      const source = md.source || md.originalFilename || "Unknown";
+      if (!groups.has(source)) {
+        groups.set(source, {
+          name:
+            md.originalFilename ||
+            (md.source ? md.source.split("/").pop() : "Unknown Document"),
+          source: md.source || "Unknown",
+          uploadedAt: md.uploadedAt || new Date(0).toISOString(),
+          chunkCount: 0,
+        });
       }
-    );
+      const g = groups.get(source);
+      g.chunkCount += 1;
+      // Keep the latest uploadedAt if present
+      if (md.uploadedAt) {
+        const a = new Date(g.uploadedAt).getTime();
+        const b = new Date(md.uploadedAt).getTime();
+        if (isFinite(b) && (!isFinite(a) || b > a)) {
+          g.uploadedAt = md.uploadedAt;
+        }
+      }
+    }
 
+    const documents = Array.from(groups.values());
     console.log(
       `[User Documents] Found ${documents.length} documents for user ${userId}`
     );
