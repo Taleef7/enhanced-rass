@@ -10,26 +10,29 @@ import {
   ListItem,
   ListItemText,
   IconButton,
-  Divider,
   CircularProgress,
   Alert,
-  Chip,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import DescriptionIcon from "@mui/icons-material/Description";
 import { chatAPI } from "../api/chatApi";
 
-const DocumentPanel = ({ isOpen, onClose }) => {
+const DocumentPanel = ({ open, isOpen, onClose }) => {
+  const isOpenResolved = typeof open !== "undefined" ? open : isOpen;
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Format file size helper
+  // Note: chunkCount represents number of indexed chunks, not file size.
+  // Keep a size formatter handy if we later include stored byte sizes.
   const formatFileSize = (bytes) => {
-    if (!bytes) return "Unknown size";
+    if (!bytes && bytes !== 0) return "Unknown size";
     const k = 1024;
     const sizes = ["B", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const i = Math.max(
+      0,
+      Math.floor(Math.log(Math.max(bytes, 1)) / Math.log(k))
+    );
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
@@ -42,10 +45,10 @@ const DocumentPanel = ({ isOpen, onClose }) => {
 
   // Load user documents when panel opens
   useEffect(() => {
-    if (isOpen) {
+    if (isOpenResolved) {
       loadUserDocuments();
     }
-  }, [isOpen]);
+  }, [isOpenResolved]);
 
   const loadUserDocuments = async () => {
     try {
@@ -63,7 +66,7 @@ const DocumentPanel = ({ isOpen, onClose }) => {
 
   return (
     <Dialog
-      open={isOpen}
+      open={isOpenResolved}
       onClose={onClose}
       maxWidth="md"
       fullWidth
@@ -83,7 +86,9 @@ const DocumentPanel = ({ isOpen, onClose }) => {
           borderColor: "divider",
         }}
       >
-        <Typography variant="h6">Your Documents</Typography>
+        <Typography variant="h6" component="span">
+          Your Documents
+        </Typography>
         <IconButton onClick={onClose} size="small">
           <CloseIcon />
         </IconButton>
@@ -148,7 +153,7 @@ const DocumentPanel = ({ isOpen, onClose }) => {
                               color="text.secondary"
                               display="block"
                             >
-                              {formatFileSize(doc.chunkCount)} chunks
+                              {doc.chunkCount} chunks
                             </Typography>
                             <Typography
                               variant="caption"

@@ -9,9 +9,30 @@ const log = (...a) => console.log(...a);
 const warn = (...a) => console.warn(...a);
 
 const createSecureQuery = (term, vector, k, userId, documents) => {
-  const securityFilter = [{ term: { "metadata.userId.keyword": userId } }];
+  // Be robust to mappings that may not provide .keyword subfields.
+  // Use should with term/match_phrase variants and require one to match.
+  const userIdFilter = {
+    bool: {
+      should: [
+        { term: { "metadata.userId.keyword": userId } },
+        { term: { "metadata.userId": userId } },
+        { match_phrase: { "metadata.userId": userId } },
+      ],
+      minimum_should_match: 1,
+    },
+  };
+
+  const securityFilter = [userIdFilter];
   if (documents && documents.length > 0) {
-    securityFilter.push({ terms: { "metadata.source.keyword": documents } });
+    securityFilter.push({
+      bool: {
+        should: [
+          { terms: { "metadata.source.keyword": documents } },
+          { terms: { "metadata.source": documents } },
+        ],
+        minimum_should_match: 1,
+      },
+    });
   }
 
   return {
