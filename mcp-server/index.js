@@ -181,7 +181,7 @@ app.post(
         temperature: 0,
         // The SDK infers filename from file.name if present
         // Set a name on the Blob for better diagnostics
-        // Note: Node 18+ supports Blob; else we'd use FormData with fs
+        // Requires Node 18+ for Blob/File support. No fallback for earlier Node versions is implemented.
       });
 
       return res.json({ text: response.text || "" });
