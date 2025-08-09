@@ -1,5 +1,5 @@
 // In frontend/src/components/Sidebar.js
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Drawer,
   Box,
@@ -8,7 +8,6 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  Toolbar,
   IconButton,
   Dialog,
   DialogTitle,
@@ -16,14 +15,18 @@ import {
   DialogActions,
   Button,
   Typography,
+  TextField,
+  InputAdornment,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import ChatIcon from "@mui/icons-material/Chat";
 import DeleteIcon from "@mui/icons-material/Delete";
+import SearchIcon from "@mui/icons-material/Search";
+import CloseIcon from "@mui/icons-material/Close";
 import { useChat } from "../context/ChatContext";
 import { DRAWER_WIDTH } from "../constants/layout";
 
-const Sidebar = ({ isSidebarOpen }) => {
+const Sidebar = ({ isSidebarOpen, onClose }) => {
   const { chats, activeChatId, createNewChat, setActiveChatId, deleteChat } =
     useChat();
   const chatList = Object.values(chats);
@@ -49,22 +52,57 @@ const Sidebar = ({ isSidebarOpen }) => {
     setChatToDelete(null);
   };
 
+  const [search, setSearch] = useState("");
+
+  const filteredChats = useMemo(() => {
+    if (!search.trim()) return chatList;
+    const s = search.toLowerCase();
+    return chatList.filter((c) => c.title?.toLowerCase().includes(s));
+  }, [chatList, search]);
+
   return (
     <Drawer
-      variant="persistent"
+      variant="temporary"
       open={isSidebarOpen}
+      onClose={onClose}
+      ModalProps={{ keepMounted: true }}
       sx={{
         width: DRAWER_WIDTH,
         flexShrink: 0,
         "& .MuiDrawer-paper": {
           width: DRAWER_WIDTH,
           boxSizing: "border-box",
-          backgroundColor: "background.paper",
-          borderRight: "none",
+          backgroundColor: "rgba(22,22,22,0.9)",
+          backdropFilter: "blur(10px)",
+          borderRight: "1px solid rgba(255,255,255,0.08)",
+          // Keep the global header visible and clickable above the Drawer
+          top: 60,
+          height: "calc(100% - 60px)",
         },
       }}
     >
-      <Toolbar /> {/* Spacer to align content below the AppBar */}
+      {/* Local header inside the Drawer for brand + close */}
+      <Box
+        sx={{
+          height: 60,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          px: 2,
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
+        }}
+      >
+        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+          Enhanced RASS
+        </Typography>
+        <IconButton
+          onClick={onClose}
+          size="small"
+          sx={{ color: "text.secondary" }}
+        >
+          <CloseIcon fontSize="small" />
+        </IconButton>
+      </Box>
       <Box
         sx={{
           overflow: "auto",
@@ -82,6 +120,7 @@ const Sidebar = ({ isSidebarOpen }) => {
               borderColor: "divider",
               justifyContent: "center",
               py: 1.5,
+              "&:hover": { borderColor: "primary.main" },
             }}
           >
             <ListItemIcon sx={{ minWidth: "auto", mr: 1 }}>
@@ -90,8 +129,26 @@ const Sidebar = ({ isSidebarOpen }) => {
             <ListItemText primary="New Chat" />
           </ListItemButton>
         </Box>
+
+        {/* Search/filter */}
+        <Box sx={{ px: 1, pb: 1 }}>
+          <TextField
+            size="small"
+            fullWidth
+            placeholder="Search chats…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" />
+                </InputAdornment>
+              ),
+            }}
+          />
+        </Box>
         <List sx={{ flexGrow: 1, p: 1 }}>
-          {chatList.map((chat) => (
+          {filteredChats.map((chat) => (
             <ListItem key={chat.id} disablePadding sx={{ mb: 0.5 }}>
               <ListItemButton
                 selected={chat.id === activeChatId}
@@ -102,6 +159,7 @@ const Sidebar = ({ isSidebarOpen }) => {
                     backgroundColor: "action.selected",
                   },
                   pr: 1, // Reduce right padding to make room for delete button
+                  "&:hover": { backgroundColor: "rgba(255,255,255,0.06)" },
                 }}
               >
                 <ListItemIcon>
