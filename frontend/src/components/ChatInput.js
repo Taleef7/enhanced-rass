@@ -246,7 +246,9 @@ const ChatInput = ({
       if (speechRecRef.current) {
         try {
           speechRecRef.current.stop();
-        } catch {}
+        } catch {
+          // Ignore errors when stopping speech recognition during cleanup
+        }
         speechRecRef.current = null;
       }
     };
