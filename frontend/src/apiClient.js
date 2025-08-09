@@ -109,3 +109,26 @@ export default apiClient;
 
 // Export API_BASE_URL for use in other modules
 export { API_BASE_URL };
+
+// New: Transcribe audio blob via backend Whisper endpoint
+export const transcribeAudio = async (audioBlob) => {
+  const formData = new FormData();
+  formData.append("audio", audioBlob, "recording.webm");
+
+  const token = getAuthToken();
+  const response = await fetch(`${API_BASE_URL}/transcribe`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const msg = `HTTP error! status: ${response.status}`;
+    throw new Error(msg);
+  }
+
+  const data = await response.json();
+  return data.text || "";
+};

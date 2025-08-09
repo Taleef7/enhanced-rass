@@ -13,7 +13,7 @@ WORKDIR /usr/src/app/mcp-server
 COPY package*.json ./
 
 # Install all production dependencies
-RUN npm ci --only=production
+RUN npm install --omit=dev
 
 # Copy the rest of your application code, including the prisma directory
 COPY . .

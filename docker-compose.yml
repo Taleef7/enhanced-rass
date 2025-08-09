@@ -138,6 +138,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - MCP_DEFAULT_TOP_K=50
       - DATABASE_URL=postgresql://rass_user:rass_password@db:5432/rass_db
 

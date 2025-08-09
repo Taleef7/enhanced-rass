@@ -114,16 +114,17 @@ const MessageBubble = ({ message, index }) => {
                     },
                   },
                   "& pre": {
-                    backgroundColor: "grey.900",
+                    backgroundColor: "rgba(255,255,255,0.04)",
                     color: "grey.100",
                     padding: "12px 16px",
                     borderRadius: "8px",
                     overflow: "auto",
                     fontSize: "0.875rem",
-                    margin: "8px 0",
+                    margin: "12px 0",
+                    border: "1px solid rgba(255,255,255,0.06)",
                   },
                   "& code": {
-                    backgroundColor: "grey.800",
+                    backgroundColor: "rgba(255,255,255,0.06)",
                     color: "grey.100",
                     padding: "2px 6px",
                     borderRadius: "4px",
@@ -194,9 +195,10 @@ const MessageBubble = ({ message, index }) => {
                     top: 8,
                     right: 8,
                     opacity: 0,
-                    transition: "opacity 0.2s",
+                    transition: "opacity 0.2s, transform 0.2s",
                     color: "text.secondary",
-                    "&:hover": { opacity: 1 },
+                    transform: "translateY(-2px)",
+                    "&:hover": { opacity: 1, transform: "translateY(0)" },
                   }}
                 >
                   {copied ? (

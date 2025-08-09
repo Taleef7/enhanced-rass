@@ -31,6 +31,7 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
   const [anchorEl, setAnchorEl] = useState(null);
   const [isDocumentPanelOpen, setIsDocumentPanelOpen] = useState(false);
   const abortControllerRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const open = Boolean(anchorEl);
 
   const { activeChat, addMessageToChat, updateLastMessage } = useChat();
@@ -58,11 +59,14 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
   // Get document count for badge
   const documentCount = activeChat ? activeChat.documents.length : 0;
 
-  const handleSendQuery = async () => {
-    if (!query.trim() || isTyping || !activeChat) return;
+  const handleSendQuery = async (overrideText) => {
+    // Normalize: if a click event bubbles here accidentally, ignore it
+    const raw = overrideText ?? query;
+    const qStr = typeof raw === "string" ? raw.trim() : "";
+    if (!qStr || isTyping || !activeChat) return;
 
     // Save user message to database immediately
-    addMessageToChat(activeChat.id, { sender: "user", text: query.trim() });
+    addMessageToChat(activeChat.id, { sender: "user", text: qStr });
     setQuery("");
     setIsTyping(true);
     abortControllerRef.current = new AbortController();
@@ -75,7 +79,7 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
 
     try {
       await streamQuery(
-        query.trim(),
+        qStr,
         activeChat.documents,
         (textChunk) => {
           // onTextChunk - update local state and accumulate final text
@@ -148,7 +152,8 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
             px: 3,
             borderBottom: "1px solid #333",
             bgcolor: "#0f0f0f",
-            zIndex: 10,
+            // Keep header above temporary Drawer/backdrop like Gemini
+            zIndex: (theme) => theme.zIndex.modal + 1,
           }}
         >
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -227,7 +232,7 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
           }}
         >
           <Box sx={{ width: "100%", maxWidth: "768px", px: 2 }}>
-            <WelcomeScreen />
+            <WelcomeScreen onSuggestion={(t) => handleSendQuery(t)} />
           </Box>
         </Box>
       </Box>
@@ -254,9 +259,11 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
           justifyContent: "space-between",
           alignItems: "center",
           px: 3,
-          borderBottom: "1px solid #333",
-          bgcolor: "#0f0f0f",
-          zIndex: 10,
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
+          bgcolor: "rgba(15,15,15,0.85)",
+          backdropFilter: "blur(10px)",
+          // Ensure the top bar is always above the Drawer/backdrop
+          zIndex: (theme) => theme.zIndex.modal + 1,
         }}
       >
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -318,15 +325,15 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
         </Box>
       </Box>
 
-      {/* Main Content Area - Fixed height to stop above input */}
+      {/* Main Content Area - full height minus header; extra bottom padding so input never covers content */}
       <Box
         sx={{
-          // Calculate exact height: 100vh - header (60px) - input area (120px estimated)
-          height: "calc(100vh - 60px - 120px)",
+          height: "calc(100vh - 60px)",
           width: "100%",
           overflow: "auto", // Main scrollbar will be at the edge
           display: "flex",
           justifyContent: "center", // Center the content
+          pb: 0, // spacer inside MessageList handles clearance; keep scrollable height accurate
           // Custom scrollbar styling for professional look
           "&::-webkit-scrollbar": {
             width: "8px",
@@ -342,6 +349,7 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
             background: "#555",
           },
         }}
+        ref={scrollContainerRef}
       >
         {/* Centered content container */}
         <Box
@@ -356,15 +364,19 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
           {/* Messages content */}
           <Box sx={{ py: 3 }}>
             {activeChat.messages.length === 0 && !isTyping ? (
-              <WelcomeScreen />
+              <WelcomeScreen onSuggestion={(t) => handleSendQuery(t)} />
             ) : (
-              <MessageList messages={activeChat.messages} isTyping={isTyping} />
+              <MessageList
+                messages={activeChat.messages}
+                isTyping={isTyping}
+                scrollContainerRef={scrollContainerRef}
+              />
             )}
           </Box>
         </Box>
       </Box>
 
-      {/* Chat input - Fixed at bottom, centered, Gemini-style */}
+      {/* Chat input - Fixed at bottom; no full-width background so content behind stays visible */}
       <Box
         sx={{
           position: "fixed",
@@ -373,15 +385,12 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
           right: 0,
           display: "flex",
           justifyContent: "center",
-          // Subtle gradient background like Gemini
-          background:
-            "linear-gradient(to top, #0f0f0f 60%, rgba(15,15,15,0.9) 100%)",
-          backdropFilter: "blur(10px)",
-          // No harsh border - just subtle shadow like Gemini
-          boxShadow: "0 -4px 12px rgba(0,0,0,0.3)",
-          py: 2, // More padding for better spacing
+          background: "transparent",
+          backdropFilter: "none",
+          boxShadow: "none",
+          py: 0.5, // keep compact so it sits slightly lower without covering content
           px: 2,
-          zIndex: 10,
+          zIndex: (theme) => theme.zIndex.modal + 1,
         }}
       >
         <Box sx={{ width: "100%", maxWidth: "768px" }}>
@@ -389,6 +398,13 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
             query={query}
             setQuery={setQuery}
             onSend={handleSendQuery}
+            onStop={() => {
+              try {
+                abortControllerRef.current?.abort();
+              } catch {}
+              setIsTyping(false);
+            }}
+            showSuggestions={activeChat?.messages?.length === 0}
             isTyping={isTyping}
           />
         </Box>
