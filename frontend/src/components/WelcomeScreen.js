@@ -9,9 +9,6 @@ const WelcomeScreen = ({ onSuggestion }) => {
   // const { user } = useAuth();
   // const greeting = user ? `Hello, ${user.username}` : 'Hello There';
 
-  // Suggestions removed for a minimal welcome screen
-  const sendSuggestion = () => {};
-
   return (
     <Box
       sx={{
