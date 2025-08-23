@@ -21,21 +21,21 @@ export const ChatProvider = ({ children }) => {
 
   // Convert server chat format to local format
   const convertServerChatToLocal = (serverChat) => {
-    const messages = (serverChat.messages || []).map(message => {
+    const messages = (serverChat.messages || []).map((message) => {
       // Parse sources if they're stored as JSON string
       let parsedSources = message.sources;
-      if (typeof message.sources === 'string') {
+      if (typeof message.sources === "string") {
         try {
           parsedSources = JSON.parse(message.sources);
         } catch (e) {
-          console.warn('Failed to parse message sources:', e);
+          console.warn("Failed to parse message sources:", e);
           parsedSources = [];
         }
       }
-      
+
       return {
         ...message,
-        sources: Array.isArray(parsedSources) ? parsedSources : []
+        sources: Array.isArray(parsedSources) ? parsedSources : [],
       };
     });
 
@@ -52,7 +52,10 @@ export const ChatProvider = ({ children }) => {
   // Load chats from server or localStorage fallback
   const loadChats = useCallback(async () => {
     if (!user?.userId || !token) {
-      console.log("[CHAT CONTEXT] Cannot load chats - no user or token:", { userId: user?.userId, hasToken: !!token });
+      console.log("[CHAT CONTEXT] Cannot load chats - no user or token:", {
+        userId: user?.userId,
+        hasToken: !!token,
+      });
       return;
     }
 
@@ -93,8 +96,13 @@ export const ChatProvider = ({ children }) => {
 
       // Fallback to localStorage
       const savedChats = localStorage.getItem(`chats_${user.userId}`);
-      const savedActiveChatId = localStorage.getItem(`activeChatId_${user.userId}`);
-      console.log("[CHAT CONTEXT] localStorage backup:", { savedChats: !!savedChats, savedActiveChatId });
+      const savedActiveChatId = localStorage.getItem(
+        `activeChatId_${user.userId}`
+      );
+      console.log("[CHAT CONTEXT] localStorage backup:", {
+        savedChats: !!savedChats,
+        savedActiveChatId,
+      });
 
       if (savedChats) {
         const parsedChats = JSON.parse(savedChats);
@@ -112,10 +120,10 @@ export const ChatProvider = ({ children }) => {
 
   // Load chats when user changes or on mount
   useEffect(() => {
-    console.log("[CHAT CONTEXT] useEffect triggered - calling loadChats", { 
-      userId: user?.userId, 
+    console.log("[CHAT CONTEXT] useEffect triggered - calling loadChats", {
+      userId: user?.userId,
       hasToken: !!token,
-      hasActiveChatId: !!activeChatId
+      hasActiveChatId: !!activeChatId,
     });
     loadChats();
   }, [user?.userId, token]); // Remove loadChats from deps to prevent infinite loop
@@ -229,44 +237,57 @@ export const ChatProvider = ({ children }) => {
   };
 
   const addMessageToChat = async (chatId, message) => {
+    // Ensure each local message has a temporary id for stable rendering keys
+    const msgWithId = {
+      id: message.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      ...message,
+    };
+    // Determine if this is the first USER message for the chat (ignoring system/bot)
+    const isFirstUserMessage =
+      msgWithId.sender === "user" &&
+      (!chats[chatId] ||
+        !(chats[chatId].messages || []).some((m) => m.sender === "user"));
     // Update local state immediately for responsiveness
     setChats((prev) => {
       const updatedChats = {
         ...prev,
         [chatId]: {
           ...prev[chatId],
-          messages: [...prev[chatId].messages, message],
+          messages: [...prev[chatId].messages, msgWithId],
         },
       };
 
-      // Auto-generate title from first user message
-      if (message.sender === "user" && prev[chatId].messages.length === 0) {
+      // Auto-generate title from the FIRST user message (ignore prior system/bot messages)
+      if (
+        msgWithId.sender === "user" &&
+        !(prev[chatId].messages || []).some((m) => m.sender === "user")
+      ) {
         const title =
-          message.text.length > 50
-            ? message.text.substring(0, 50) + "..."
-            : message.text;
+          msgWithId.text.length > 50
+            ? msgWithId.text.substring(0, 50) + "..."
+            : msgWithId.text;
         updatedChats[chatId].title = title;
       }
 
       return updatedChats;
     });
 
-    // Try to sync with server in the background
+    // Try to sync with server in the background (skip local-only placeholders)
     try {
-      if (isServerAvailable) {
+      if (isServerAvailable && !msgWithId.localOnly) {
         await chatAPI.addMessage(
           chatId,
-          message.text,
-          message.sender,
-          message.sources
+          msgWithId.text,
+          msgWithId.sender,
+          msgWithId.sources
         );
 
-        // If this is a user message that generated a title, update the title on server
-        if (message.sender === "user" && chats[chatId]?.messages.length === 0) {
+        // If this is the first user message, also update the title on server
+        if (isFirstUserMessage) {
           const title =
-            message.text.length > 50
-              ? message.text.substring(0, 50) + "..."
-              : message.text;
+            msgWithId.text.length > 50
+              ? msgWithId.text.substring(0, 50) + "..."
+              : msgWithId.text;
           await chatAPI.updateChat(chatId, title);
         }
       }
