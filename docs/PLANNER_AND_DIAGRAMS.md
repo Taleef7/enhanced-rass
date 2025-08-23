@@ -25,8 +25,7 @@ The Agentic Planner is a key component of the RASS (Retrieval Augmented Semantic
 | Service             | Description                                                            | Tech Stack       | Key Endpoints/Ports |
 | ------------------- | ---------------------------------------------------------------------- | ---------------- | ------------------- |
 | rass-engine-service | Orchestrates the RAG pipeline, agentic planning, and answer generation | Node.js, Express | `/ask` (8000)       |
-| embedding-service   | Handles text embedding and chunking, interfaces with OpenSearch        | Node.js          | `/embed` (8001)     |
-| py_reranker         | Reranks retrieved documents using a cross-encoder model                | Python, FastAPI  | `/rerank` (8008)    |
+| embedding-service   | Handles text embedding and chunking, interfaces with OpenSearch        | Node.js          | `/upload` (8001)    |
 | opensearch_node     | Vector database for semantic search                                    | OpenSearch       | 9200/9300           |
 | mcp-server          | MCP protocol server for client integration                             | Node.js          | `/mcp` (8080)       |
 
@@ -50,22 +49,22 @@ The MCP server exposes several "tools" (API endpoints) that orchestrate the RASS
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `addDocumentToRASS` | Uploads and indexes a new document into the RASS system. Handles chunking and embedding.                                                                                                     |
 | `queryRASS`         | Submits a user query to the RASS engine and returns the generated answer and sources.                                                                                                        |
-| 
+
 
 #### Tool Workflow Example
 
 1. **addDocumentToRASS**:
 
-   - Client uploads a document (e.g., PDF, Markdown).
-   - MCP server calls the embedding service to chunk and embed the document.
-   - Chunks are indexed in OpenSearch for retrieval.
+- Client uploads a document (e.g., PDF, Markdown).
+- MCP server calls the embedding service to chunk and embed the document.
+- Chunks are indexed in OpenSearch for retrieval.
 
-2. **queryRASS**:
+1. **queryRASS**:
 
-   - Client submits a question.
-   - MCP server forwards the query to the RASS engine (`/ask` endpoint).
-   - RASS engine runs the agentic planner, retrieves and reranks results, and generates an answer.
-   - MCP server returns the answer and supporting documents to the client.
+- Client submits a question.
+- MCP server forwards the query to the RASS engine (`/ask` endpoint).
+- RASS engine runs the agentic planner, retrieves results via hybrid search, and generates an answer.
+- MCP server returns the answer and supporting documents to the client.
 
 
 ### Why MCP?
@@ -86,7 +85,6 @@ sequenceDiagram
     participant Planner
     participant Embed
     participant OpenSearch
-    participant Reranker
 
     %% Document Ingestion Workflow
     User->>MCP: addDocumentToRASS (upload document)
@@ -109,9 +107,6 @@ sequenceDiagram
     RASS->>OpenSearch: Hybrid search (vector + keyword)
     Note right of OpenSearch: Hybrid Search
     OpenSearch-->>RASS: Top-k results
-    RASS->>Reranker: /rerank (cross-encoder reranking)
-    Note right of Reranker: Cross-Encoder Reranking
-    Reranker-->>RASS: Reranked results
     RASS->>MCP: Answer + sources
     MCP-->>User: Final answer
 ```
@@ -124,7 +119,6 @@ sequenceDiagram
 - **Contextual Enrichment:** Enhancing search terms or queries with additional context (e.g., history, synonyms, or LLM-generated expansions) before embedding. Performed by the agentic planner and embedding-service.
 - **Agentic Planning:** The use of an LLM to decompose and expand user queries into a multi-step search plan, improving retrieval coverage and relevance.
 - **Hybrid Search:** Combining vector similarity search (using embeddings) with traditional keyword search in OpenSearch to maximize recall and precision.
-- **Cross-Encoder Reranking:** Using a cross-encoder model to semantically rerank the top-k retrieved chunks, ensuring the most relevant results are prioritized for answer generation.
 
 These concepts are illustrated in the diagram above at the relevant steps in the workflow.
 
@@ -150,9 +144,8 @@ flowchart TD
     D --> E[Generate Multi-Step Search Plan]
     E --> F[Iterative Step Execution]
     F --> G[Aggregate Search Results]
-    G --> H[Cross-Encoder Reranking]
-    H --> I[LLM Answer Generation]
-    I --> J[Return Answer + Sources]
+  G --> H[LLM Answer Generation]
+  H --> I[Return Answer + Sources]
 
     
 ```
@@ -166,9 +159,8 @@ flowchart TD
 3. **Generate Multi-Step Search Plan:** The planner creates a sequence of search steps, each targeting a specific aspect of the query.
 4. **Iterative Step Execution:** The system executes each search step, optionally refining the plan based on intermediate results.
 5. **Aggregate Search Results:** Results from all steps are combined and deduplicated.
-6. **Cross-Encoder Reranking:** The top results are reranked using a cross-encoder model for semantic relevance.
-7. **LLM Answer Generation:** The final answer is generated by the LLM using the reranked context.
-8. **Return Answer + Sources:** The answer and supporting document sources are returned to the user.
+6. **LLM Answer Generation:** The final answer is generated by the LLM using the aggregated context.
+7. **Return Answer + Sources:** The answer and supporting document sources are returned to the user.
 
 This workflow enables the system to handle complex, multi-faceted queries with high relevance and faithfulness.
 
@@ -179,9 +171,8 @@ This workflow enables the system to handle complex, multi-faceted queries with h
 1. **User submits a query** via the MCP client.
 2. **Agentic Planner** (in `agenticPlanner.js`) uses an LLM to break down the query into multiple search terms and steps.
 3. **Search terms** are embedded and sent to OpenSearch for vector retrieval.
-4. **Top results** are reranked by the `py_reranker` microservice using a cross-encoder model.
-5. **RASS engine** aggregates the reranked results and generates a final answer using an LLM.
-6. **Answer and sources** are returned to the user.
+4. **RASS engine** aggregates the retrieved results and generates a final answer using an LLM.
+5. **Answer and sources** are returned to the user.
 
 ---
 
@@ -200,14 +191,13 @@ This workflow enables the system to handle complex, multi-faceted queries with h
 - **LLM Integration:** Supports OpenAI and Gemini for planning and answer generation.
 - **Prompt Engineering:** Prompts are designed to encourage decomposition and expansion of queries.
 - **Context Enrichment:** Planner can use previous search history to avoid redundant steps.
-- **Hybrid Search:** Combines vector search (OpenSearch) with semantic reranking (py_reranker).
+- **Hybrid Search:** Combines vector search with keyword search in OpenSearch; no reranking stage by default.
 
 ---
 
 ## Performance & Limitations
 
 - **Document Capacity:** Tested with up to 10,000 chunks per document.
-- **RAM/CPU:** Minimum 8GB RAM recommended for py_reranker; more for large-scale deployments.
 - **Known Limitations:**
   - Current answer generation is conservative; may not synthesize answers from partial context.
   - Answer relevancy is being improved (see evaluation results).
@@ -221,6 +211,7 @@ This workflow enables the system to handle complex, multi-faceted queries with h
 - **Add new microservices** by updating `docker-compose.yml` and ensuring network connectivity.
 - **Swap out models** by changing environment variables and updating service code.
 - **Tune planner prompts** in `agenticPlanner.js` for better decomposition or domain adaptation.
+- **Optional reranking:** If desired, add a reranking stage as a separate microservice and insert it after retrieval; not enabled in the current setup.
 
 ---
 

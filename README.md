@@ -1,6 +1,4 @@
-<img alt="Enhanced RASS" src="docs/header_banner.png" width="100%" />
-
-# Enhanced RASS
+# RASS (Retrieval-Augmented Semantic Search)
 
 A production-grade, multi-service Retrieval Augmented Generation (RAG/RASS) system with document ingestion, hybrid retrieval, SSE streaming, and a polished React frontend. It’s built for clarity and reproducibility: one configuration file, containerized services, and sensible defaults.
 
