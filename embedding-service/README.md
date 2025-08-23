@@ -1,3 +1,29 @@
+# Embedding Service
+
+Handles ingestion → chunking → embedding → indexing into OpenSearch and stores parent chunks in Redis.
+
+## Endpoints
+
+- POST /upload (multipart form): field `files` for one or more files; also requires `userId` (added by mcp-server proxy). Indexes child chunks in OpenSearch index from config and writes parents to Redis.
+- POST /get-documents: { ids: string[] } → fetches parent documents from Redis by IDs.
+- GET /health: checks Redis and OpenSearch.
+- GET /docstore/stats: basic Redis store stats.
+
+## Config
+
+Reads ./config.yml mounted at container path. Important keys:
+- EMBEDDING_PROVIDER (openai|gemini), OPENAI_EMBED_MODEL_NAME, GEMINI_EMBED_MODEL_NAME
+- EMBED_DIM must match the model (e.g., 768 for Gemini text-embedding-004)
+- OPENSEARCH_HOST/PORT/INDEX_NAME
+- REDIS_HOST/PORT/DB
+- PARENT_CHUNK_SIZE/OVERLAP, CHILD_CHUNK_SIZE/OVERLAP
+
+Environment secrets via Docker Compose: OPENAI_API_KEY, GEMINI_API_KEY.
+
+## Notes
+
+- All chunks inherit metadata.userId, metadata.originalFilename, metadata.uploadedAt, and metadata.parentId for child chunks.
+- Index is created on boot with FAISS HNSW and configured dimension.
 # 📦 Embedding Service
 
 This microservice is the ingestion and embedding component of the `enhanced-rass` project. It extracts text from various document types, performs **semantic chunking**, generates vector embeddings using a configured AI model provider (OpenAI or Gemini), and indexes the results into an OpenSearch database for hybrid semantic search.

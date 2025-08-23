@@ -1,3 +1,25 @@
+# RASS Engine Service
+
+Retrieves relevant chunks and generates answers. Supports SSE streaming.
+
+## Endpoints
+
+- POST /ask: { query, top_k? } → JSON { answer, source_documents }
+- POST /stream-ask: { query, documents?, userId, top_k? } → SSE stream with OpenAI-style deltas and final citations in delta.custom_meta.citations
+- GET /: health/status
+
+## Retrieval
+
+Hybrid search with KNN vector + keyword multi_match, always filtered by metadata.userId, optionally by metadata.source when documents array is provided.
+
+## Config
+
+From ./config.yml:
+- LLM_PROVIDER and model name
+- SEARCH_TERM_EMBEDDING_PROVIDER and embedding model for queries
+- DEFAULT_K_OPENSEARCH_HITS, OPENSEARCH_* and OPENSEARCH_INDEX_NAME
+
+Secrets: OPENAI_API_KEY, GEMINI_API_KEY (via Compose env).
 # 🧠 RASS Engine Service
 
 This is the intelligent querying backend of the `enhanced-rass` project. It provides an agentic, LLM-driven search layer over a vector database. The service interprets natural language queries, uses a configurable LLM to generate a multi-step search plan (**agentic planning**), executes that plan against a specified OpenSearch index (**hybrid search**), reranks results with a cross-encoder, and returns the most relevant documents.
