@@ -1,3 +1,26 @@
+# MCP Server
+
+Gateway for REST + MCP tools. Injects userId from JWT and proxies to backend services.
+
+## REST
+
+- POST /api/auth/register, POST /api/auth/login → returns JWT stored by frontend
+- GET/POST/PATCH/DELETE /api/chats and nested /messages
+- POST /api/embed-upload → forwards file to embedding-service /upload and appends userId
+- POST /api/stream-ask → proxies SSE to engine /stream-ask, injects userId
+- GET /api/user-documents → aggregates user’s documents from OpenSearch
+- POST /api/chat/completions → OpenAI-compatible stream proxy to engine /stream-ask
+
+## MCP
+
+- POST /mcp → JSON-RPC for tools
+  - queryRASS → engine /ask
+  - addDocumentToRASS → embedding /upload (reads file from shared volume uploads/)
+
+## Env/Config
+
+- JWT_SECRET, OPENAI_API_KEY (for optional Whisper /api/transcribe)
+- DATABASE_URL for Prisma/Postgres; migrations run on boot
 # 🤖 MCP Server Service
 
 This service acts as an intelligent API gateway, exposing the capabilities of the `enhanced-rass` backend services as "tools" compliant with the Model Context Protocol (MCP). It allows AI agents or other clients to interact with the system using a standardized protocol.

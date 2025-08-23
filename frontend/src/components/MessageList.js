@@ -20,16 +20,26 @@ const MessageList = ({ messages, isTyping, scrollContainerRef }) => {
       sx={{
         display: "flex",
         flexDirection: "column",
-        gap: 4, // Reduced gap for cleaner Gemini-like spacing
+        gap: 5, // Slightly increased spacing between messages
         py: 2,
         // Remove any internal scrolling - let the parent handle it
         overflow: "visible",
         width: "100%",
       }}
     >
-      {messages.map((message, index) => (
-        <MessageBubble key={index} message={message} />
-      ))}
+      {(messages || [])
+        .filter(
+          (m) => !(m.sender === "bot" && (!m.text || m.text.trim() === ""))
+        )
+        .filter(
+          (m) => !(m.sender === "bot" && (!m.text || m.text.trim() === ""))
+        )
+        .map((message, index) => (
+          <MessageBubble
+            key={message.id || `${message.sender}-${index}`}
+            message={message}
+          />
+        ))}
       {isTyping && <TypingIndicator />}
       {/* Spacer so the last message clears the fixed input bar */}
       <Box sx={{ height: 140 }} />
