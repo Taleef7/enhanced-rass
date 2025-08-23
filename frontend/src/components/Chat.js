@@ -71,8 +71,13 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
     setIsTyping(true);
     abortControllerRef.current = new AbortController();
 
-    // Add empty bot message to local state only
-    addMessageToChat(activeChat.id, { sender: "bot", text: "", sources: [] });
+    // Add empty bot message locally (do not persist); stream will fill it
+    addMessageToChat(activeChat.id, {
+      sender: "bot",
+      text: "",
+      sources: [],
+      localOnly: true,
+    });
 
     let finalBotText = "";
     let finalBotSources = [];
@@ -359,12 +364,23 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
             display: "flex",
             flexDirection: "column",
             px: 2,
+            minHeight: "100%", // ensure this container stretches to full scroll area height
           }}
         >
           {/* Messages content */}
-          <Box sx={{ py: 3 }}>
+          <Box
+            sx={{
+              py: 3,
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
             {activeChat.messages.length === 0 && !isTyping ? (
-              <WelcomeScreen onSuggestion={(t) => handleSendQuery(t)} />
+              <Box sx={{ width: "100%" }}>
+                <WelcomeScreen onSuggestion={(t) => handleSendQuery(t)} />
+              </Box>
             ) : (
               <MessageList
                 messages={activeChat.messages}
@@ -404,7 +420,7 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
               } catch {}
               setIsTyping(false);
             }}
-            showSuggestions={activeChat?.messages?.length === 0}
+            showSuggestions={false}
             isTyping={isTyping}
           />
         </Box>
