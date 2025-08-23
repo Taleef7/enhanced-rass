@@ -268,10 +268,13 @@ app.get("/api/user-documents", authMiddleware, async (req, res) => {
     };
 
     const openSearchQuery = {
-      size: Number(process.env.DOCUMENT_LIST_SAMPLE_SIZE) || 2000,
+      // Raise the sample window to include all typical user chunks
+      // without relying on field sorting that may not be mapped.
+      size: Number(process.env.DOCUMENT_LIST_SAMPLE_SIZE) || 10000,
+      track_total_hits: true,
       _source: ["metadata"],
       query: { bool: { filter: [userFilter] } },
-      sort: [{ "metadata.uploadedAt": { order: "desc" } }],
+      // Note: avoid sorting on metadata.uploadedAt as it may be mapped as text.
     };
 
     const openSearchUrl =
@@ -288,8 +291,13 @@ app.get("/api/user-documents", authMiddleware, async (req, res) => {
     );
 
     const hits = response.data?.hits?.hits || [];
+    console.log(
+      `[User Documents] OpenSearch returned total: ${
+        response.data?.hits?.total?.value ?? hits.length
+      }, windowed: ${hits.length}`
+    );
 
-    // Group by the physical source (file path) so chunks from the same upload are grouped.
+    // Group by the physical source (file path) or original filename so chunks from the same upload are grouped.
     const groups = new Map();
     for (const h of hits) {
       const md = h._source?.metadata || {};
@@ -299,7 +307,7 @@ app.get("/api/user-documents", authMiddleware, async (req, res) => {
           name:
             md.originalFilename ||
             (md.source ? md.source.split("/").pop() : "Unknown Document"),
-          source: md.source || "Unknown",
+          source: md.source || md.originalFilename || "Unknown",
           uploadedAt: md.uploadedAt || new Date(0).toISOString(),
           chunkCount: 0,
         });
