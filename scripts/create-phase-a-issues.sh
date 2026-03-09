@@ -40,6 +40,7 @@ create_issue() {
     --label "$labels" \
     --body "$body"
   echo "CREATED: $title"
+  sleep 5
 }
 
 # ---------------------------------------------------------------------------
@@ -119,7 +120,7 @@ create_issue \
 # ---------------------------------------------------------------------------
 # Issue 1.2 — Refactor rass-engine-service into planner, retrieval, and generation modules
 # ---------------------------------------------------------------------------
-read -r -d '' BODY_1_2 << 'EOF'
+read -r -d '' BODY_1_2 << 'EOF' || true
 ## Summary
 
 The `rass-engine-service` has its core RAG logic spread across `index.js` (433 lines)
@@ -199,7 +200,7 @@ create_issue \
 # ---------------------------------------------------------------------------
 # Issue 1.3 — Refactor mcp-server into gateway, auth, chat, and proxy modules
 # ---------------------------------------------------------------------------
-read -r -d '' BODY_1_3 << 'EOF'
+read -r -d '' BODY_1_3 << 'EOF' || true
 ## Summary
 
 `mcp-server/index.js` is a 464-line file combining: OpenAI-compatible chat proxy,
@@ -278,7 +279,7 @@ create_issue \
 # ---------------------------------------------------------------------------
 # Issue 1.5 — Add centralized config loading and validation utility per service
 # ---------------------------------------------------------------------------
-read -r -d '' BODY_1_5 << 'EOF'
+read -r -d '' BODY_1_5 << 'EOF' || true
 ## Summary
 
 All three services load `config.yml` identically via raw `js-yaml` with no validation:
@@ -337,7 +338,7 @@ create_issue \
 # ---------------------------------------------------------------------------
 # Issue 2.1 — Introduce Zod schema validation for all external API payloads
 # ---------------------------------------------------------------------------
-read -r -d '' BODY_2_1 << 'EOF'
+read -r -d '' BODY_2_1 << 'EOF' || true
 ## Summary
 
 All three services accept external HTTP input but validate it with ad-hoc conditional
@@ -417,7 +418,7 @@ create_issue \
 # ---------------------------------------------------------------------------
 # Issue 2.2 — Define shared Zod schemas for planner output and retrieval steps
 # ---------------------------------------------------------------------------
-read -r -d '' BODY_2_2 << 'EOF'
+read -r -d '' BODY_2_2 << 'EOF' || true
 ## Summary
 
 `rass-engine-service` uses an LLM to generate a structured search plan. The plan output
@@ -486,7 +487,7 @@ create_issue \
 # ---------------------------------------------------------------------------
 # Issue 2.3 — Define canonical schemas for retrieval hits and citations
 # ---------------------------------------------------------------------------
-read -r -d '' BODY_2_3 << 'EOF'
+read -r -d '' BODY_2_3 << 'EOF' || true
 ## Summary
 
 OpenSearch retrieval results (hits) and LLM answer citations are passed between internal
@@ -562,7 +563,7 @@ create_issue \
 # ---------------------------------------------------------------------------
 # Issue 2.4 — Generate OpenAPI spec for public gateway endpoints
 # ---------------------------------------------------------------------------
-read -r -d '' BODY_2_4 << 'EOF'
+read -r -d '' BODY_2_4 << 'EOF' || true
 ## Summary
 
 `mcp-server` exposes a REST API consumed by the frontend and any external integrations,
@@ -632,7 +633,7 @@ create_issue \
 # ---------------------------------------------------------------------------
 # Issue 2.5 — Add config schema validation using Zod
 # ---------------------------------------------------------------------------
-read -r -d '' BODY_2_5 << 'EOF'
+read -r -d '' BODY_2_5 << 'EOF' || true
 ## Summary
 
 `config.yml` is the central configuration file for all three services and contains 25+
