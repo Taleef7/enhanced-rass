@@ -9,7 +9,7 @@ REPO="${GITHUB_REPOSITORY:-Taleef7/enhanced-rass}"
 
 create_label() {
   local name="$1" color="$2" description="$3"
-  if gh label list --repo "$REPO" --json name --jq '.[].name' | grep -qx "$name"; then
+  if gh label list --repo "$REPO" --limit 1000 --json name --jq '.[].name' | grep -qx "$name"; then
     gh label edit "$name" \
       --color "$color" \
       --description "$description" \
