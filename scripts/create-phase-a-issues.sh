@@ -44,7 +44,7 @@ create_issue() {
 # ---------------------------------------------------------------------------
 # Issue 1.1 — Refactor embedding-service/index.js into layered modules
 # ---------------------------------------------------------------------------
-read -r -d '' BODY_1_1 << 'EOF'
+read -r -d '' BODY_1_1 << 'EOF' || true
 ## Summary
 
 The `embedding-service/index.js` is a 534-line monolith handling config loading, a
