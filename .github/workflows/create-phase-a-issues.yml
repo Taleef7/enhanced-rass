@@ -24,6 +24,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Ensure required labels exist
+        if: ${{ github.event.inputs.dry_run == 'false' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/create-phase-a-labels.sh
