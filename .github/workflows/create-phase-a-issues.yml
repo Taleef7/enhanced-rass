@@ -1,0 +1,62 @@
+name: Create Phase A Modernization Issues
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (print issues without creating them)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  create-issues:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure required labels exist
+        if: ${{ github.event.inputs.dry_run == 'false' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/create-phase-a-labels.sh
+
+      - name: Create all Phase A issues
+        if: ${{ github.event.inputs.dry_run == 'false' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/create-phase-a-issues.sh
+
+      - name: Dry-run summary
+        if: ${{ github.event.inputs.dry_run == 'true' }}
+        run: |
+          echo "=== DRY RUN: The following issues would be created ==="
+          echo ""
+          echo "Phase 1 — Modularization:"
+          echo "  1.1  Refactor embedding-service/index.js into layered modules"
+          echo "  1.2  Refactor rass-engine-service into planner, retrieval, and generation modules"
+          echo "  1.3  Refactor mcp-server into gateway, auth, chat, and proxy modules"
+          echo "  1.5  Add centralized config loading and validation utility per service"
+          echo ""
+          echo "Phase 2 — Schema Contracts:"
+          echo "  2.1  Introduce Zod schema validation for all external API payloads"
+          echo "  2.2  Define shared Zod schemas for planner output and retrieval steps"
+          echo "  2.3  Define canonical schemas for retrieval hits and citations"
+          echo "  2.4  Generate OpenAPI 3.0 spec for public mcp-server gateway endpoints"
+          echo "  2.5  Add config schema validation using Zod"
+          echo ""
+          echo "Re-run with dry_run=false to create all 9 issues."
+
+      - name: Summary
+        if: ${{ github.event.inputs.dry_run == 'false' }}
+        run: |
+          echo "Phase A issue creation complete."
+          echo "Visit https://github.com/${{ github.repository }}/issues to see all created issues."
