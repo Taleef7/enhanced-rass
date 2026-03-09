@@ -4,7 +4,7 @@ This document describes the phased roadmap for transforming the Enhanced RASS (R
 
 ## Quick Start: Creating GitHub Issues
 
-All phase issues are defined as JSON files in `.github/issues/`. To open them as GitHub issues:
+All phase issues are defined as JSON files in `docs/issues/`. To open them as GitHub issues:
 
 ```bash
 # Install dependencies
