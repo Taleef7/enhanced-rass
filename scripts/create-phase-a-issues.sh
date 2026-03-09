@@ -26,6 +26,7 @@ create_issue() {
     --state all \
     --search "\"$title\"" \
     --json title \
+    --limit 1000 \
     --jq '.[].title' 2>/dev/null | grep -Fx "$title" || true)
 
   if [[ -n "$existing" ]]; then
