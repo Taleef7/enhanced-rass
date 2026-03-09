@@ -3,11 +3,7 @@ const multer = require("multer");
 const fs = require("fs-extra");
 const cors = require("cors");
 
-// Config
 const { loadConfig } = require("./src/config");
-const config = loadConfig();
-
-// Clients
 const {
   createRedisClient,
   setupGracefulShutdown,
@@ -18,29 +14,32 @@ const {
   createOpenSearchClient,
   ensureIndexExists,
 } = require("./src/clients/opensearchClient");
-
-// Store
 const { RedisDocumentStore } = require("./src/store/redisDocumentStore");
+const { InMemoryStore } = require("langchain/storage/in_memory");
 
-// Routes
 const { handleUpload } = require("./src/routes/upload");
 const { handleGetDocuments } = require("./src/routes/documents");
-const { handleClearDocstore } = require("./src/routes/admin");
-const { handleHealth } = require("./src/routes/health");
+const {
+  handleClearDocstore,
+  handleGetDocstoreStats,
+} = require("./src/routes/admin");
+const { handleHealthCheck } = require("./src/routes/health");
+
+const config = loadConfig();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize clients
 const redisClient = createRedisClient(config.redis);
+setupGracefulShutdown(redisClient);
+
 const openSearchClient = createOpenSearchClient(config.opensearch);
 const embeddings = createEmbeddingsProvider(config);
 
-// Setup graceful shutdown
-setupGracefulShutdown(redisClient);
+fs.ensureDirSync("./temp");
+const upload = multer({ dest: "./temp" });
 
-// Initialize docstore
 let docstore;
 
 async function initializeDocstore() {
@@ -56,68 +55,45 @@ async function initializeDocstore() {
       "[Init] Failed to initialize Redis docstore, falling back to InMemoryStore:",
       error
     );
-    const { InMemoryStore } = require("langchain/storage/in_memory");
     docstore = new InMemoryStore();
     console.log("[Init] Using InMemoryStore as fallback");
     return docstore;
   }
 }
 
-// Setup multer
-fs.ensureDirSync("./temp");
-const upload = multer({ dest: "./temp" });
-
-// Dependencies object for route handlers
 const dependencies = {
-  docstore,
-  embeddings,
-  openSearchClient,
+  docstore: null,
   redisClient,
+  openSearchClient,
+  embeddings,
   config,
 };
 
-// Register routes
-app.post("/upload", upload.array("files"), (req, res) =>
-  handleUpload(req, res, dependencies)
-);
-
-app.post("/get-documents", (req, res) =>
-  handleGetDocuments(req, res, dependencies)
-);
-
-app.post("/clear-docstore", (req, res) =>
-  handleClearDocstore(req, res, dependencies)
-);
-
-app.get("/docstore/stats", async (req, res) => {
-  try {
-    if (docstore instanceof RedisDocumentStore) {
-      const allKeys = await docstore.yieldKeys("");
-      res.status(200).json({
-        type: "redis",
-        totalDocuments: allKeys.length,
-        sampleKeys: allKeys.slice(0, 5),
-        redisStatus: redisClient.status,
-      });
-    } else {
-      res.status(200).json({
-        type: "inmemory",
-        message: "InMemoryStore stats not available",
-      });
-    }
-  } catch (error) {
-    console.error("[DocStore Stats] Error:", error);
-    res.status(500).json({ error: "Failed to get docstore stats." });
-  }
+app.post("/upload", upload.array("files"), (req, res) => {
+  handleUpload(req, res, dependencies);
 });
 
-app.get("/health", (req, res) => handleHealth(req, res, dependencies));
+app.post("/get-documents", (req, res) => {
+  handleGetDocuments(req, res, dependencies);
+});
 
-// Start server
+app.post("/clear-docstore", (req, res) => {
+  handleClearDocstore(req, res, dependencies);
+});
+
+app.get("/docstore/stats", (req, res) => {
+  handleGetDocstoreStats(req, res, dependencies);
+});
+
+app.get("/health", (req, res) => {
+  handleHealthCheck(req, res, dependencies);
+});
+
 app.listen(config.service.port, async () => {
   console.log(`Embedding Service running on port ${config.service.port}`);
 
-  await initializeDocstore();
+  dependencies.docstore = await initializeDocstore();
+
   await ensureIndexExists(
     openSearchClient,
     config.opensearch.indexName,
