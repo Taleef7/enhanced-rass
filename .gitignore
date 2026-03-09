@@ -9,3 +9,7 @@ rass-engine-service/pnpm-lock.yaml
 evaluation/trulens_evaluator/default.sqlite
 .env
 evaluation/source_documents/
+
+# Python cache
+__pycache__/
+*.pyc
