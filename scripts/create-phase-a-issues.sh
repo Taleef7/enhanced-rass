@@ -20,16 +20,13 @@ create_issue() {
   local body="$3"
 
   # Check if an issue with this title already exists
-  local existing
-  existing=$(gh issue list \
+  if gh issue list \
     --repo "$REPO" \
     --state all \
     --search "\"$title\"" \
     --json title \
     --limit 1000 \
-    --jq '.[].title' 2>/dev/null | grep -Fx "$title" || true)
-
-  if [[ -n "$existing" ]]; then
+    --jq '.[].title' 2>/dev/null | grep -Fqx -- "$title"; then
     echo "SKIP (already exists): $title"
     return
   fi
