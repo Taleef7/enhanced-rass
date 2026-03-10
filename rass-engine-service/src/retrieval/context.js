@@ -25,7 +25,7 @@ function createContext({ query, userId, documents, topK, config }) {
     config: config || {},
 
     // Stage outputs — populated as the pipeline progresses
-    queryEmbedding: null,    // float[] — set by EmbedQueryStage
+    queryEmbedding: null,    // number[] — set by EmbedQueryStage
     candidateChunks: [],     // raw OpenSearch hits — set by HybridSearchStage
     rankedChunks: [],        // reranked/sorted hits — set by RerankStage
     parentDocs: [],          // parent documents from Redis — set by ParentFetchStage

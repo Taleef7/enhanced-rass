@@ -22,6 +22,7 @@ Exit codes:
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -123,7 +124,7 @@ def main():
     parser.add_argument(
         "--threshold",
         type=float,
-        default=float(os.environ.get("REGRESSION_THRESHOLD", "0.05")) if False else 0.05,
+        default=float(os.environ.get("REGRESSION_THRESHOLD", "0.05")),
         help="Maximum allowed relative degradation (0.05 = 5%%)",
     )
     parser.add_argument("--baseline", default=None, help="Path to baseline run JSON")
@@ -168,8 +169,6 @@ def main():
         log.error("One or more metrics degraded beyond the configured threshold. ✗")
         sys.exit(1)
 
-
-import os  # noqa: E402 (needed for os.environ default in argparse)
 
 if __name__ == "__main__":
     main()
