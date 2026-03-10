@@ -5,18 +5,16 @@ const express = require("express");
 const axios = require("axios");
 const authMiddleware = require("../authMiddleware");
 const { RASS_ENGINE_BASE_URL } = require("../config");
+const { validateBody } = require("../middleware/validate");
+const { StreamAskBodySchema } = require("../schemas/streamAskSchema");
 
 const router = express.Router();
 
-router.post("/api/stream-ask", authMiddleware, async (req, res) => {
-  const { query, documents } = req.body;
+router.post("/api/stream-ask", authMiddleware, validateBody(StreamAskBodySchema), async (req, res) => {
+  const { query, documents } = req.validatedBody;
   const userId = req.userId;
 
   console.log(`[Stream Proxy] Query from user: ${userId}`);
-
-  if (!query) {
-    return res.status(400).json({ error: "Query is required" });
-  }
 
   try {
     const rassEngineStreamUrl = `${RASS_ENGINE_BASE_URL}/stream-ask`;

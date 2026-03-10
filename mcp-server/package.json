@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "jest"
+    "test": "jest",
+    "validate:api": "node -e \"require('@apidevtools/swagger-parser').validate('./openapi.yaml').then(() => console.log('OpenAPI spec is valid')).catch(e => { console.error('OpenAPI validation failed:', e.message); process.exit(1); })\""
   },
   "keywords": [],
   "author": "",
@@ -22,9 +23,11 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "openai": "^4.55.0",
+    "swagger-ui-express": "^5.0.1",
     "zod": "^3.25.56"
   },
   "devDependencies": {
+    "@apidevtools/swagger-parser": "^12.1.0",
     "jest": "^30.3.0",
     "prisma": "^6.13.0"
   }

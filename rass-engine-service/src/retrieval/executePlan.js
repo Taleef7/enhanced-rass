@@ -5,10 +5,12 @@
 const axios = require("axios");
 const { simpleSearch } = require("./simpleSearch");
 const { EMBEDDING_SERVICE_BASE_URL } = require("../config");
+const { ExecutionPlanSchema } = require("../schemas/plannerSchemas");
 
 /**
  * Executes a multi-step search plan, deduplicates results by parent document ID,
  * and fetches the full parent documents from the embedding service.
+ * Validates the input plan against ExecutionPlanSchema before execution.
  *
  * @param {object} params
  * @param {Array<{search_term: string}>} params.plan - Array of search plan steps.
@@ -20,10 +22,17 @@ const { EMBEDDING_SERVICE_BASE_URL } = require("../config");
  * @returns {Promise<object[]>} Array of parent document objects with text and metadata.
  */
 async function runSteps({ plan, embed, os, index, userId, documents }) {
+  // Validate the incoming plan — throw a descriptive error if it is malformed
+  const normalizedPlan = plan.map((step) =>
+    "search_term" in step && !("query" in step)
+      ? { ...step, query: step.search_term }
+      : step
+  );
+  ExecutionPlanSchema.parse(normalizedPlan);
   let allChildHits = [];
 
-  for (const step of plan) {
-    const term = step.search_term?.trim();
+  for (const step of normalizedPlan) {
+    const term = (step.query || step.search_term)?.trim();
     if (!term) continue;
     const results = await simpleSearch({ term, embed, os, index, userId, documents });
     console.log(

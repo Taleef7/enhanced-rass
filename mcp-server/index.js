@@ -3,6 +3,7 @@
 
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 
 const { MCP_SERVER_PORT } = require("./src/config");
 
@@ -23,6 +24,22 @@ const mcpTransportRoutes = require("./src/gateway/mcpTransport.js");
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
+
+// --- Swagger UI (non-production only) ---
+if (process.env.NODE_ENV !== "production") {
+  const swaggerUi = require("swagger-ui-express");
+  const YAML = require("js-yaml");
+  const fs = require("fs");
+  try {
+    const openApiSpec = YAML.load(
+      fs.readFileSync(path.join(__dirname, "openapi.yaml"), "utf8")
+    );
+    app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openApiSpec));
+    console.log("[API Docs] Swagger UI available at /api/docs");
+  } catch (e) {
+    console.warn("[API Docs] Failed to load openapi.yaml:", e.message);
+  }
+}
 
 // --- Proxy routes ---
 app.use(chatCompletionsRoutes);

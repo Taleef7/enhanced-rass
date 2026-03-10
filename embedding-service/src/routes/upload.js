@@ -17,21 +17,17 @@ const { getDocstore } = require("../clients/redisClient");
 const { getLoader } = require("../ingestion/parser");
 const { parentSplitter, childSplitter } = require("../ingestion/chunker");
 const { OPENSEARCH_INDEX_NAME } = require("../config");
+const { validateBody } = require("../middleware/validate");
+const { UploadBodySchema } = require("../schemas/uploadSchema");
 
 fs.ensureDirSync("./temp");
 const upload = multer({ dest: "./temp" });
 
 const router = express.Router();
 
-router.post("/upload", upload.array("files"), async (req, res) => {
+router.post("/upload", upload.array("files"), validateBody(UploadBodySchema), async (req, res) => {
   const files = req.files;
-  const { userId } = req.body;
-
-  if (!userId) {
-    return res
-      .status(400)
-      .json({ error: "Missing userId for document upload." });
-  }
+  const { userId } = req.validatedBody;
 
   if (!files || files.length === 0) {
     return res.status(400).json({ error: "No files uploaded." });

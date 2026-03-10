@@ -2,36 +2,77 @@
 
 Gateway for REST + MCP tools. Injects userId from JWT and proxies to backend services.
 
-## REST
+## REST API Documentation
 
-- POST /api/auth/register, POST /api/auth/login → returns JWT stored by frontend
-- GET/POST/PATCH/DELETE /api/chats and nested /messages
-- POST /api/embed-upload → forwards file to embedding-service /upload and appends userId
-- POST /api/stream-ask → proxies SSE to engine /stream-ask, injects userId
-- GET /api/user-documents → aggregates user’s documents from OpenSearch
-- POST /api/chat/completions → OpenAI-compatible stream proxy to engine /stream-ask
+The full REST API is documented in **[`openapi.yaml`](./openapi.yaml)** (OpenAPI 3.0.3).
+
+### Viewing the API Documentation
+
+**Option 1 — Interactive Swagger UI (built-in, non-production)**
+
+When running the server with `NODE_ENV` not set to `production`, Swagger UI is served at:
+
+```
+http://localhost:8080/api/docs
+```
+
+**Option 2 — Stoplight Studio (recommended for offline use)**
+
+1. Install [Stoplight Studio](https://stoplight.io/studio)
+2. Open `mcp-server/openapi.yaml`
+3. Browse and try endpoints interactively
+
+**Option 3 — Swagger UI via Docker**
+
+```bash
+docker run -p 9090:8080 \
+  -e SWAGGER_JSON=/spec/openapi.yaml \
+  -v $(pwd)/mcp-server:/spec \
+  swaggerapi/swagger-ui
+```
+
+Then open `http://localhost:9090`.
+
+**Option 4 — Validate the spec locally**
+
+```bash
+cd mcp-server && npm run validate:api
+```
+
+### Endpoint Summary
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/auth/register` | None | Register new user |
+| POST | `/api/auth/login` | None | Login, receive JWT |
+| GET | `/api/chats` | Bearer | List user's chats |
+| POST | `/api/chats` | Bearer | Create new chat |
+| GET | `/api/chats/{chatId}` | Bearer | Get specific chat |
+| PATCH | `/api/chats/{chatId}` | Bearer | Update chat title |
+| DELETE | `/api/chats/{chatId}` | Bearer | Delete chat |
+| GET | `/api/chats/{chatId}/messages` | Bearer | List messages |
+| POST | `/api/chats/{chatId}/messages` | Bearer | Add message |
+| POST | `/api/embed-upload` | Bearer | Upload document for indexing |
+| GET | `/api/user-documents` | Bearer | List indexed documents |
+| POST | `/api/stream-ask` | Bearer | Stream RAG response (SSE) |
+| POST | `/api/chat/completions` | None | OpenAI-compatible streaming chat |
+| POST | `/api/transcribe` | Bearer | Transcribe audio via Whisper |
+| GET | `/api/docs` | None | Swagger UI (non-production) |
 
 ## MCP
 
-- POST /mcp → JSON-RPC for tools
-  - queryRASS → engine /ask
-  - addDocumentToRASS → embedding /upload (reads file from shared volume uploads/)
+- POST /mcp -- JSON-RPC for tools
+  - queryRASS -- engine /ask
+  - addDocumentToRASS -- embedding /upload (reads file from shared volume uploads/)
 
 ## Env/Config
 
 - JWT_SECRET, OPENAI_API_KEY (for optional Whisper /api/transcribe)
 - DATABASE_URL for Prisma/Postgres; migrations run on boot
-# 🤖 MCP Server Service
-
-This service acts as an intelligent API gateway, exposing the capabilities of the `enhanced-rass` backend services as "tools" compliant with the Model Context Protocol (MCP). It allows AI agents or other clients to interact with the system using a standardized protocol.
-
-This service is intended to be run as part of the Docker Compose environment defined in the root of the `enhanced-rass` project.
-
-For a full system overview and architecture, see [`../docs/PLANNER_AND_DIAGRAMS.md`](../docs/PLANNER_AND_DIAGRAMS.md).
 
 ---
 
-## ⚙️ Core Features
+## Core Features
 
 - **MCP Tool Invocation:** Provides a central `/mcp` endpoint that correctly parses official JSON-RPC 2.0 messages from MCP clients.
 - **Service Gateway:** Intelligently routes tool calls to the appropriate backend microservice:
@@ -39,100 +80,25 @@ For a full system overview and architecture, see [`../docs/PLANNER_AND_DIAGRAMS.
   - `addDocumentToRASS` calls are proxied to the `embedding-service`.
 - **File Handling Proxy:** For the `addDocumentToRASS` tool, it reads a file from a shared volume and correctly streams it as `multipart/form-data` to the embedding service.
 - **Containerized & Networked:** Runs as a containerized service and communicates with other backend services over the shared Docker network.
+- **OpenAPI Documentation:** Full API spec in `openapi.yaml` with Swagger UI at `/api/docs` (non-production).
+- **Schema-driven Validation:** All request payloads are validated with Zod schemas before being processed.
 
 ---
 
-## 🧠 How it Works
+## How it Works
 
 - The MCP server exposes a single `/mcp` endpoint for all tool calls.
 - It receives JSON-RPC 2.0 requests from clients (e.g., AI agents, test clients).
 - Each tool call is routed to the appropriate backend service:
-  - `addDocumentToRASS` → embedding-service (for document upload and indexing)
-  - `queryRASS` → rass-engine-service (for querying and answer generation)
+  - `addDocumentToRASS` -- embedding-service (for document upload and indexing)
+  - `queryRASS` -- rass-engine-service (for querying and answer generation)
 - The server handles file streaming, error handling, and response formatting.
 
 ---
 
-## 🔌 API Endpoint: `POST /mcp`
-
-This is the single entry point for all tool calls. It accepts a JSON-RPC 2.0 payload and is designed to work with clients using the official `@modelcontextprotocol/sdk`. The service is accessible at `http://localhost:8080` when running via Docker Compose.
-
-### Supported Tools
-
-#### 1. `queryRASS`
-
-Queries the knowledge base for relevant documents and answers.
-
-**SDK Client Usage:**
-
-```javascript
-await client.callTool({
-  name: "queryRASS",
-  arguments: {
-    query: "What is the MCP test document?",
-    top_k: 5,
-  },
-});
-```
-
-**Expected Output:**
-
-- JSON response with the answer and supporting document chunks, including initial and rerank scores.
-- Example (inside `result.content[0].text`):
-  ```json
-  {
-    "answer": "The context does not contain an answer to the question...",
-    "source_documents": [
-      {
-        "text": "There was no fresh news of the invaders from Mars.",
-        "initial_score": 5.34,
-        "rerank_score": -7.76
-      }
-    ]
-  }
-  ```
-
-#### 2. `addDocumentToRASS`
-
-Adds a new document to the knowledge base from a file accessible to the server.
-
-**SDK Client Usage:**
-
-```javascript
-await client.callTool({
-  name: "addDocumentToRASS",
-  arguments: {
-    source_uri: "waroftheworlds.pdf",
-  },
-});
-```
-
-**Expected Output:**
-
-- JSON response indicating success, number of chunks created, and index name.
-- Example (inside `result.content[0].text`):
-  ```json
-  {
-    "message": "Successfully processed 1 files. Embedded and indexed 3289 semantic document chunks into 'knowledge_base_gemini_768'."
-  }
-  ```
-
----
-
-## 🛠️ Troubleshooting & Tips
-
-- **File Not Found:** Ensure the file is present in the shared uploads volume and the path is correct.
-- **Backend Connectivity:** Make sure all backend services are running and accessible via Docker network.
-- **JSON-RPC Errors:** Double-check your client payloads for correct structure and tool names.
-
----
-
-## 🔗 Related Docs
+## Related Docs
 
 - [System Architecture & Workflows](../docs/PLANNER_AND_DIAGRAMS.md)
 - [embedding-service/README.md](../embedding-service/README.md)
 - [rass-engine-service/README.md](../rass-engine-service/README.md)
-
----
-
-For advanced configuration and developer notes, see the code comments and `.env.example`.
+- [OpenAPI Spec](./openapi.yaml)

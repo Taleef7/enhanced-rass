@@ -8,9 +8,11 @@
 const { DEFAULT_K_OPENSEARCH_HITS } = require("../config");
 const { llmClient } = require("../clients/llmClient");
 const { LLM_PROVIDER, OPENAI_MODEL_NAME, GEMINI_MODEL_NAME } = require("../config");
+const { SearchPlanSchema } = require("../schemas/plannerSchemas");
 
 /**
  * Generates a refined set of search terms from the LLM given an initial context.
+ * Validates the LLM output against SearchPlanSchema; falls back to [originalQuery] on failure.
  *
  * @param {string} originalQuery - The user's original query.
  * @param {string} initialContext - Text from the initial retrieval pass.
@@ -35,21 +37,36 @@ ${initialContext}
 Generate a JSON array of specific search terms now. Your entire response must be ONLY the JSON array.`;
 
   try {
-    let searchTerms = [];
+    let rawTerms;
     if (LLM_PROVIDER === "openai") {
       const completion = await llmClient.chat.completions.create({
         model: OPENAI_MODEL_NAME,
         messages: [{ role: "user", content: planningPrompt }],
         temperature: 0.5,
       });
-      searchTerms = JSON.parse(completion.choices[0].message.content);
+      rawTerms = JSON.parse(completion.choices[0].message.content);
     } else {
       const result = await llmClient.generateContent(planningPrompt);
       const response = result.response.text();
-      searchTerms = JSON.parse(response);
+      rawTerms = JSON.parse(response);
     }
 
-    const plan = searchTerms.map((term, index) => ({
+    // Validate the LLM output against SearchPlanSchema
+    const planResult = SearchPlanSchema.safeParse(rawTerms);
+    if (!planResult.success) {
+      console.warn(
+        `[Refined Plan] LLM output failed schema validation: ${JSON.stringify(planResult.error.issues)}. Falling back to original query.`
+      );
+      return [
+        {
+          step_id: "fallback_original",
+          search_term: originalQuery,
+          knn_k: DEFAULT_K_OPENSEARCH_HITS,
+        },
+      ];
+    }
+
+    const plan = planResult.data.map((term, index) => ({
       step_id: `refined_search_${index + 1}`,
       search_term: term.trim(),
       knn_k: DEFAULT_K_OPENSEARCH_HITS,
