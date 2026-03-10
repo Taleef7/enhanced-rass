@@ -1,396 +1,301 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   Paper,
   Typography,
   Button,
-  LinearProgress,
   Alert,
   IconButton,
   Tooltip,
   Grid,
   Card,
   CardContent,
-  CardActions
+  CardActions,
+  Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  CircularProgress,
+  Divider,
 } from '@mui/material';
 import {
-  CloudUpload as UploadIcon,
   Delete as DeleteIcon,
-  CheckCircle as CheckIcon,
+  CheckCircle as ReadyIcon,
   Error as ErrorIcon,
-  Download as DownloadIcon,
-  Visibility as ViewIcon
+  HourglassEmpty as QueuedIcon,
+  Sync as ProcessingIcon,
+  Refresh as RefreshIcon,
+  Storage as ProvenanceIcon,
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
-import axios from 'axios';
+import { fetchDocuments, deleteDocument, fetchDocumentProvenance } from '../apiClient';
 
-const DocumentManager = ({ uploadedDocuments, onDocumentUpload }) => {
-  const [file, setFile] = useState(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [message, setMessage] = useState('');
-  const [messageType, setMessageType] = useState('info');
-  const fileInputRef = useRef(null);
-  const dropZoneRef = useRef(null);
-  const progressIntervalRef = useRef(null);
+const STATUS_META = {
+  QUEUED:     { color: 'default',  label: 'Queued',      icon: <QueuedIcon fontSize="small" /> },
+  PROCESSING: { color: 'info',     label: 'Processing',  icon: <ProcessingIcon fontSize="small" /> },
+  READY:      { color: 'success',  label: 'Ready',       icon: <ReadyIcon fontSize="small" /> },
+  FAILED:     { color: 'error',    label: 'Failed',      icon: <ErrorIcon fontSize="small" /> },
+  DELETED:    { color: 'default',  label: 'Deleted',     icon: null },
+};
 
-  const handleFileSelect = (selectedFile) => {
-    if (selectedFile) {
-      setFile(selectedFile);
-      setMessage(`Selected: ${selectedFile.name}`);
-      setMessageType('info');
-    }
-  };
+const getFileIcon = (fileName) => {
+  if (!fileName) return '📁';
+  const ext = fileName.split('.').pop()?.toLowerCase();
+  if (ext === 'pdf') return '📄';
+  if (ext === 'txt') return '📝';
+  if (ext === 'md') return '📋';
+  if (ext === 'doc' || ext === 'docx') return '📄';
+  return '📁';
+};
 
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0];
-    handleFileSelect(selectedFile);
-  };
+const formatFileSize = (bytes) => {
+  if (!bytes || bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
 
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
+const formatDate = (dateString) => {
+  if (!dateString) return '—';
+  return new Date(dateString).toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+};
 
-  const handleDragEnter = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
+const DocumentManager = () => {
+  const [documents, setDocuments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [provenanceDoc, setProvenanceDoc] = useState(null);
+  const [provenance, setProvenance] = useState(null);
+  const [provenanceLoading, setProvenanceLoading] = useState(false);
 
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
+  // Track whether any doc is in an active state without using setState as a side-effect trigger
+  const hasActiveRef = useRef(false);
 
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      handleFileSelect(files[0]);
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!file) return;
-
-    setIsUploading(true);
-    setUploadProgress(0);
-    setMessage('Preparing upload...');
-    setMessageType('info');
-
-    const formData = new FormData();
-    formData.append('file', file);
-
+  const loadDocuments = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      // Simulate realistic progress
-      progressIntervalRef.current = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 85) {
-            if (progressIntervalRef.current) {
-              clearInterval(progressIntervalRef.current);
-            }
-            return prev;
-          }
-          return prev + Math.random() * 15;
-        });
-      }, 300);
-
-      const response = await axios.post('/api/embed-upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        onUploadProgress: (progressEvent) => {
-          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          setUploadProgress(Math.min(progress, 85)); // Cap at 85% until processing
-        }
-      });
-
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-      }
-      setUploadProgress(100);
-      
-      setMessage(response.data.message || 'File processed successfully!');
-      setMessageType('success');
-      
-      // Add to uploaded documents
-      onDocumentUpload({
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        uploadedAt: new Date().toISOString()
-      });
-      
-      // Reset after success
-      setTimeout(() => {
-        setFile(null);
-        setUploadProgress(0);
-        setMessage('');
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
-      }, 3000);
-
-    } catch (error) {
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-      }
-      setUploadProgress(0);
-      console.error('Upload error:', error);
-      setMessage(`Upload failed: ${error.response?.data?.error || error.message}`);
-      setMessageType('error');
+      const { data } = await fetchDocuments(1, 50);
+      const docs = data.documents || [];
+      setDocuments(docs);
+      hasActiveRef.current = docs.some((d) => d.status === 'QUEUED' || d.status === 'PROCESSING');
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || 'Failed to load documents.');
     } finally {
-      setIsUploading(false);
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDocuments();
+    // Auto-refresh every 5 s while any document is in QUEUED/PROCESSING state.
+    // We read the ref directly to avoid using setState as a side-effect trigger.
+    const interval = setInterval(() => {
+      if (hasActiveRef.current) {
+        loadDocuments();
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [loadDocuments]);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
+    try {
+      await deleteDocument(deleteTarget.id);
+      setDocuments((prev) => prev.filter((d) => d.id !== deleteTarget.id));
+      setDeleteTarget(null);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to delete document.');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
-  const handleRemoveFile = () => {
-    setFile(null);
-    setMessage('');
-    setUploadProgress(0);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+  const handleShowProvenance = async (doc) => {
+    setProvenanceDoc(doc);
+    setProvenance(null);
+    setProvenanceLoading(true);
+    try {
+      const { data } = await fetchDocumentProvenance(doc.id);
+      setProvenance(data);
+    } catch (err) {
+      setProvenance({ error: err.response?.data?.error || 'No provenance record available.' });
+    } finally {
+      setProvenanceLoading(false);
     }
-  };
-
-  const getFileIcon = (fileName) => {
-    const extension = fileName.split('.').pop()?.toLowerCase();
-    switch (extension) {
-      case 'pdf':
-        return '📄';
-      case 'txt':
-        return '📝';
-      case 'md':
-        return '📋';
-      case 'doc':
-      case 'docx':
-        return '📄';
-      default:
-        return '📁';
-    }
-  };
-
-  const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
   };
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: 3 }}>
-      {/* Header */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" sx={{ fontWeight: 600, mb: 1 }}>
-          Document Manager
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          Upload and manage your documents for AI analysis
-        </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 600, mb: 0.5 }}>My Documents</Typography>
+          <Typography variant="body2" color="text.secondary">
+            {documents.length} document{documents.length !== 1 ? 's' : ''} in your knowledge base
+          </Typography>
+        </Box>
+        <Tooltip title="Refresh">
+          <IconButton onClick={loadDocuments} disabled={loading}>
+            <RefreshIcon />
+          </IconButton>
+        </Tooltip>
       </Box>
 
-      {/* Upload Section */}
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <UploadIcon />
-          Upload New Document
-        </Typography>
-        
-        {/* Drag & Drop Zone */}
-        <Paper
-          ref={dropZoneRef}
-          onDragOver={handleDragOver}
-          onDragEnter={handleDragEnter}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          sx={{
-            p: 4,
-            border: '2px dashed',
-            borderColor: file ? 'primary.main' : 'divider',
-            backgroundColor: file ? 'primary.50' : 'background.paper',
-            textAlign: 'center',
-            cursor: 'pointer',
-            transition: 'all 0.3s ease',
-            '&:hover': {
-              borderColor: 'primary.main',
-              backgroundColor: 'primary.50'
-            }
-          }}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            onChange={handleFileChange}
-            style={{ display: 'none' }}
-            accept=".pdf,.txt,.md,.doc,.docx"
-          />
-          
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.3 }}
-          >
-            <UploadIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-            <Typography variant="h6" sx={{ mb: 1 }}>
-              {file ? 'File Selected' : 'Drop files here or click to browse'}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {file ? 'Click to change file' : 'Supports PDF, TXT, MD, DOC, DOCX'}
-            </Typography>
-          </motion.div>
-        </Paper>
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-        {/* File Info */}
-        <AnimatePresence>
-          {file && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Box sx={{ mt: 2, p: 2, border: 1, borderColor: 'divider', borderRadius: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                  <Typography variant="h4">{getFileIcon(file.name)}</Typography>
-                  <Box sx={{ flex: 1 }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                      {file.name}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {formatFileSize(file.size)}
-                    </Typography>
-                  </Box>
-                  <Tooltip title="Remove file">
-                    <IconButton onClick={handleRemoveFile} size="small" color="error">
-                      <DeleteIcon />
-                    </IconButton>
-                  </Tooltip>
-                </Box>
-
-                {/* Upload Progress */}
-                {isUploading && (
-                  <Box sx={{ width: '100%' }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Typography variant="caption" color="text.secondary">
-                        Processing...
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {Math.round(uploadProgress)}%
-                      </Typography>
-                    </Box>
-                    <LinearProgress 
-                      variant="determinate" 
-                      value={uploadProgress}
-                      sx={{ height: 6, borderRadius: 3 }}
-                    />
-                  </Box>
-                )}
-
-                {/* Upload Button */}
-                {!isUploading && (
-                  <Button
-                    variant="contained"
-                    fullWidth
-                    onClick={handleUpload}
-                    disabled={!file}
-                    sx={{ mt: 1 }}
-                  >
-                    Upload & Process
-                  </Button>
-                )}
-              </Box>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Status Message */}
-        <AnimatePresence>
-          {message && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Alert 
-                severity={messageType} 
-                icon={messageType === 'success' ? <CheckIcon /> : messageType === 'error' ? <ErrorIcon /> : undefined}
-                sx={{ mt: 2 }}
-              >
-                {message}
-              </Alert>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </Paper>
-
-      {/* Uploaded Documents */}
-      {uploadedDocuments.length > 0 && (
-        <Box sx={{ flex: 1 }}>
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            Uploaded Documents ({uploadedDocuments.length})
-          </Typography>
-          <Grid container spacing={2}>
-            {uploadedDocuments.map((doc, index) => (
-              <Grid item xs={12} sm={6} md={4} key={index}>
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.1 }}
-                >
-                  <Card sx={{ height: '100%' }}>
-                    <CardContent>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                        <Typography variant="h5">{getFileIcon(doc.name)}</Typography>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                            {doc.name}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {formatFileSize(doc.size)} • {formatDate(doc.uploadedAt)}
-                          </Typography>
-                        </Box>
-                      </Box>
-                    </CardContent>
-                    <CardActions sx={{ pt: 0 }}>
-                      <Tooltip title="View document">
-                        <IconButton size="small">
-                          <ViewIcon />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Download">
-                        <IconButton size="small">
-                          <DownloadIcon />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Remove">
-                        <IconButton size="small" color="error">
-                          <DeleteIcon />
-                        </IconButton>
-                      </Tooltip>
-                    </CardActions>
-                  </Card>
-                </motion.div>
-              </Grid>
-            ))}
-          </Grid>
+      {loading && documents.length === 0 ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
+          <CircularProgress />
         </Box>
+      ) : documents.length === 0 ? (
+        <Paper sx={{ p: 6, textAlign: 'center', color: 'text.secondary' }}>
+          <Typography variant="h6">No documents yet</Typography>
+          <Typography variant="body2">Upload a document to get started.</Typography>
+        </Paper>
+      ) : (
+        <Grid container spacing={2}>
+          <AnimatePresence>
+            {documents.map((doc, index) => {
+              const meta = STATUS_META[doc.status] || STATUS_META.QUEUED;
+              return (
+                <Grid item xs={12} sm={6} md={4} key={doc.id}>
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ duration: 0.3, delay: index * 0.05 }}
+                  >
+                    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                      <CardContent sx={{ flex: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                          <Typography variant="h5">{getFileIcon(doc.originalFilename)}</Typography>
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Tooltip title={doc.originalFilename}>
+                              <Typography
+                                variant="subtitle2"
+                                sx={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                              >
+                                {doc.originalFilename}
+                              </Typography>
+                            </Tooltip>
+                            <Typography variant="caption" color="text.secondary" display="block">
+                              {formatFileSize(doc.fileSizeBytes)} · {formatDate(doc.uploadedAt)}
+                            </Typography>
+                          </Box>
+                        </Box>
+
+                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
+                          <Chip
+                            size="small"
+                            label={meta.label}
+                            color={meta.color}
+                            icon={meta.icon}
+                          />
+                          {doc.chunkCount != null && (
+                            <Chip size="small" variant="outlined" label={`${doc.chunkCount} chunks`} />
+                          )}
+                        </Box>
+
+                        {doc.errorMessage && (
+                          <Typography variant="caption" color="error" display="block" sx={{ mt: 1 }}>
+                            {doc.errorMessage}
+                          </Typography>
+                        )}
+                      </CardContent>
+
+                      <CardActions sx={{ pt: 0, justifyContent: 'flex-end' }}>
+                        {doc.status === 'READY' && (
+                          <Tooltip title="View provenance">
+                            <IconButton size="small" onClick={() => handleShowProvenance(doc)}>
+                              <ProvenanceIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        <Tooltip title="Delete document">
+                          <IconButton size="small" color="error" onClick={() => setDeleteTarget(doc)}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </CardActions>
+                    </Card>
+                  </motion.div>
+                </Grid>
+              );
+            })}
+          </AnimatePresence>
+        </Grid>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={Boolean(deleteTarget)} onClose={() => !deleteLoading && setDeleteTarget(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete Document?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            This will remove <strong>{deleteTarget?.originalFilename}</strong> from your document library and attempt to delete its associated search vectors. This is a soft-delete — the document record will be marked as deleted, but some underlying data (such as Redis parent chunks) may persist temporarily until a cleanup job runs.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteTarget(null)} disabled={deleteLoading}>Cancel</Button>
+          <Button onClick={handleDelete} color="error" variant="contained" disabled={deleteLoading}>
+            {deleteLoading ? <CircularProgress size={20} /> : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Provenance Dialog */}
+      <Dialog open={Boolean(provenanceDoc)} onClose={() => { setProvenanceDoc(null); setProvenance(null); }} maxWidth="sm" fullWidth>
+        <DialogTitle>ETL Provenance — {provenanceDoc?.originalFilename}</DialogTitle>
+        <DialogContent>
+          {provenanceLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>
+          ) : provenance?.error ? (
+            <Alert severity="warning">{provenance.error}</Alert>
+          ) : provenance ? (
+            <Box sx={{ fontFamily: 'monospace', fontSize: 13 }}>
+              {[
+                ['Embedding Model', provenance.embeddingModel],
+                ['Embedding Dim', provenance.embeddingDim],
+                ['File Type', provenance.fileType],
+                ['File Size', formatFileSize(provenance.fileSizeBytes)],
+                ['Pages', provenance.pageCount ?? '—'],
+                ['Parent Chunks', provenance.parentCount],
+                ['Child Chunks', provenance.chunkCount],
+                ['SHA-256', provenance.rawFileSha256?.slice(0, 16) + '…'],
+              ].map(([label, value]) => (
+                <Box key={label} sx={{ display: 'flex', gap: 2, py: 0.5 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ width: 130, flexShrink: 0 }}>{label}</Typography>
+                  <Typography variant="caption">{String(value)}</Typography>
+                </Box>
+              ))}
+              <Divider sx={{ my: 1 }} />
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>Stage timings (ms)</Typography>
+              {provenance.stagesMs && Object.entries(provenance.stagesMs).map(([stage, ms]) => (
+                <Box key={stage} sx={{ display: 'flex', gap: 2, py: 0.25 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ width: 130, flexShrink: 0 }}>{stage}</Typography>
+                  <Typography variant="caption">{ms} ms</Typography>
+                </Box>
+              ))}
+              <Divider sx={{ my: 1 }} />
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>Chunking strategy</Typography>
+              <Typography variant="caption" component="pre" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {JSON.stringify(provenance.chunkingStrategy, null, 2)}
+              </Typography>
+            </Box>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setProvenanceDoc(null); setProvenance(null); }}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
 
-export default DocumentManager; 
+export default DocumentManager;

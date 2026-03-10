@@ -14,6 +14,16 @@ const UploadBodySchema = z.object({
   userId: z
     .string({ required_error: "userId is required" })
     .min(1, "userId must not be empty"),
+  // documentId is provided by the mcp-server upload proxy for registry tracking
+  documentId: z.string().optional(),
+  // kbId targets the upload at a specific Knowledge Base
+  kbId: z.string().optional(),
+  // targetIndex is the OpenSearch index resolved by the mcp-server from the KB record
+  targetIndex: z.string().optional(),
+  // chunkingStrategy overrides the global config for this specific upload
+  chunkingStrategy: z
+    .enum(["fixed_size", "recursive_character", "sentence_window"])
+    .optional(),
 });
 
 module.exports = { UploadBodySchema };

@@ -29,6 +29,29 @@ describe("UploadBodySchema", () => {
     const result = UploadBodySchema.safeParse({ userId: 42 });
     expect(result.success).toBe(false);
   });
+
+  test("valid chunkingStrategy passes", () => {
+    const result = UploadBodySchema.safeParse({ userId: "u1", chunkingStrategy: "sentence_window" });
+    expect(result.success).toBe(true);
+    expect(result.data.chunkingStrategy).toBe("sentence_window");
+  });
+
+  test("invalid chunkingStrategy fails", () => {
+    const result = UploadBodySchema.safeParse({ userId: "u1", chunkingStrategy: "invalid_strategy" });
+    expect(result.success).toBe(false);
+  });
+
+  test("targetIndex optional string passes", () => {
+    const result = UploadBodySchema.safeParse({ userId: "u1", targetIndex: "kb_myindex_123" });
+    expect(result.success).toBe(true);
+    expect(result.data.targetIndex).toBe("kb_myindex_123");
+  });
+
+  test("kbId optional string passes", () => {
+    const result = UploadBodySchema.safeParse({ userId: "u1", kbId: "some-kb-id" });
+    expect(result.success).toBe(true);
+    expect(result.data.kbId).toBe("some-kb-id");
+  });
 });
 
 describe("validateBody middleware", () => {

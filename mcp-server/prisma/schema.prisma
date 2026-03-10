@@ -11,12 +11,15 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  username  String   @unique
-  password  String   // This will store the HASHED password
-  chats     Chat[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String          @id @default(cuid())
+  username       String          @unique
+  password       String          // This will store the HASHED password
+  chats          Chat[]
+  documents      Document[]
+  knowledgeBases KnowledgeBase[]
+  kbMemberships  KBMember[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 }
 
 model Chat {
@@ -53,4 +56,96 @@ model ChatDocument {
   uploadedAt DateTime @default(now())
 
   @@map("chat_documents")
+}
+
+// ─── Phase B Models ──────────────────────────────────────────────────────────
+
+enum DocumentStatus {
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
+  DELETED
+}
+
+model Document {
+  id               String             @id @default(cuid())
+  userId           String
+  originalFilename String
+  mimeType         String
+  fileSizeBytes    Int
+  status           DocumentStatus     @default(QUEUED)
+  chunkCount       Int?
+  errorMessage     String?
+  openSearchIndex  String             @default("knowledge_base")
+  redisKeyPrefix   String?
+  ingestionJobId   String?
+  kbId             String?
+  uploadedAt       DateTime           @default(now())
+  processedAt      DateTime?
+  deletedAt        DateTime?
+  provenance       DocumentProvenance?
+  User             User               @relation(fields: [userId], references: [id])
+  KB               KnowledgeBase?     @relation(fields: [kbId], references: [id])
+}
+
+model DocumentProvenance {
+  id               String   @id @default(cuid())
+  documentId       String   @unique
+  userId           String
+  ingestionJobId   String
+  rawFileSha256    String
+  fileType         String
+  fileSizeBytes    Int
+  pageCount        Int?
+  chunkingStrategy Json
+  embeddingModel   String
+  embeddingDim     Int
+  chunkCount       Int
+  parentCount      Int
+  stagesMs         Json
+  createdAt        DateTime @default(now())
+  document         Document @relation(fields: [documentId], references: [id])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  resource  String?
+  outcome   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+}
+
+enum KBRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+model KnowledgeBase {
+  id              String     @id @default(cuid())
+  name            String
+  description     String?
+  ownerId         String
+  isPublic        Boolean    @default(false)
+  openSearchIndex String     @unique
+  embeddingModel  String
+  embedDim        Int
+  createdAt       DateTime   @default(now())
+  documents       Document[]
+  members         KBMember[]
+  Owner           User       @relation(fields: [ownerId], references: [id])
+}
+
+model KBMember {
+  id     String        @id @default(cuid())
+  kbId   String
+  userId String
+  role   KBRole        @default(VIEWER)
+  KB     KnowledgeBase @relation(fields: [kbId], references: [id], onDelete: Cascade)
+  User   User          @relation(fields: [userId], references: [id])
+
+  @@unique([kbId, userId])
 }

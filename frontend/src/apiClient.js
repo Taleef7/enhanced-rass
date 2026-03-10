@@ -35,9 +35,11 @@ export const logoutUser = () => {
   localStorage.removeItem("authToken");
 };
 
-export const uploadFile = (file) => {
+export const uploadFile = (file, kbId = null, chunkingStrategy = null) => {
   const formData = new FormData();
   formData.append("file", file);
+  if (kbId) formData.append("kbId", kbId);
+  if (chunkingStrategy) formData.append("chunkingStrategy", chunkingStrategy);
 
   const token = localStorage.getItem("authToken"); // <-- Get the token
 
@@ -47,6 +49,60 @@ export const uploadFile = (file) => {
       "Content-Type": "multipart/form-data",
       Authorization: `Bearer ${token}`,
     },
+  });
+};
+
+export const pollIngestionStatus = (jobId) => {
+  const token = localStorage.getItem("authToken");
+  return apiClient.get(`/ingest/status/${jobId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+};
+
+export const fetchDocuments = (page = 1, limit = 20, status = null) => {
+  const token = localStorage.getItem("authToken");
+  const params = { page, limit };
+  if (status) params.status = status;
+  return apiClient.get("/documents", {
+    headers: { Authorization: `Bearer ${token}` },
+    params,
+  });
+};
+
+export const deleteDocument = (documentId) => {
+  const token = localStorage.getItem("authToken");
+  return apiClient.delete(`/documents/${documentId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+};
+
+export const fetchDocumentProvenance = (documentId) => {
+  const token = localStorage.getItem("authToken");
+  return apiClient.get(`/documents/${documentId}/provenance`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+};
+
+export const fetchKnowledgeBases = () => {
+  const token = localStorage.getItem("authToken");
+  return apiClient.get("/knowledge-bases", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+};
+
+export const createKnowledgeBase = (name, description = "", isPublic = false) => {
+  const token = localStorage.getItem("authToken");
+  return apiClient.post(
+    "/knowledge-bases",
+    { name, description, isPublic },
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+};
+
+export const deleteKnowledgeBase = (kbId) => {
+  const token = localStorage.getItem("authToken");
+  return apiClient.delete(`/knowledge-bases/${kbId}`, {
+    headers: { Authorization: `Bearer ${token}` },
   });
 };
 

@@ -24,6 +24,13 @@ const ConfigSchema = z.object({
     .string()
     .min(1, "OPENSEARCH_INDEX_NAME must not be empty"),
 
+  EMBED_DIM: z
+    .number()
+    .int()
+    .positive("EMBED_DIM must be a positive integer")
+    .optional()
+    .default(768),
+
   RASS_ENGINE_PORT: portRange,
   EMBEDDING_SERVICE_PORT: portRange,
 });
