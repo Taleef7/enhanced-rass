@@ -16,6 +16,7 @@ const { PrismaClient } = require("@prisma/client");
 const authMiddleware = require("../authMiddleware");
 const { writeAuditLog } = require("../services/auditService");
 const { OPENSEARCH_HOST, OPENSEARCH_PORT, EMBED_DIM } = require("../config");
+const { apiLimiter, deleteLimiter } = require("../middleware/rateLimits");
 
 const prisma = new PrismaClient();
 const router = express.Router();
@@ -71,7 +72,7 @@ async function deleteKBIndex(indexName) {
 
 // ── POST /api/knowledge-bases ─────────────────────────────────────────────────
 
-router.post("/api/knowledge-bases", authMiddleware, async (req, res) => {
+router.post("/api/knowledge-bases", apiLimiter, authMiddleware, async (req, res) => {
   const userId = req.userId;
   const { name, description, isPublic, embeddingModel, embedDim } = req.body;
 
@@ -80,7 +81,7 @@ router.post("/api/knowledge-bases", authMiddleware, async (req, res) => {
   }
 
   const resolvedEmbedDim = embedDim || EMBED_DIM;
-  const resolvedModel = embeddingModel || process.env.GEMINI_EMBED_MODEL_NAME || "text-embedding-004";
+  const resolvedModel = embeddingModel || "text-embedding-004"; // falls back to a sensible default
 
   // Derive a unique, OpenSearch-safe index name from the KB name
   const safeBase = name
@@ -127,7 +128,7 @@ router.post("/api/knowledge-bases", authMiddleware, async (req, res) => {
 
 // ── GET /api/knowledge-bases ──────────────────────────────────────────────────
 
-router.get("/api/knowledge-bases", authMiddleware, async (req, res) => {
+router.get("/api/knowledge-bases", apiLimiter, authMiddleware, async (req, res) => {
   const userId = req.userId;
 
   try {
@@ -155,7 +156,7 @@ router.get("/api/knowledge-bases", authMiddleware, async (req, res) => {
 
 // ── GET /api/knowledge-bases/:id ─────────────────────────────────────────────
 
-router.get("/api/knowledge-bases/:id", authMiddleware, async (req, res) => {
+router.get("/api/knowledge-bases/:id", apiLimiter, authMiddleware, async (req, res) => {
   const { id } = req.params;
   const userId = req.userId;
 
@@ -188,7 +189,7 @@ router.get("/api/knowledge-bases/:id", authMiddleware, async (req, res) => {
 
 // ── DELETE /api/knowledge-bases/:id ──────────────────────────────────────────
 
-router.delete("/api/knowledge-bases/:id", authMiddleware, async (req, res) => {
+router.delete("/api/knowledge-bases/:id", deleteLimiter, authMiddleware, async (req, res) => {
   const { id } = req.params;
   const userId = req.userId;
 
@@ -230,7 +231,7 @@ router.delete("/api/knowledge-bases/:id", authMiddleware, async (req, res) => {
 
 // ── POST /api/knowledge-bases/:id/members ────────────────────────────────────
 
-router.post("/api/knowledge-bases/:id/members", authMiddleware, async (req, res) => {
+router.post("/api/knowledge-bases/:id/members", apiLimiter, authMiddleware, async (req, res) => {
   const { id } = req.params;
   const requesterId = req.userId;
   const { userId: targetUserId, role = "VIEWER" } = req.body;

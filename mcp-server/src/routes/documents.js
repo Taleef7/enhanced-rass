@@ -16,13 +16,14 @@ const { PrismaClient } = require("@prisma/client");
 const authMiddleware = require("../authMiddleware");
 const { writeAuditLog } = require("../services/auditService");
 const { OPENSEARCH_HOST, OPENSEARCH_PORT, EMBEDDING_SERVICE_BASE_URL } = require("../config");
+const { apiLimiter, deleteLimiter, uploadLimiter } = require("../middleware/rateLimits");
 
 const prisma = new PrismaClient();
 const router = express.Router();
 
 // ── GET /api/documents ────────────────────────────────────────────────────────
 
-router.get("/api/documents", authMiddleware, async (req, res) => {
+router.get("/api/documents", apiLimiter, authMiddleware, async (req, res) => {
   const userId = req.userId;
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
@@ -70,7 +71,7 @@ router.get("/api/documents", authMiddleware, async (req, res) => {
 
 // ── GET /api/documents/:id ────────────────────────────────────────────────────
 
-router.get("/api/documents/:id", authMiddleware, async (req, res) => {
+router.get("/api/documents/:id", apiLimiter, authMiddleware, async (req, res) => {
   const { id } = req.params;
   const userId = req.userId;
 
@@ -93,7 +94,7 @@ router.get("/api/documents/:id", authMiddleware, async (req, res) => {
 
 // ── GET /api/documents/:id/provenance ─────────────────────────────────────────
 
-router.get("/api/documents/:id/provenance", authMiddleware, async (req, res) => {
+router.get("/api/documents/:id/provenance", apiLimiter, authMiddleware, async (req, res) => {
   const { id } = req.params;
   const userId = req.userId;
 
@@ -120,7 +121,7 @@ router.get("/api/documents/:id/provenance", authMiddleware, async (req, res) => 
 
 // ── DELETE /api/documents/:id ─────────────────────────────────────────────────
 
-router.delete("/api/documents/:id", authMiddleware, async (req, res) => {
+router.delete("/api/documents/:id", deleteLimiter, authMiddleware, async (req, res) => {
   const { id } = req.params;
   const userId = req.userId;
 
@@ -141,14 +142,7 @@ router.delete("/api/documents/:id", authMiddleware, async (req, res) => {
       await axios.post(
         `${openSearchUrl}/${indexName}/_delete_by_query`,
         {
-          query: {
-            bool: {
-              should: [
-                { term: { "metadata.documentId": id } },
-              ],
-              minimum_should_match: 1,
-            },
-          },
+          query: { term: { "metadata.documentId": id } },
         },
         { headers: { "Content-Type": "application/json" }, timeout: 30000 }
       );
@@ -182,7 +176,7 @@ router.delete("/api/documents/:id", authMiddleware, async (req, res) => {
 // ── POST /api/documents ───────────────────────────────────────────────────────
 // Called by the upload proxy to register a document before enqueuing ingestion.
 
-router.post("/api/documents", authMiddleware, async (req, res) => {
+router.post("/api/documents", uploadLimiter, authMiddleware, async (req, res) => {
   const userId = req.userId;
   const { originalFilename, mimeType, fileSizeBytes, kbId, ingestionJobId, openSearchIndex } = req.body;
 

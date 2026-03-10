@@ -93,7 +93,9 @@ const DocumentManager = () => {
     const interval = setInterval(() => {
       setDocuments((prev) => {
         const hasActive = prev.some((d) => d.status === 'QUEUED' || d.status === 'PROCESSING');
-        if (hasActive) loadDocuments();
+        if (hasActive) {
+          loadDocuments();
+        }
         return prev;
       });
     }, 5000);

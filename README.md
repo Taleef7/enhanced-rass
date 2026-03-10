@@ -1,15 +1,20 @@
 # RASS (Retrieval-Augmented Semantic Search)
 
-A production-grade, multi-service Retrieval Augmented Generation (RAG/RASS) system with document ingestion, hybrid retrieval, SSE streaming, and a polished React frontend. It’s built for clarity and reproducibility: one configuration file, containerized services, and sensible defaults.
+A production-grade, multi-service Retrieval Augmented Generation (RAG/RASS) system with document ingestion, hybrid retrieval, SSE streaming, and a polished React frontend. It's built for clarity and reproducibility: one configuration file, containerized services, and sensible defaults.
 
 ## What you get
 
 - Multi-provider embeddings (OpenAI or Gemini) with correct vector dimensioning
-- Hybrid retrieval over OpenSearch (KNN + keyword) scoped per-user
+- **Async document ingestion** via BullMQ job queue (no more HTTP timeouts on large files)
+- **Document registry** with lifecycle tracking (QUEUED → PROCESSING → READY → FAILED)
+- **ETL provenance** records for every ingested document (SHA-256, stage timings, chunking config, embedding model)
+- **Configurable chunking strategies**: `fixed_size`, `recursive_character`, `sentence_window` — selectable via `config.yml`
+- **Bring-Your-Own Knowledge Base (BYO KB)**: per-user/team knowledge bases with dedicated OpenSearch indices
+- Hybrid retrieval over OpenSearch (KNN + keyword) scoped per-user / per-KB
 - Redis-backed parent-doc store for fast parent retrieval
-- Postgres + Prisma for auth and chats
+- Postgres + Prisma for auth, chats, and document registry
 - MCP gateway with REST endpoints and OpenAI-compatible stream proxy
-- React frontend with uploads, chat, streaming citations, and document viewer
+- React frontend with uploads, live progress polling, document library with status badges, streaming citations
 
 See deep-dive diagrams and flows in docs/PLANNER_AND_DIAGRAMS.md.
 
@@ -18,16 +23,16 @@ See deep-dive diagrams and flows in docs/PLANNER_AND_DIAGRAMS.md.
 ## Architecture at a glance
 
 Services (all configured from root config.yml and secrets from .env):
-- embedding-service (8001): ingest → split to parent/child → embed → index child chunks in OpenSearch index knowledge_base and store parents in Redis.
-- rass-engine-service (8000): retrieve via hybrid search + generate answer via LLM; SSE or JSON.
-- mcp-server (8080): gateway. REST auth and chat CRUD, stream proxy, upload proxy, and MCP /mcp tools.
-- frontend (8080 via proxy): CRA app that talks to mcp-server.
+- **embedding-service (8001)**: ingest → BullMQ queue → worker (parse → chunk → embed → index child chunks in OpenSearch + store parents in Redis) → provenance record.
+- **rass-engine-service (8000)**: retrieve via hybrid search + generate answer via LLM; SSE or JSON.
+- **mcp-server (8080)**: gateway. REST auth, chat CRUD, document registry API, KB management API, stream proxy, upload proxy, and MCP /mcp tools.
+- **frontend (8080 via proxy)**: CRA app that talks to mcp-server.
 - Infra: OpenSearch, Redis, Postgres (via Docker Compose).
 
 Data rules:
-- All searches are strictly filtered by metadata.userId.
-- Parent chunks live in Redis keyed by UUID; child chunks are in OpenSearch with metadata including userId, originalFilename, uploadedAt, parentId.
-- Chats/messages are in Postgres. The frontend token is stored as authToken in localStorage.
+- All searches are strictly filtered by metadata.userId (or KB membership).
+- Parent chunks live in Redis keyed by UUID; child chunks are in OpenSearch with metadata including userId, originalFilename, uploadedAt, parentId, documentId, kbId.
+- Chats/messages and the document registry are in Postgres. The frontend token is stored as authToken in localStorage.
 
 ---
 
@@ -35,98 +40,146 @@ Data rules:
 
 1) Prereqs
 - Docker and Docker Compose
-- Increase vm.max_map_count for OpenSearch (Linux/WSL): sudo sysctl -w vm.max_map_count=262144
-- Create the external network once: docker network create shared_rass_network
+- Increase vm.max_map_count for OpenSearch (Linux/WSL): `sudo sysctl -w vm.max_map_count=262144`
+- Create the external network once: `docker network create shared_rass_network`
 
 2) Configure secrets and providers
-- Copy or create a .env in the repo root with: OPENAI_API_KEY, GEMINI_API_KEY, JWT_SECRET, DATABASE_URL if needed.
-- Choose providers in config.yml: EMBEDDING_PROVIDER, LLM_PROVIDER, SEARCH_TERM_EMBEDDING_PROVIDER. Ensure EMBED_DIM matches the embedding model (e.g., Gemini 768, OpenAI text-embedding-3-large 3072).
+- Copy or create a `.env` in the repo root with: `OPENAI_API_KEY`, `GEMINI_API_KEY`, `JWT_SECRET`, `DATABASE_URL`.
+- Choose providers in `config.yml`: `EMBEDDING_PROVIDER`, `LLM_PROVIDER`, `SEARCH_TERM_EMBEDDING_PROVIDER`. Ensure `EMBED_DIM` matches the embedding model (Gemini → 768, OpenAI text-embedding-3-large → 3072).
+- Choose chunking strategy: `CHUNKING_STRATEGY: recursive_character` (default) | `fixed_size` | `sentence_window`.
 
 3) Start the stack
-- scripts/start.sh (docker-compose up -d --build). First boot runs Prisma migrate deploy in mcp-server and creates OpenSearch index if missing.
+- `scripts/start.sh` (docker-compose up -d --build). First boot runs `prisma migrate deploy` in mcp-server and creates OpenSearch index if missing.
 
 4) Open the app
-- Frontend via http://localhost:8080 (proxied). Register then login; token persists in localStorage.
+- Frontend via http://localhost:8080. Register then login.
 
 5) Try it
-- Create a chat, upload a document (paper.pdf, txt, md, docx) using the paperclip in the input.
+- Create a chat, upload a document (.pdf, .txt, .md, .docx) using the paperclip in the input.
+- The upload returns immediately (202 Accepted). Watch the live progress bar: Queued → Parsing → Chunking → Embedding → Ready.
+- Go to "My Documents" to see all documents with status badges and ETL provenance.
 - Ask a question; watch SSE stream and citations.
-- “Your Documents” shows aggregated uploads for the logged-in user.
+
+---
+
+## Phase B Features
+
+### #109 — Async Document Ingestion Pipeline
+- **Upload now returns 202 immediately** with a `{ jobId, documentId }` payload.
+- BullMQ worker processes jobs asynchronously: parse → chunk → embed → index.
+- **Progress polling**: frontend polls `GET /api/ingest/status/:jobId` every 2 s; shows 0 → 25 → 50 → 75 → 100% with stage labels.
+- **Automatic retries**: 3 attempts with exponential backoff (5 s, 10 s, 20 s) on failure.
+- **Bull Board** at `http://localhost:8001/admin/queues` (non-production) — live queue/worker dashboard.
+
+### #110 — ETL Provenance Tracking
+- Every successfully ingested document gets a `DocumentProvenance` record in Postgres.
+- Records: SHA-256 of raw file, chunking strategy + parameters, embedding model + dimension, page count, parent/child chunk counts, parse/chunk/embed/index stage durations.
+- **Duplicate detection**: files with identical SHA-256 can be identified.
+- `GET /api/documents/:id/provenance` — view full provenance for a document.
+- All user actions (upload, delete, ingestion) are written to the `AuditLog` table with userId, timestamp, and outcome.
+
+### #111 — Document Registry
+- Centralised `Document` table in Postgres tracking the full lifecycle of every ingested document.
+- Status transitions: `QUEUED → PROCESSING → READY` (or `FAILED` → retry → `READY`).
+- `GET /api/documents` — paginated, filterable list of current user's documents.
+- `GET /api/documents/:id` — single document metadata + provenance.
+- `DELETE /api/documents/:id` — removes OpenSearch vectors and marks document DELETED.
+- Frontend "My Documents" shows live status badges, chunk counts, provenance dialog, and delete with confirmation.
+
+### #112 — Configurable Chunking Strategies
+
+| Strategy | Key | Description |
+|---|---|---|
+| Fixed Size | `fixed_size` | Splits on a separator, each chunk ≤ `PARENT_CHUNK_SIZE` chars |
+| Recursive Character | `recursive_character` | Tries `\n\n`, `\n`, ` `, `""` in order (default) |
+| Sentence Window | `sentence_window` | Splits on sentence boundaries, groups into sliding windows |
+
+```yaml
+CHUNKING_STRATEGY: "recursive_character"   # fixed_size | recursive_character | sentence_window
+PARENT_CHUNK_SIZE: 2000
+PARENT_CHUNK_OVERLAP: 500
+CHILD_CHUNK_SIZE: 200
+CHILD_CHUNK_OVERLAP: 100
+```
+
+All 16 unit tests pass: `cd embedding-service && npm test`.
+
+### #113 — Bring-Your-Own Knowledge Base (BYO KB)
+- `POST /api/knowledge-bases` — create a named KB; automatically provisions a dedicated OpenSearch index.
+- `GET /api/knowledge-bases` — list KBs you own, are a member of, or that are public.
+- `DELETE /api/knowledge-bases/:id` — deletes the OpenSearch index and marks all documents DELETED.
+- `POST /api/knowledge-bases/:id/members` — grant VIEWER / EDITOR / OWNER role to another user.
+- Upload to a specific KB by passing `kbId` in the upload form.
 
 ---
 
 ## Configuration
 
-- config.yml (root, mounted into services):
-  - OPENSEARCH_* host/port/index, REDIS_* host/db, provider names, chunk sizes, EMBED_DIM, default K values.
-  - Changing providers? Keep EMBED_DIM in sync or delete/recreate the OpenSearch index.
-- .env (root): OPENAI_API_KEY, GEMINI_API_KEY, JWT_SECRET, DATABASE_URL. Compose passes these to services.
+- `config.yml` (root, mounted into services):
+  - `OPENSEARCH_*` host/port/index, `REDIS_*` host/db, provider names, chunk sizes, `EMBED_DIM`.
+  - **New in Phase B**: `CHUNKING_STRATEGY` — choose `fixed_size`, `recursive_character`, or `sentence_window`.
+- `.env` (root): `OPENAI_API_KEY`, `GEMINI_API_KEY`, `JWT_SECRET`, `DATABASE_URL`.
 
 Provider pairing tips:
-- Gemini text-embedding-004 → EMBED_DIM: 768
-- OpenAI text-embedding-3-large → EMBED_DIM: 3072
-- Change both the model and EMBED_DIM together; reindex after changing.
+- Gemini text-embedding-004 → `EMBED_DIM: 768`
+- OpenAI text-embedding-3-large → `EMBED_DIM: 3072`
 
 ---
 
 ## API map (selected)
 
 - Frontend → mcp-server (all require Bearer unless noted)
-  - POST /api/auth/register, /api/auth/login
-  - GET /api/chats, GET /api/chats/:chatId
-  - POST /api/chats, PATCH /api/chats/:chatId, DELETE /api/chats/:chatId
-  - POST /api/chats/:chatId/messages, PATCH/DELETE specific messages
-  - POST /api/embed-upload (form field file) → forwards to embedding-service /upload with userId
-  - POST /api/stream-ask → proxies SSE to rass-engine-service /stream-ask; injects userId; returns OpenAI-style SSE frames with choices[0].delta.content and delta.custom_meta.citations
-  - GET /api/user-documents → aggregates user’s chunk metadata from OpenSearch
-  - POST /api/chat/completions → LibreChat-compatible stream proxy to engine
-- embedding-service
-  - POST /upload (multipart files[], userId), POST /get-documents (ids[]), GET /health
-- rass-engine-service
-  - POST /ask (JSON), POST /stream-ask (SSE; requires userId)
-- MCP /mcp
-  - Tools: queryRASS (→ engine /ask), addDocumentToRASS (→ embedding /upload)
-
----
-
-## Frontend
-
-- CRA app under frontend/. Token stored as authToken.
-- Welcome screen simplified; chat list with rename/delete; streaming placeholder is local-only to avoid duplicate persisted messages.
-- Your Documents modal calls GET /api/user-documents. If it fails, check JWT validity.
-
-Local dev only (optional):
-- cd frontend && npm install && npm start
-- The dev server proxies to 8080 for API calls.
+  - `POST /api/auth/register`, `/api/auth/login`
+  - `GET /api/chats`, `POST /api/chats`, `PATCH/DELETE /api/chats/:id`
+  - `POST /api/embed-upload` → returns 202 with `{ documentId, jobs: [{ jobId }] }`
+  - `GET /api/ingest/status/:jobId` → `{ status, progress, result }` (poll every 2 s)
+  - `POST /api/stream-ask` → SSE stream with citations
+  - `GET /api/documents` → paginated document registry list
+  - `DELETE /api/documents/:id` → delete document
+  - `GET /api/documents/:id/provenance` → ETL provenance record
+  - `GET /api/knowledge-bases` → list accessible KBs
+  - `POST /api/knowledge-bases` → create KB
+  - `DELETE /api/knowledge-bases/:id` → delete KB
+- embedding-service internal
+  - `POST /upload` → enqueues async ingestion job, returns `{ jobs: [{ jobId, documentId }] }`
+  - `GET /ingest/status/:jobId` → BullMQ job status
+  - `GET /admin/queues` → Bull Board UI (dev only)
+- Internal service-to-service (no JWT, Docker network only)
+  - `PATCH /internal/documents/:id/status` → update lifecycle status
+  - `POST /internal/documents/:id/provenance` → write provenance record
+  - `POST /internal/audit` → write audit log entry
 
 ---
 
 ## Data model (Prisma)
 
-- User(id, username, password hash, timestamps)
-- Chat(id, title, userId, messages[], documents[])
-- Message(id, text, sender, chatId, sources JSON, createdAt)
-- ChatDocument(id, name, size?, chatId, uploadedAt)
+**Existing:** User, Chat, Message, ChatDocument
 
-DB connection string is provided via DATABASE_URL; migrations run on mcp-server boot.
+**Phase B additions:**
+- `Document(id, userId, originalFilename, mimeType, fileSizeBytes, status, chunkCount, openSearchIndex, kbId, ...)`
+- `DocumentProvenance(id, documentId, rawFileSha256, chunkingStrategy, embeddingModel, stagesMs, ...)`
+- `AuditLog(id, userId, action, resource, outcome, metadata, createdAt)`
+- `KnowledgeBase(id, name, ownerId, openSearchIndex, embeddingModel, embedDim, ...)`
+- `KBMember(id, kbId, userId, role: OWNER|EDITOR|VIEWER)`
+
+Migrations: `mcp-server/prisma/migrations/`
 
 ---
 
 ## Operations & Troubleshooting
 
-- Create the external docker network if missing: docker network create shared_rass_network
-- OpenSearch health: curl http://localhost:9200/_cluster/health
-- vm.max_map_count must be ≥ 262144; otherwise OpenSearch may fail silently or query performance degrades.
-- Index dimension mismatch: If you change embedding model/dimension, recreate the index (embedding-service ensures creation with the configured dimension).
-- JWT expired in logs? Re-login; frontend will keep using old token until you log out/in. The Your Documents modal requires a valid token.
-- Uploads appear in engine answers but not in Your Documents: ensure /api/user-documents reachable and your token is valid; mcp-server aggregates by metadata.originalFilename/metadata.source.
-- Redis docstore stats: GET http://localhost:8001/docstore/stats
+- Create the external docker network if missing: `docker network create shared_rass_network`
+- OpenSearch health: `curl http://localhost:9200/_cluster/health`
+- Redis docstore stats: `GET http://localhost:8001/docstore/stats`
+- Bull Board (ingestion queue): `http://localhost:8001/admin/queues` (non-production)
+- Document upload stuck in QUEUED? Check that the embedding-service worker is running.
+- Index dimension mismatch: If you change embedding model/dimension, recreate the index.
 
 ---
 
 ## Evaluation
 
-- evaluation/ contains a TruLens-based evaluator (Python). See evaluation/requirements.txt, run evaluate.py against your engine endpoints. Useful for regression checks and measuring recall/faithfulness.
+`evaluation/` contains a TruLens-based evaluator (Python). See `evaluation/requirements.txt`.
 
 ---
 
@@ -134,158 +187,75 @@ DB connection string is provided via DATABASE_URL; migrations run on mcp-server 
 
 - Keep config keys aligned across services.
 - Prefer small, focused PRs. Update docs when changing public behavior.
-- Add/adjust tests or evaluation harnesses when modifying retrieval logic.
+- Add/adjust tests when modifying retrieval or ingestion logic.
 
 ## License
 
-MIT (supply your own license text if different).
+MIT
 
 ---
 
-## Service Module Structure (Phase A Refactoring)
-
-Each service has been refactored into a layered module structure for maintainability, testability, and clear separation of concerns. The service entry points (`index.js`) are now thin orchestrators (~20-30 lines) that import modules from `src/`.
+## Service Module Structure
 
 ### embedding-service/src/
 ```
 src/
-  config.js                  ← validated config loading (exits on bad/missing fields)
+  config.js                      ← validated config loading (exits on bad/missing fields)
   clients/
-    redisClient.js            ← Redis client, connection handlers, docstore state
-    opensearchClient.js       ← OpenSearch client + ensureIndexExists()
-    embedder.js               ← embedding provider factory (OpenAI / Gemini)
+    redisClient.js                ← Redis client + docstore state
+    opensearchClient.js           ← OpenSearch client + ensureIndexExists()
+    embedder.js                   ← embedding provider factory + EMBEDDING_MODEL_NAME
   store/
-    redisDocumentStore.js     ← RedisDocumentStore class (LangChain BaseStore)
+    redisDocumentStore.js         ← RedisDocumentStore (LangChain BaseStore)
   ingestion/
-    parser.js                 ← file-type detection + document loaders (PDF/DOCX/TXT)
-    chunker.js                ← pre-configured parent/child text splitters
+    parser.js                     ← file-type detection + document loaders
+    chunker.js                    ← legacy pre-configured splitters
+  chunking/                       ← Phase B: configurable chunking strategies
+    ChunkingStrategy.js           ← abstract base class
+    FixedSizeChunker.js
+    RecursiveCharacterChunker.js
+    SentenceWindowChunker.js
+    index.js                      ← createChunker(strategy, options) factory
+  queue/
+    ingestionQueue.js             ← Phase B: BullMQ "rass:ingestion" queue
+  workers/
+    ingestionWorker.js            ← Phase B: async processor (parse→chunk→embed→index→provenance)
   routes/
-    upload.js                 ← POST /upload with UploadBodySchema + validateBody middleware
-    documents.js              ← POST /get-documents, GET /docstore/stats
-    admin.js                  ← POST /clear-docstore
-    health.js                 ← GET /health
+    upload.js                     ← POST /upload → enqueues job, returns 202 + jobId
+    ingestStatus.js               ← GET /ingest/status/:jobId
+    documents.js                  ← POST /get-documents, GET /docstore/stats
+    admin.js, health.js
   schemas/
-    configSchema.js           ← Zod config schema (enum + cross-field validation)
-    uploadSchema.js           ← UploadBodySchema (userId non-empty string)
-    index.js                  ← barrel export
-  middleware/
-    validate.js               ← validateBody(schema) and validateQuery(schema)
+    configSchema.js, uploadSchema.js, index.js
+  middleware/validate.js
   __tests__/
-    config.test.js            ← config loading + Zod validation tests
-    uploadSchema.test.js      ← upload schema + middleware tests
-```
-
-### rass-engine-service/src/
-```
-src/
-  config.js                  ← Zod-validated config loading (ConfigSchema.parse)
-  clients/
-    llmClient.js              ← LLM client factory (OpenAI / Gemini)
-    embedder.js               ← search-term embedding + embedText() function
-    opensearchClient.js       ← OpenSearch client
-  planner/
-    searchPlanner.js          ← createRefinedSearchPlan() with SearchPlanSchema validation
-    hydeGenerator.js          ← HyDE hypothetical document generation
-  retrieval/
-    simpleSearch.js           ← hybrid KNN + keyword search with user-scope filter
-    executePlan.js            ← multi-step plan execution + ExecutionPlanSchema validation
-  generation/
-    generator.js              ← non-streaming LLM answer generation
-    streaming.js              ← writeSSE() + streaming generation with CitationSchema validation
-  routes/
-    ask.js                    ← POST /ask with AskBodySchema + RetrievalHitSchema validation
-    streamAsk.js              ← POST /stream-ask with StreamAskBodySchema + hit validation
-  schemas/
-    configSchema.js           ← Zod schema for full config.yml validation (cross-field too)
-    askSchema.js              ← AskBodySchema, StreamAskBodySchema
-    plannerSchemas.js         ← SearchTermSchema, SearchPlanSchema, PlanStepSchema, ExecutionPlanSchema
-    retrievalSchemas.js       ← RetrievalHitSchema, CitationSchema, CitationListSchema
-    index.js                  ← barrel export for all schemas
-  middleware/
-    validate.js               ← validateBody(schema) and validateQuery(schema) middleware
-  __tests__/
-    config.test.js            ← config loading + Zod validation tests
-    askSchema.test.js         ← ask/stream-ask schema + middleware tests
-    plannerSchemas.test.js    ← planner schema tests
-    retrievalSchemas.test.js  ← retrieval hit and citation schema tests
+    config.test.js, uploadSchema.test.js
+    chunking.test.js              ← Phase B: 16 chunking strategy unit tests
 ```
 
 ### mcp-server/src/
 ```
 src/
-  config.js                  ← Zod-validated config loading (ConfigSchema.parse)
-  authRoutes.js              ← (unchanged) POST /api/auth/register, /login
-  authMiddleware.js          ← (unchanged) JWT Bearer auth middleware
-  chatRoutes.js              ← (unchanged) CRUD for /api/chats
+  config.js, authRoutes.js, authMiddleware.js, chatRoutes.js
+  services/
+    auditService.js               ← Phase B: writes to AuditLog table
   proxy/
-    embedUpload.js            ← POST /api/embed-upload → embedding-service
-    streamAsk.js              ← POST /api/stream-ask with StreamAskBodySchema validation
-    chatCompletions.js        ← POST /api/chat/completions with ChatCompletionsBodySchema
-    userDocuments.js          ← GET /api/user-documents with UserDocumentsQuerySchema
-    transcribe.js             ← POST /api/transcribe (Whisper)
-  gateway/
-    mcpTools.js               ← MCP tool definitions (queryRASS, addDocumentToRASS)
-    mcpTransport.js           ← POST /mcp (StreamableHTTPServerTransport)
-  schemas/
-    configSchema.js           ← Zod config schema
-    streamAskSchema.js        ← StreamAskBodySchema
-    chatCompletionsSchema.js  ← ChatCompletionsBodySchema (OpenAI-compatible)
-    userDocumentsSchema.js    ← UserDocumentsQuerySchema (page, limit with coercion)
-    embedUploadSchema.js      ← EmbedUploadSchema
-    index.js                  ← barrel export for all schemas
-  middleware/
-    validate.js               ← validateBody(schema) and validateQuery(schema) middleware
-  __tests__/
-    config.test.js            ← config loading + Zod validation tests
-    schemas.test.js           ← mcp-server schema + middleware tests
+    embedUpload.js                ← creates Document registry entry + forwards to embedding-service
+    ingestStatus.js               ← GET /api/ingest/status/:jobId proxy
+    streamAsk.js, chatCompletions.js, userDocuments.js, transcribe.js
+  routes/
+    documents.js                  ← Phase B: GET/POST/DELETE /api/documents + provenance
+    knowledgeBases.js             ← Phase B: GET/POST/DELETE /api/knowledge-bases
+    internalService.js            ← Phase B: /internal/* routes (service-to-service)
+  gateway/mcpTools.js, mcpTransport.js
+  schemas/, middleware/, __tests__/
 ```
 
-### OpenAPI Specification (mcp-server/openapi.yaml)
-Complete OpenAPI 3.0.3 spec covering all 14 REST endpoints. Validates with:
+Run unit tests:
 ```bash
-cd mcp-server && npm run validate:api
-```
-Swagger UI served at `http://localhost:8080/api/docs` (non-production).
-
-### Centralized Configuration (config.yml)
-All services load and validate `config.yml` at startup via `src/config.js` using **Zod schema validation** (`ConfigSchema.parse(rawYaml)`). 
-
-Key features:
-- **Enum validation**: `EMBEDDING_PROVIDER`, `LLM_PROVIDER`, and `SEARCH_TERM_EMBEDDING_PROVIDER` must be `"openai"` or `"gemini"` — wrong case or unknown value exits with a descriptive error.
-- **Range validation**: All ports validated as integers in range 1024–65535; `EMBED_DIM` must be positive; `OPENSEARCH_SCORE_THRESHOLD` must be 0–1.
-- **Cross-field validation**: `PARENT_CHUNK_OVERLAP` must be `< PARENT_CHUNK_SIZE`; `CHILD_CHUNK_OVERLAP` must be `< CHILD_CHUNK_SIZE`.
-- **Human-readable errors**: Each issue is printed as `• field: message` before the service exits.
-
-A reference template with all fields documented is available at `config.example.yml`.
-
-Run unit tests for config validation:
-```bash
-cd embedding-service && npm test
+cd embedding-service && npm test    # includes 16 chunking tests
 cd rass-engine-service && npm test
 cd mcp-server && npm test
-```
-
-### Schema-Driven Request Validation (Phase A 2.1)
-All external HTTP endpoints use Zod `validateBody(schema)` / `validateQuery(schema)` middleware:
-- Returns `{ error: "Validation failed", details: [...zodIssues] }` with HTTP 400 on failure
-- Attaches `req.validatedBody` / `req.validatedQuery` (parsed/coerced values) on success
-- Eliminates ad-hoc `if (!field)` checks scattered through route handlers
-
-### Planner & Retrieval Schemas (Phase A 2.2 / 2.3)
-- `SearchPlanSchema`: validates LLM-produced search term arrays (1–10 non-empty strings); invalid output falls back to `[originalQuery]`
-- `ExecutionPlanSchema`: validates plan steps before multi-step retrieval
-- `RetrievalHitSchema`: validates raw OpenSearch hits; invalid hits are logged and excluded
-- `CitationSchema`: validates assembled citations before SSE serialization
-
-### OpenAPI 3.0 Specification (Phase A 2.4)
-`mcp-server/openapi.yaml` documents all 14 REST endpoints with:
-- Full request/response schemas, status codes, and error formats
-- BearerAuth security scheme for protected endpoints
-- SSE endpoint documentation with example event format
-- `CitationSchema` referenced in response schemas
-
-```bash
-cd mcp-server && npm run validate:api  # validates openapi.yaml
 ```
 
 Swagger UI: `http://localhost:8080/api/docs` (non-production)

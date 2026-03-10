@@ -179,15 +179,19 @@ async function processIngestionJob(job) {
   let chunkingStrategy;
   let chunkingOptions;
   try {
-    // Parent chunker (always recursive_character for parent to preserve context)
+    const resolvedStrategy = chunkingStrategyOverride || CHUNKING_STRATEGY;
+
+    // Build strategy-specific default options
+    let defaultOptions;
+    if (resolvedStrategy === "sentence_window") {
+      defaultOptions = { windowSize: 10, overlapSentences: 2 };
+    } else {
+      defaultOptions = { chunkSize: PARENT_CHUNK_SIZE, chunkOverlap: PARENT_CHUNK_OVERLAP };
+    }
+
     const parentChunker = createChunker(
-      chunkingStrategyOverride || CHUNKING_STRATEGY,
-      chunkingOptionsOverride || {
-        chunkSize: PARENT_CHUNK_SIZE,
-        chunkOverlap: PARENT_CHUNK_OVERLAP,
-        windowSize: 10,
-        overlapSentences: 2,
-      }
+      resolvedStrategy,
+      chunkingOptionsOverride || defaultOptions
     );
     chunkingStrategy = parentChunker.name;
     chunkingOptions = parentChunker.options;

@@ -76,7 +76,7 @@ router.post(
         await prisma.document.update({
           where: { id: doc.id },
           data: { ingestionJobId: String(firstJob.jobId) },
-        }).catch(() => {}); // non-fatal
+        }).catch((err) => console.warn('[Upload Proxy] Could not update ingestionJobId:', err.message));
       }
 
       await writeAuditLog({

@@ -8,10 +8,20 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs-extra");
 const { v4: uuidv4 } = require("uuid");
+const rateLimit = require("express-rate-limit");
 
 const { ingestionQueue } = require("../queue/ingestionQueue");
 const { validateBody } = require("../middleware/validate");
 const { UploadBodySchema } = require("../schemas/uploadSchema");
+
+// Rate limit: 20 uploads per hour per IP
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Upload limit reached, please try again later." },
+});
 
 // Persist uploaded files to disk so the async worker can access them.
 fs.ensureDirSync("./temp");
@@ -28,14 +38,15 @@ const router = express.Router();
 
 router.post(
   "/upload",
+  uploadLimiter,
   upload.array("files"),
   validateBody(UploadBodySchema),
   async (req, res) => {
     const files = req.files;
     const { userId } = req.validatedBody;
     const kbId = req.body.kbId || null;
-    // documentId may be pre-assigned by the mcp-server upload proxy
-    const preassignedDocumentId = req.body.documentId || null;
+    // preassignedDocumentId is only valid for single-file uploads (set by mcp-server upload proxy)
+    const preassignedDocumentId = files.length === 1 ? (req.body.documentId || null) : null;
     const chunkingStrategyOverride = req.body.chunkingStrategy || null;
 
     if (!files || files.length === 0) {

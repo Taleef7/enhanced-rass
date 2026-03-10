@@ -1,17 +1,14 @@
-// mcp-server/src/proxy/ingestStatus.js
-// GET /api/ingest/status/:jobId — Proxies ingestion job status queries to the embedding-service.
-// This route is authenticated; only the job owner can poll status.
-
 "use strict";
 
 const express = require("express");
 const axios = require("axios");
 const authMiddleware = require("../authMiddleware");
 const { EMBEDDING_SERVICE_BASE_URL } = require("../config");
+const { statusPollLimiter } = require("../middleware/rateLimits");
 
 const router = express.Router();
 
-router.get("/api/ingest/status/:jobId", authMiddleware, async (req, res) => {
+router.get("/api/ingest/status/:jobId", statusPollLimiter, authMiddleware, async (req, res) => {
   const { jobId } = req.params;
 
   try {

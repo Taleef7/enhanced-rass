@@ -55,7 +55,7 @@ const UploadManager = ({ onUploadSuccess }) => {
 
   // ── Polling ───────────────────────────────────────────────────────────────
 
-  const startPolling = useCallback((jobId, documentId, fileName) => {
+  const startPolling = useCallback((jobId, documentId, fileName, fileSize) => {
     let attempts = 0;
     const MAX_ATTEMPTS = 180; // ~6 min at 2 s intervals
 
@@ -86,7 +86,7 @@ const UploadManager = ({ onUploadSuccess }) => {
           setMessageType('success');
           setIsUploading(false);
           if (onUploadSuccess) {
-            onUploadSuccess({ name: fileName, size: file?.size, documentId, uploadedAt: new Date().toISOString() });
+            onUploadSuccess({ name: fileName, size: fileSize, documentId, uploadedAt: new Date().toISOString() });
           }
           setTimeout(() => { setFile(null); setUploadProgress(0); setMessage(''); setJobStatus(null); if (fileInputRef.current) fileInputRef.current.value = ''; }, 3000);
         } else if (data.status === 'failed') {
@@ -99,7 +99,7 @@ const UploadManager = ({ onUploadSuccess }) => {
         console.warn('[Polling] Error fetching job status:', err.message);
       }
     }, 2000);
-  }, [file, onUploadSuccess]);
+  }, [onUploadSuccess]);
 
   // Clean up polling on unmount
   useEffect(() => {
@@ -152,7 +152,7 @@ const UploadManager = ({ onUploadSuccess }) => {
       setMessageType('info');
 
       // Begin polling for job completion
-      startPolling(jobId, documentId, file.name);
+      startPolling(jobId, documentId, file.name, file.size);
     } catch (error) {
       setIsUploading(false);
       setUploadProgress(0);
