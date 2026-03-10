@@ -160,61 +160,103 @@ src/
     parser.js                 ← file-type detection + document loaders (PDF/DOCX/TXT)
     chunker.js                ← pre-configured parent/child text splitters
   routes/
-    upload.js                 ← POST /upload
+    upload.js                 ← POST /upload with UploadBodySchema + validateBody middleware
     documents.js              ← POST /get-documents, GET /docstore/stats
     admin.js                  ← POST /clear-docstore
     health.js                 ← GET /health
+  schemas/
+    configSchema.js           ← Zod config schema (enum + cross-field validation)
+    uploadSchema.js           ← UploadBodySchema (userId non-empty string)
+    index.js                  ← barrel export
+  middleware/
+    validate.js               ← validateBody(schema) and validateQuery(schema)
   __tests__/
-    config.test.js            ← unit tests for config loading and validation
+    config.test.js            ← config loading + Zod validation tests
+    uploadSchema.test.js      ← upload schema + middleware tests
 ```
 
 ### rass-engine-service/src/
 ```
 src/
-  config.js                  ← validated config loading
+  config.js                  ← Zod-validated config loading (ConfigSchema.parse)
   clients/
     llmClient.js              ← LLM client factory (OpenAI / Gemini)
     embedder.js               ← search-term embedding + embedText() function
     opensearchClient.js       ← OpenSearch client
   planner/
-    searchPlanner.js          ← createRefinedSearchPlan() — LLM-based query expansion
+    searchPlanner.js          ← createRefinedSearchPlan() with SearchPlanSchema validation
     hydeGenerator.js          ← HyDE hypothetical document generation
   retrieval/
     simpleSearch.js           ← hybrid KNN + keyword search with user-scope filter
-    executePlan.js            ← multi-step plan execution + parent-doc fetch
+    executePlan.js            ← multi-step plan execution + ExecutionPlanSchema validation
   generation/
     generator.js              ← non-streaming LLM answer generation
-    streaming.js              ← writeSSE() + streaming generation pipeline
+    streaming.js              ← writeSSE() + streaming generation with CitationSchema validation
   routes/
-    ask.js                    ← POST /ask
-    streamAsk.js              ← POST /stream-ask (SSE)
-  schemas/                    ← reserved for Phase A 2.2 / 2.3 Zod schemas
+    ask.js                    ← POST /ask with AskBodySchema + RetrievalHitSchema validation
+    streamAsk.js              ← POST /stream-ask with StreamAskBodySchema + hit validation
+  schemas/
+    configSchema.js           ← Zod schema for full config.yml validation (cross-field too)
+    askSchema.js              ← AskBodySchema, StreamAskBodySchema
+    plannerSchemas.js         ← SearchTermSchema, SearchPlanSchema, PlanStepSchema, ExecutionPlanSchema
+    retrievalSchemas.js       ← RetrievalHitSchema, CitationSchema, CitationListSchema
+    index.js                  ← barrel export for all schemas
+  middleware/
+    validate.js               ← validateBody(schema) and validateQuery(schema) middleware
   __tests__/
-    config.test.js
+    config.test.js            ← config loading + Zod validation tests
+    askSchema.test.js         ← ask/stream-ask schema + middleware tests
+    plannerSchemas.test.js    ← planner schema tests
+    retrievalSchemas.test.js  ← retrieval hit and citation schema tests
 ```
 
 ### mcp-server/src/
 ```
 src/
-  config.js                  ← validated config loading
+  config.js                  ← Zod-validated config loading (ConfigSchema.parse)
   authRoutes.js              ← (unchanged) POST /api/auth/register, /login
   authMiddleware.js          ← (unchanged) JWT Bearer auth middleware
   chatRoutes.js              ← (unchanged) CRUD for /api/chats
   proxy/
     embedUpload.js            ← POST /api/embed-upload → embedding-service
-    streamAsk.js              ← POST /api/stream-ask  → rass-engine-service (SSE)
-    chatCompletions.js        ← POST /api/chat/completions (OpenAI-compat proxy)
-    userDocuments.js          ← GET /api/user-documents (OpenSearch aggregation)
+    streamAsk.js              ← POST /api/stream-ask with StreamAskBodySchema validation
+    chatCompletions.js        ← POST /api/chat/completions with ChatCompletionsBodySchema
+    userDocuments.js          ← GET /api/user-documents with UserDocumentsQuerySchema
     transcribe.js             ← POST /api/transcribe (Whisper)
   gateway/
     mcpTools.js               ← MCP tool definitions (queryRASS, addDocumentToRASS)
     mcpTransport.js           ← POST /mcp (StreamableHTTPServerTransport)
+  schemas/
+    configSchema.js           ← Zod config schema
+    streamAskSchema.js        ← StreamAskBodySchema
+    chatCompletionsSchema.js  ← ChatCompletionsBodySchema (OpenAI-compatible)
+    userDocumentsSchema.js    ← UserDocumentsQuerySchema (page, limit with coercion)
+    embedUploadSchema.js      ← EmbedUploadSchema
+    index.js                  ← barrel export for all schemas
+  middleware/
+    validate.js               ← validateBody(schema) and validateQuery(schema) middleware
   __tests__/
-    config.test.js
+    config.test.js            ← config loading + Zod validation tests
+    schemas.test.js           ← mcp-server schema + middleware tests
 ```
 
+### OpenAPI Specification (mcp-server/openapi.yaml)
+Complete OpenAPI 3.0.3 spec covering all 14 REST endpoints. Validates with:
+```bash
+cd mcp-server && npm run validate:api
+```
+Swagger UI served at `http://localhost:8080/api/docs` (non-production).
+
 ### Centralized Configuration (config.yml)
-All services load and validate `config.yml` at startup via `src/config.js`. A missing or incorrectly-typed required field causes an immediate, descriptive error (with the field name) before the server binds a port — no more silent `undefined` propagating into service logic.
+All services load and validate `config.yml` at startup via `src/config.js` using **Zod schema validation** (`ConfigSchema.parse(rawYaml)`). 
+
+Key features:
+- **Enum validation**: `EMBEDDING_PROVIDER`, `LLM_PROVIDER`, and `SEARCH_TERM_EMBEDDING_PROVIDER` must be `"openai"` or `"gemini"` — wrong case or unknown value exits with a descriptive error.
+- **Range validation**: All ports validated as integers in range 1024–65535; `EMBED_DIM` must be positive; `OPENSEARCH_SCORE_THRESHOLD` must be 0–1.
+- **Cross-field validation**: `PARENT_CHUNK_OVERLAP` must be `< PARENT_CHUNK_SIZE`; `CHILD_CHUNK_OVERLAP` must be `< CHILD_CHUNK_SIZE`.
+- **Human-readable errors**: Each issue is printed as `• field: message` before the service exits.
+
+A reference template with all fields documented is available at `config.example.yml`.
 
 Run unit tests for config validation:
 ```bash
@@ -222,3 +264,28 @@ cd embedding-service && npm test
 cd rass-engine-service && npm test
 cd mcp-server && npm test
 ```
+
+### Schema-Driven Request Validation (Phase A 2.1)
+All external HTTP endpoints use Zod `validateBody(schema)` / `validateQuery(schema)` middleware:
+- Returns `{ error: "Validation failed", details: [...zodIssues] }` with HTTP 400 on failure
+- Attaches `req.validatedBody` / `req.validatedQuery` (parsed/coerced values) on success
+- Eliminates ad-hoc `if (!field)` checks scattered through route handlers
+
+### Planner & Retrieval Schemas (Phase A 2.2 / 2.3)
+- `SearchPlanSchema`: validates LLM-produced search term arrays (1–10 non-empty strings); invalid output falls back to `[originalQuery]`
+- `ExecutionPlanSchema`: validates plan steps before multi-step retrieval
+- `RetrievalHitSchema`: validates raw OpenSearch hits; invalid hits are logged and excluded
+- `CitationSchema`: validates assembled citations before SSE serialization
+
+### OpenAPI 3.0 Specification (Phase A 2.4)
+`mcp-server/openapi.yaml` documents all 14 REST endpoints with:
+- Full request/response schemas, status codes, and error formats
+- BearerAuth security scheme for protected endpoints
+- SSE endpoint documentation with example event format
+- `CitationSchema` referenced in response schemas
+
+```bash
+cd mcp-server && npm run validate:api  # validates openapi.yaml
+```
+
+Swagger UI: `http://localhost:8080/api/docs` (non-production)

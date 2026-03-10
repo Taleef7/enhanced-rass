@@ -7,6 +7,9 @@ const { osClient } = require("../clients/opensearchClient");
 const { simpleSearch } = require("../retrieval/simpleSearch");
 const { generateAnswer } = require("../generation/generator");
 const { OPENSEARCH_INDEX_NAME, DEFAULT_TOP_K } = require("../config");
+const { validateBody } = require("../middleware/validate");
+const { AskBodySchema } = require("../schemas/askSchema");
+const { RetrievalHitSchema } = require("../schemas/retrievalSchemas");
 
 const router = express.Router();
 
@@ -14,10 +17,9 @@ router.get("/", (req, res) =>
   res.status(200).json({ status: "ok", message: "RASS Engine is running" })
 );
 
-router.post("/ask", async (req, res) => {
+router.post("/ask", validateBody(AskBodySchema), async (req, res) => {
   try {
-    const { query, top_k } = req.body;
-    if (!query) return res.status(400).json({ error: "Missing query" });
+    const { query, top_k } = req.validatedBody;
 
     console.log("---------------------------------");
     console.log(`[API /ask] Received query: "${query}", top_k: ${top_k}`);
@@ -41,7 +43,19 @@ router.post("/ask", async (req, res) => {
       });
     }
 
-    const source_documents = initialHits
+    // Validate hits against the canonical schema; log and exclude invalid hits
+    const validHits = initialHits.filter((hit) => {
+      const result = RetrievalHitSchema.safeParse(hit);
+      if (!result.success) {
+        console.warn(
+          `[API /ask] Excluding invalid hit (id=${hit._id}):`,
+          result.error.issues
+        );
+      }
+      return result.success;
+    });
+
+    const source_documents = validHits
       .map((h) => ({
         text: h._source?.text,
         metadata: h._source?.metadata,

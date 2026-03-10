@@ -9,15 +9,15 @@ const { osClient } = require("../clients/opensearchClient");
 const { simpleSearch } = require("../retrieval/simpleSearch");
 const { writeSSE, streamAnswer } = require("../generation/streaming");
 const { OPENSEARCH_INDEX_NAME, DEFAULT_TOP_K } = require("../config");
+const { validateBody } = require("../middleware/validate");
+const { StreamAskBodySchema } = require("../schemas/askSchema");
+const { RetrievalHitSchema } = require("../schemas/retrievalSchemas");
 
 const router = express.Router();
 
-router.post("/stream-ask", async (req, res) => {
+router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) => {
   try {
-    const { query, documents, userId, top_k } = req.body;
-    if (!query) {
-      return res.status(400).json({ error: "Missing query" });
-    }
+    const { query, documents, userId, top_k } = req.validatedBody;
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -76,7 +76,19 @@ router.post("/stream-ask", async (req, res) => {
     // const finalParentDocs = await runSteps({ plan: refinedPlan, embed: embedText, os: osClient, index: OPENSEARCH_INDEX_NAME, userId, documents });
     const finalParentDocs = initialHits;
 
-    const source_documents = finalParentDocs
+    // Validate hits against the canonical schema; log and exclude invalid hits
+    const validHits = finalParentDocs.filter((hit) => {
+      const result = RetrievalHitSchema.safeParse(hit);
+      if (!result.success) {
+        console.warn(
+          `[API /stream-ask] Excluding invalid hit (id=${hit._id}):`,
+          result.error.issues
+        );
+      }
+      return result.success;
+    });
+
+    const source_documents = validHits
       .map((h) => ({
         text: h._source?.text,
         metadata: h._source?.metadata,

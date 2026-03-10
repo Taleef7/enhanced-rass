@@ -9,13 +9,16 @@
 const express = require("express");
 const axios = require("axios");
 const { RASS_ENGINE_BASE_URL } = require("../config");
+const { validateBody } = require("../middleware/validate");
+const { ChatCompletionsBodySchema } = require("../schemas/chatCompletionsSchema");
 
 const DEFAULT_TOP_K = Number(process.env.MCP_DEFAULT_TOP_K) || 10;
 
 const router = express.Router();
 
-router.post("/api/chat/completions", async (req, res) => {
-  const userMessages = req.body.messages.filter((m) => m.role === "user");
+router.post("/api/chat/completions", validateBody(ChatCompletionsBodySchema), async (req, res) => {
+  const { messages } = req.validatedBody;
+  const userMessages = messages.filter((m) => m.role === "user");
   const lastUserMessage = userMessages[userMessages.length - 1];
 
   let query;

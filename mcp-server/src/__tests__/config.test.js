@@ -1,5 +1,5 @@
 // mcp-server/src/__tests__/config.test.js
-// Unit tests for the centralized config loading module.
+// Unit tests for the centralized config loading module (Zod-based validation).
 
 "use strict";
 
@@ -17,6 +17,15 @@ const VALID_CONFIG = {
   RASS_ENGINE_PORT: 8000,
   EMBEDDING_SERVICE_PORT: 8001,
 };
+
+// Spy on process.exit so tests don't actually terminate
+let exitSpy;
+beforeAll(() => {
+  exitSpy = jest.spyOn(process, "exit").mockImplementation((code) => {
+    throw new Error(`process.exit(${code})`);
+  });
+});
+afterAll(() => exitSpy.mockRestore());
 
 function loadConfig() {
   let configModule;
@@ -52,7 +61,7 @@ describe("mcp-server/src/config.js", () => {
     delete missingFieldConfig.OPENSEARCH_INDEX_NAME;
     fs.readFileSync.mockReturnValue(yaml.dump(missingFieldConfig));
 
-    expect(() => loadConfig()).toThrow(/OPENSEARCH_INDEX_NAME/);
+    expect(() => loadConfig()).toThrow(/process\.exit/);
   });
 
   test("throws when RASS_ENGINE_PORT is missing", () => {
@@ -60,7 +69,7 @@ describe("mcp-server/src/config.js", () => {
     delete missingFieldConfig.RASS_ENGINE_PORT;
     fs.readFileSync.mockReturnValue(yaml.dump(missingFieldConfig));
 
-    expect(() => loadConfig()).toThrow(/RASS_ENGINE_PORT/);
+    expect(() => loadConfig()).toThrow(/process\.exit/);
   });
 
   test("throws a descriptive error when config.yml cannot be read", () => {

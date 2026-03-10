@@ -1,0 +1,763 @@
+openapi: "3.0.3"
+info:
+  title: RASS MCP Server API
+  description: |
+    REST API gateway for the Enhanced RASS (Retrieval Augmented Semantic Search) system.
+    The MCP server acts as the authenticated entry point for the frontend and external
+    integrations, proxying requests to the rass-engine-service and embedding-service.
+
+    ## Authentication
+    Most endpoints require a Bearer JWT token obtained from `POST /api/auth/login`.
+    Include it in the `Authorization` header: `Authorization: Bearer <token>`
+
+    ## SSE Endpoints
+    `/api/stream-ask` and `/api/chat/completions` return Server-Sent Events (SSE)
+    in OpenAI-compatible streaming format.
+  version: "1.0.0"
+  contact:
+    name: RASS Project
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+# ---------------------------------------------------------------------------
+# Security Schemes
+# ---------------------------------------------------------------------------
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from POST /api/auth/login
+
+  # ---------------------------------------------------------------------------
+  # Reusable Schemas
+  # ---------------------------------------------------------------------------
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable error description
+        details:
+          type: array
+          description: Zod validation issue details (present on 400 responses)
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              path:
+                type: array
+                items:
+                  type: string
+              message:
+                type: string
+
+    Citation:
+      type: object
+      description: A source citation assembled from a retrieval hit
+      required: [id, source, score, text]
+      properties:
+        id:
+          type: string
+          description: Unique identifier (parentId or generated UUID)
+        source:
+          type: string
+          description: Document filename or title
+        score:
+          type: number
+          description: Relevance score from OpenSearch
+        text:
+          type: string
+          description: Relevant text excerpt passed to the LLM
+        uploadedAt:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp when the document was uploaded
+
+    SSEChunk:
+      type: object
+      description: |
+        A single OpenAI-compatible Server-Sent Event chunk.
+        Text content arrives in `choices[0].delta.content`.
+        Citations are sent after the text stream in `choices[0].delta.custom_meta.citations`.
+        The stream ends with a `data: [DONE]` event.
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: chat.completion.chunk
+        created:
+          type: integer
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            type: object
+            properties:
+              delta:
+                type: object
+                properties:
+                  content:
+                    type: string
+                  custom_meta:
+                    type: object
+                    properties:
+                      citations:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Citation"
+
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant, system, tool]
+        content:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  text:
+                    type: string
+
+    Chat:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        userId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+
+    Document:
+      type: object
+      description: An indexed document (aggregated from OpenSearch child chunks)
+      properties:
+        name:
+          type: string
+        source:
+          type: string
+        uploadedAt:
+          type: string
+          format: date-time
+        chunkCount:
+          type: integer
+
+# ---------------------------------------------------------------------------
+# Global Security
+# ---------------------------------------------------------------------------
+security:
+  - BearerAuth: []
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+paths:
+  # Auth endpoints (no authentication required)
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  minLength: 1
+                password:
+                  type: string
+                  minLength: 8
+                  description: Must be at least 8 characters
+            example:
+              username: alice
+              password: s3cr3tpass
+      responses:
+        "201":
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  username:
+                    type: string
+                  createdAt:
+                    type: string
+                    format: date-time
+        "400":
+          description: Validation error (username missing or password too short)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Username already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and receive a JWT
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+            example:
+              username: alice
+              password: s3cr3tpass
+      responses:
+        "200":
+          description: Login successful — returns JWT token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT Bearer token (use in Authorization header)
+                  userId:
+                    type: string
+        "400":
+          description: Missing credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # Chat management endpoints
+  /api/chats:
+    get:
+      tags: [Chats]
+      summary: List all chats for the authenticated user
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Array of chat objects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Chat"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    post:
+      tags: [Chats]
+      summary: Create a new chat
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: Optional initial title for the chat
+      responses:
+        "201":
+          description: Chat created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chat"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/chats/{chatId}:
+    parameters:
+      - name: chatId
+        in: path
+        required: true
+        schema:
+          type: string
+
+    get:
+      tags: [Chats]
+      summary: Get a specific chat by ID
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: The chat object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chat"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Chat not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    patch:
+      tags: [Chats]
+      summary: Update a chat (e.g., rename)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+      responses:
+        "200":
+          description: Updated chat object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chat"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Chat not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    delete:
+      tags: [Chats]
+      summary: Delete a chat and all its messages
+      security:
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Chat deleted
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Chat not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/chats/{chatId}/messages:
+    parameters:
+      - name: chatId
+        in: path
+        required: true
+        schema:
+          type: string
+
+    get:
+      tags: [Chats]
+      summary: List all messages in a chat
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Array of message objects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChatMessage"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    post:
+      tags: [Chats]
+      summary: Add a message to a chat
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role, content]
+              properties:
+                role:
+                  type: string
+                  enum: [user, assistant]
+                content:
+                  type: string
+      responses:
+        "201":
+          description: Message added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatMessage"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # Document management endpoints
+  /api/embed-upload:
+    post:
+      tags: [Documents]
+      summary: Upload a document for indexing (embedding + chunking)
+      description: |
+        Accepts a single file and proxies it to the embedding-service for
+        parent/child chunking and OpenSearch indexing.
+        The `userId` is derived from the authenticated JWT — it does not need
+        to be supplied in the request body.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The document file to upload (PDF, DOCX, TXT, MD, etc.)
+      responses:
+        "200":
+          description: File processed and indexed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        "400":
+          description: No file provided
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Embedding service error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/user-documents:
+    get:
+      tags: [Documents]
+      summary: List indexed documents for the authenticated user
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of indexed documents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Document"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # RAG query endpoints
+  /api/stream-ask:
+    post:
+      tags: [RAG]
+      summary: Stream a RAG response (SSE)
+      description: |
+        Submits a user query and streams the LLM-generated answer as Server-Sent Events
+        in OpenAI-compatible format.
+
+        ## SSE Event Format
+        Each event is `data: <JSON>\n\n` where JSON follows the OpenAI chat streaming schema.
+
+        - **Text tokens**: `choices[0].delta.content`
+        - **Citations**: `choices[0].delta.custom_meta.citations` — sent after all tokens
+        - **End of stream**: `data: [DONE]`
+
+        ## Example Events
+        ```
+        data: {"id":"...","object":"chat.completion.chunk","choices":[{"delta":{"content":"The answer is..."}}]}
+
+        data: {"id":"...","choices":[{"delta":{"custom_meta":{"citations":[{"id":"doc-1","source":"report.pdf","score":0.9,"text":"..."}]}}}]}
+
+        data: [DONE]
+        ```
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                  minLength: 1
+                  description: The user's question
+                top_k:
+                  type: integer
+                  minimum: 1
+                  description: Maximum number of source documents to use
+                documents:
+                  type: array
+                  items:
+                    type: string
+                  description: Optional list of document names to restrict retrieval to
+            example:
+              query: What is the RASS retrieval architecture?
+              top_k: 10
+      responses:
+        "200":
+          description: SSE stream of LLM tokens followed by citations and [DONE]
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/SSEChunk"
+        "400":
+          description: Validation error (missing or invalid query)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: RASS engine error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/chat/completions:
+    post:
+      tags: [RAG]
+      summary: OpenAI-compatible streaming chat completions (LibreChat proxy)
+      description: |
+        OpenAI-compatible endpoint used by LibreChat and similar clients.
+        Accepts an array of messages and streams the answer via SSE (same format as
+        `/api/stream-ask`). Authentication is NOT required — this endpoint is intended
+        for LibreChat's internal auth system.
+
+        The last message in the `messages` array must have `role: "user"`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messages]
+              properties:
+                messages:
+                  type: array
+                  minItems: 1
+                  items:
+                    $ref: "#/components/schemas/ChatMessage"
+                  description: Last message must have role 'user'
+                model:
+                  type: string
+                stream:
+                  type: boolean
+                temperature:
+                  type: number
+                max_tokens:
+                  type: integer
+                  minimum: 1
+            example:
+              messages:
+                - role: user
+                  content: Explain the parent/child chunking strategy
+      responses:
+        "200":
+          description: SSE stream of LLM tokens and citations
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/SSEChunk"
+        "400":
+          description: Validation error (missing messages or last message not from user)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: RASS engine error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/transcribe:
+    post:
+      tags: [Utilities]
+      summary: Transcribe an audio file using OpenAI Whisper
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [audio]
+              properties:
+                audio:
+                  type: string
+                  format: binary
+                  description: Audio file to transcribe (webm, mp3, wav, etc.)
+      responses:
+        "200":
+          description: Transcription result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  text:
+                    type: string
+                    description: Transcribed text
+        "400":
+          description: No audio file provided
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: OpenAI API key not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Transcription failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/docs:
+    get:
+      tags: [Utilities]
+      summary: Swagger UI (non-production only)
+      description: |
+        Serves the interactive Swagger UI for exploring the API.
+        Only available when `NODE_ENV` is not `production`.
+      security: []
+      responses:
+        "200":
+          description: Swagger UI HTML page
+          content:
+            text/html:
+              schema:
+                type: string

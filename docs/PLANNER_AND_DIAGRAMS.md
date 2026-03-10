@@ -225,3 +225,65 @@ This workflow enables the system to handle complex, multi-faceted queries with h
 ---
 
 _For more details, see the README and individual service documentation._
+
+---
+
+## Canonical Data Schemas (Phase A 2.3)
+
+All retrieval hits and citations are validated against Zod schemas before they enter the
+generation pipeline or are serialized to API responses.
+
+### CitationSchema
+
+Citations are assembled from OpenSearch retrieval hits and sent in SSE responses (streaming)
+and in the non-streaming `/ask` response body.
+
+```js
+CitationSchema = z.object({
+  id: z.string(),          // parentId or generated UUID
+  source: z.string(),      // document filename or title (originalFilename)
+  score: z.number(),       // relevance score from OpenSearch
+  text: z.string(),        // relevant excerpt passed to the LLM
+  uploadedAt: z.string().optional(),  // ISO 8601 upload timestamp
+});
+```
+
+See `rass-engine-service/src/schemas/retrievalSchemas.js` for the full schema definitions.
+
+### RetrievalHitSchema
+
+Raw OpenSearch hits are validated before use in the generation pipeline.
+Invalid hits (e.g., missing `_source.text`) are logged and excluded rather than crashing.
+
+```js
+RetrievalHitSchema = z.object({
+  _id: z.string(),
+  _score: z.number(),
+  _source: z.object({
+    text: z.string(),
+    metadata: z.object({
+      userId: z.string(),
+      originalFilename: z.string(),
+      uploadedAt: z.string(),
+      parentId: z.string().optional(),
+    }).passthrough(),  // additional metadata fields are preserved
+  }),
+});
+```
+
+The `.passthrough()` modifier ensures that future metadata fields (reranker scores,
+page numbers, confidence levels) can be added without breaking existing validation.
+
+### SSE Citation Event
+
+In streaming responses, citations are sent as the last SSE event before `[DONE]`:
+
+```
+data: {"choices":[{"delta":{"custom_meta":{"citations":[
+  {"id":"parent-001","source":"report.pdf","score":0.87,"text":"...","uploadedAt":"2026-01-01T00:00:00.000Z"}
+]}}}]}
+
+data: [DONE]
+```
+
+The full citation schema is also referenced in `mcp-server/openapi.yaml` under `components/schemas/Citation`.

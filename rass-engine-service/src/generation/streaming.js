@@ -9,6 +9,7 @@ const {
   GEMINI_MODEL_NAME,
 } = require("../config");
 const { buildGenerationPrompt } = require("./generator");
+const { CitationSchema } = require("../schemas/retrievalSchemas");
 
 /**
  * Writes a single Server-Sent Event chunk in OpenAI-compatible format.
@@ -68,9 +69,26 @@ async function streamAnswer(res, query, sourceDocuments) {
         }
       }
     }
+    // Assemble and validate citations before sending them to the client
+    const rawCitations = sourceDocuments.map((doc) => ({
+      id: doc.metadata?.parentId || uuidv4(),
+      source: doc.metadata?.originalFilename || doc.metadata?.source || "Unknown",
+      score: doc.initial_score ?? 0,
+      text: doc.text || "",
+      uploadedAt: doc.metadata?.uploadedAt,
+    }));
+
+    const validatedCitations = rawCitations.filter((citation) => {
+      const result = CitationSchema.safeParse(citation);
+      if (!result.success) {
+        console.warn("[Generation] Excluding invalid citation:", result.error.issues);
+      }
+      return result.success;
+    });
+
     // Send citations after the token stream
     writeSSE(res, {
-      choices: [{ delta: { custom_meta: { citations: sourceDocuments } } }],
+      choices: [{ delta: { custom_meta: { citations: validatedCitations } } }],
     });
   } catch (e) {
     console.error("[Generation] Error during LLM stream:", e);

@@ -1,9 +1,11 @@
 // embedding-service/src/config.js
 // Centralized configuration loading and validation for the embedding service.
-// Throws a descriptive error on missing required fields before the server binds a port.
+// Uses Zod (ConfigSchema) to validate config.yml at startup; exits with a
+// human-readable error message if any field is missing or invalid.
 
 const yaml = require("js-yaml");
 const fs = require("fs-extra");
+const { ConfigSchema } = require("./schemas/configSchema");
 
 let rawConfig;
 try {
@@ -12,76 +14,33 @@ try {
   throw new Error(`[Config] Failed to read or parse config.yml: ${err.message}`);
 }
 
-const REQUIRED_FIELDS = [
-  "EMBEDDING_PROVIDER",
-  "OPENSEARCH_HOST",
-  "OPENSEARCH_PORT",
-  "OPENSEARCH_INDEX_NAME",
-  "EMBEDDING_SERVICE_PORT",
-  "PARENT_CHUNK_SIZE",
-  "PARENT_CHUNK_OVERLAP",
-  "CHILD_CHUNK_SIZE",
-  "CHILD_CHUNK_OVERLAP",
-  "EMBED_DIM",
-  "OPENAI_EMBED_MODEL_NAME",
-  "GEMINI_EMBED_MODEL_NAME",
-  "REDIS_HOST",
-  "REDIS_PORT",
-  "REDIS_DB",
-];
-
-const missing = REQUIRED_FIELDS.filter(
-  (field) => rawConfig[field] === undefined || rawConfig[field] === null
-);
-if (missing.length > 0) {
-  throw new Error(
-    `[Config] Missing required config field(s): ${missing.join(", ")}. ` +
-      `Check your config.yml and ensure all required fields are present.`
-  );
+const result = ConfigSchema.safeParse(rawConfig);
+if (!result.success) {
+  const messages = result.error.issues
+    .map((issue) => `  • ${issue.path.join(".")}: ${issue.message}`)
+    .join("\n");
+  console.error(`[Config] config.yml validation failed:\n${messages}`);
+  process.exit(1);
 }
 
-const ALLOWED_PROVIDERS = ["openai", "gemini"];
-if (!ALLOWED_PROVIDERS.includes(rawConfig.EMBEDDING_PROVIDER)) {
-  throw new Error(
-    `[Config] Invalid EMBEDDING_PROVIDER "${rawConfig.EMBEDDING_PROVIDER}". ` +
-      `Allowed values: ${ALLOWED_PROVIDERS.join(", ")}`
-  );
-}
-
-const {
-  EMBEDDING_PROVIDER,
-  OPENSEARCH_HOST,
-  OPENSEARCH_PORT,
-  OPENSEARCH_INDEX_NAME,
-  EMBEDDING_SERVICE_PORT,
-  PARENT_CHUNK_SIZE,
-  PARENT_CHUNK_OVERLAP,
-  CHILD_CHUNK_SIZE,
-  CHILD_CHUNK_OVERLAP,
-  EMBED_DIM,
-  OPENAI_EMBED_MODEL_NAME,
-  GEMINI_EMBED_MODEL_NAME,
-  REDIS_HOST,
-  REDIS_PORT,
-  REDIS_DB,
-} = rawConfig;
+const config = result.data;
 
 console.log("[Config] Loaded and validated configuration from config.yml");
 
 module.exports = {
-  EMBEDDING_PROVIDER,
-  OPENSEARCH_HOST,
-  OPENSEARCH_PORT,
-  OPENSEARCH_INDEX_NAME,
-  EMBEDDING_SERVICE_PORT,
-  PARENT_CHUNK_SIZE,
-  PARENT_CHUNK_OVERLAP,
-  CHILD_CHUNK_SIZE,
-  CHILD_CHUNK_OVERLAP,
-  EMBED_DIM,
-  OPENAI_EMBED_MODEL_NAME,
-  GEMINI_EMBED_MODEL_NAME,
-  REDIS_HOST,
-  REDIS_PORT,
-  REDIS_DB,
+  EMBEDDING_PROVIDER: config.EMBEDDING_PROVIDER,
+  OPENSEARCH_HOST: config.OPENSEARCH_HOST,
+  OPENSEARCH_PORT: config.OPENSEARCH_PORT,
+  OPENSEARCH_INDEX_NAME: config.OPENSEARCH_INDEX_NAME,
+  EMBEDDING_SERVICE_PORT: config.EMBEDDING_SERVICE_PORT,
+  PARENT_CHUNK_SIZE: config.PARENT_CHUNK_SIZE,
+  PARENT_CHUNK_OVERLAP: config.PARENT_CHUNK_OVERLAP,
+  CHILD_CHUNK_SIZE: config.CHILD_CHUNK_SIZE,
+  CHILD_CHUNK_OVERLAP: config.CHILD_CHUNK_OVERLAP,
+  EMBED_DIM: config.EMBED_DIM,
+  OPENAI_EMBED_MODEL_NAME: config.OPENAI_EMBED_MODEL_NAME,
+  GEMINI_EMBED_MODEL_NAME: config.GEMINI_EMBED_MODEL_NAME,
+  REDIS_HOST: config.REDIS_HOST,
+  REDIS_PORT: config.REDIS_PORT,
+  REDIS_DB: config.REDIS_DB,
 };
