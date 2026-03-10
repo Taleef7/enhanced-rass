@@ -9,7 +9,6 @@ const { MCP_SERVER_PORT } = require("./src/config");
 // Existing extracted routes (unchanged)
 const authRoutes = require("./src/authRoutes.js");
 const chatRoutes = require("./src/chatRoutes.js");
-const authMiddleware = require("./src/authMiddleware.js");
 
 // Proxy handlers
 const embedUploadRoutes = require("./src/proxy/embedUpload.js");
