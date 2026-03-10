@@ -82,6 +82,23 @@ const ConfigSchema = z
         message: "CHILD_CHUNK_OVERLAP must be less than CHILD_CHUNK_SIZE",
       });
     }
+    // Require the model name that matches the selected embedding provider
+    if (data.EMBEDDING_PROVIDER === "openai" && !data.OPENAI_EMBED_MODEL_NAME) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["OPENAI_EMBED_MODEL_NAME"],
+        message:
+          "OPENAI_EMBED_MODEL_NAME is required when EMBEDDING_PROVIDER is 'openai'",
+      });
+    }
+    if (data.EMBEDDING_PROVIDER === "gemini" && !data.GEMINI_EMBED_MODEL_NAME) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["GEMINI_EMBED_MODEL_NAME"],
+        message:
+          "GEMINI_EMBED_MODEL_NAME is required when EMBEDDING_PROVIDER is 'gemini'",
+      });
+    }
   });
 
 module.exports = { ConfigSchema };

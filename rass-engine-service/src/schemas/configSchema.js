@@ -112,6 +112,44 @@ const ConfigSchema = z
         message: "CHILD_CHUNK_OVERLAP must be less than CHILD_CHUNK_SIZE",
       });
     }
+    // Require the LLM model name that matches the selected LLM provider
+    if (data.LLM_PROVIDER === "openai" && !data.OPENAI_MODEL_NAME) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["OPENAI_MODEL_NAME"],
+        message: "OPENAI_MODEL_NAME is required when LLM_PROVIDER is 'openai'",
+      });
+    }
+    if (data.LLM_PROVIDER === "gemini" && !data.GEMINI_MODEL_NAME) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["GEMINI_MODEL_NAME"],
+        message: "GEMINI_MODEL_NAME is required when LLM_PROVIDER is 'gemini'",
+      });
+    }
+    // Require the embedding model name for any provider that uses embeddings
+    const needsOpenAIEmbed =
+      data.EMBEDDING_PROVIDER === "openai" ||
+      data.SEARCH_TERM_EMBEDDING_PROVIDER === "openai";
+    const needsGeminiEmbed =
+      data.EMBEDDING_PROVIDER === "gemini" ||
+      data.SEARCH_TERM_EMBEDDING_PROVIDER === "gemini";
+    if (needsOpenAIEmbed && !data.OPENAI_EMBED_MODEL_NAME) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["OPENAI_EMBED_MODEL_NAME"],
+        message:
+          "OPENAI_EMBED_MODEL_NAME is required when EMBEDDING_PROVIDER or SEARCH_TERM_EMBEDDING_PROVIDER is 'openai'",
+      });
+    }
+    if (needsGeminiEmbed && !data.GEMINI_EMBED_MODEL_NAME) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["GEMINI_EMBED_MODEL_NAME"],
+        message:
+          "GEMINI_EMBED_MODEL_NAME is required when EMBEDDING_PROVIDER or SEARCH_TERM_EMBEDDING_PROVIDER is 'gemini'",
+      });
+    }
   });
 
 module.exports = { ConfigSchema };

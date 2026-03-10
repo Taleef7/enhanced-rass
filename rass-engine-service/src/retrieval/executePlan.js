@@ -22,12 +22,15 @@ const { ExecutionPlanSchema } = require("../schemas/plannerSchemas");
  * @returns {Promise<object[]>} Array of parent document objects with text and metadata.
  */
 async function runSteps({ plan, embed, os, index, userId, documents }) {
-  // Validate the incoming plan — throw a descriptive error if it is malformed
-  const normalizedPlan = plan.map((step) =>
-    "search_term" in step && !("query" in step)
+  // Validate the incoming plan — throw a descriptive error if it is malformed.
+  // Build normalizedPlan first: guard against non-object steps before using `in`
+  // to avoid a TypeError that would mask the schema error message.
+  const normalizedPlan = plan.map((step) => {
+    if (step === null || typeof step !== "object") return step;
+    return "search_term" in step && !("query" in step)
       ? { ...step, query: step.search_term }
-      : step
-  );
+      : step;
+  });
   ExecutionPlanSchema.parse(normalizedPlan);
   let allChildHits = [];
 

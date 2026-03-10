@@ -102,6 +102,26 @@ describe("embedding-service/src/config.js", () => {
     expect(() => loadConfig()).toThrow(/process\.exit/);
   });
 
+  test("throws when EMBEDDING_PROVIDER is 'openai' but OPENAI_EMBED_MODEL_NAME is missing", () => {
+    const badConfig = { ...VALID_CONFIG, EMBEDDING_PROVIDER: "openai" };
+    delete badConfig.OPENAI_EMBED_MODEL_NAME;
+    fs.readFileSync.mockReturnValue(yaml.dump(badConfig));
+
+    expect(() => loadConfig()).toThrow(/process\.exit/);
+  });
+
+  test("throws when EMBEDDING_PROVIDER is 'gemini' but GEMINI_EMBED_MODEL_NAME is missing", () => {
+    const badConfig = {
+      ...VALID_CONFIG,
+      EMBEDDING_PROVIDER: "gemini",
+      OPENAI_EMBED_MODEL_NAME: undefined,
+    };
+    delete badConfig.GEMINI_EMBED_MODEL_NAME;
+    fs.readFileSync.mockReturnValue(yaml.dump(badConfig));
+
+    expect(() => loadConfig()).toThrow(/process\.exit/);
+  });
+
   test("throws a descriptive error when config.yml cannot be read", () => {
     fs.readFileSync.mockImplementation(() => {
       throw new Error("ENOENT: no such file or directory");

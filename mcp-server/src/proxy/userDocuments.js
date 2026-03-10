@@ -5,12 +5,10 @@ const express = require("express");
 const axios = require("axios");
 const authMiddleware = require("../authMiddleware");
 const { OPENSEARCH_HOST, OPENSEARCH_PORT, OPENSEARCH_INDEX_NAME } = require("../config");
-const { validateQuery } = require("../middleware/validate");
-const { UserDocumentsQuerySchema } = require("../schemas/userDocumentsSchema");
 
 const router = express.Router();
 
-router.get("/api/user-documents", authMiddleware, validateQuery(UserDocumentsQuerySchema), async (req, res) => {
+router.get("/api/user-documents", authMiddleware, async (req, res) => {
   const userId = req.userId;
 
   console.log(`[User Documents] Fetching documents for user: ${userId}`);

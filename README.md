@@ -178,36 +178,6 @@ src/
 ### rass-engine-service/src/
 ```
 src/
-  config.js                  ← Zod-validated config loading
-  clients/
-    llmClient.js              ← LLM client factory (OpenAI / Gemini)
-    embedder.js               ← search-term embedding + embedText() function
-    opensearchClient.js       ← OpenSearch client
-  planner/
-    searchPlanner.js          ← createRefinedSearchPlan() — LLM-based query expansion
-    hydeGenerator.js          ← HyDE hypothetical document generation
-  retrieval/
-    simpleSearch.js           ← hybrid KNN + keyword search with user-scope filter
-    executePlan.js            ← multi-step plan execution + parent-doc fetch
-  generation/
-    generator.js              ← non-streaming LLM answer generation
-    streaming.js              ← writeSSE() + streaming generation pipeline
-  routes/
-    ask.js                    ← POST /ask
-    streamAsk.js              ← POST /stream-ask (SSE)
-  schemas/
-    configSchema.js           ← Zod schema for full config.yml validation
-    uploadSchema.js           ← Zod schema for POST /upload body (userId)
-    index.js                  ← barrel export for all schemas
-  middleware/
-    validate.js               ← validateBody(schema) and validateQuery(schema) middleware
-  __tests__/
-    config.test.js            ← unit tests for config loading and validation
-    uploadSchema.test.js      ← unit tests for upload schema and middleware
-
-### rass-engine-service/src/
-```
-src/
   config.js                  ← Zod-validated config loading (ConfigSchema.parse)
   clients/
     llmClient.js              ← LLM client factory (OpenAI / Gemini)

@@ -135,4 +135,14 @@ describe("UserDocumentsQuerySchema", () => {
     expect(req.validatedQuery.page).toBe(1);
     expect(req.validatedQuery.limit).toBe(25);
   });
+
+  test("decimal page value '2.5' is rejected (not a valid integer)", () => {
+    const result = UserDocumentsQuerySchema.safeParse({ page: "2.5" });
+    expect(result.success).toBe(false);
+  });
+
+  test("decimal limit value '10.5' is rejected (not a valid integer)", () => {
+    const result = UserDocumentsQuerySchema.safeParse({ limit: "10.5" });
+    expect(result.success).toBe(false);
+  });
 });
