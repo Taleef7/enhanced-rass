@@ -1,51 +1,81 @@
 # This file contains non-secret configuration for all RASS services.
 # It should be committed to version control.
+# Secret values (API keys, passwords) belong in .env — never here.
+#
+# Field types and allowed values are documented inline below.
+# All services validate this file on startup and will exit with a descriptive
+# error message if a required field is missing or has an invalid value.
 
 # --- Global Settings ---
+# type: string — hostname of the OpenSearch container (Docker service name or IP)
 OPENSEARCH_HOST: "opensearch"
+# type: integer — OpenSearch HTTP port
 OPENSEARCH_PORT: 9200
+# type: string — name of the OpenSearch index used for vector storage
 OPENSEARCH_INDEX_NAME: "knowledge_base"
 
 # --- Redis Configuration ---
+# type: string — hostname of the Redis container
 REDIS_HOST: "redis"
+# type: integer — Redis port
 REDIS_PORT: 6379
+# type: integer — Redis database number (0-15)
 REDIS_DB: 0
 
 # --- Provider Choices ---
-# Can be "openai" or "gemini"
+# type: enum["openai", "gemini"] — which provider to use for document embeddings
 EMBEDDING_PROVIDER: "gemini"
+# type: enum["openai", "gemini"] — which provider to use for LLM answer generation
 LLM_PROVIDER: "gemini"
+# type: enum["openai", "gemini"] — which provider to use for query-term embeddings at retrieval time
 SEARCH_TERM_EMBEDDING_PROVIDER: "gemini"
 
 # --- Model Names ---
 # Embedding Models
+# type: string — OpenAI embedding model name (used when EMBEDDING_PROVIDER="openai")
 OPENAI_EMBED_MODEL_NAME: "text-embedding-3-large"
+# type: string — Google Gemini embedding model name (used when EMBEDDING_PROVIDER="gemini")
 GEMINI_EMBED_MODEL_NAME: "text-embedding-004"
 # LLM (Generator) Models
+# type: string — OpenAI chat model name (used when LLM_PROVIDER="openai")
 OPENAI_MODEL_NAME: "gpt-4.1-nano"
+# type: string — Google Gemini chat model name (used when LLM_PROVIDER="gemini")
 GEMINI_MODEL_NAME: "gemini-2.0-flash"
 # Reranker Model
+# type: string — cross-encoder model for reranking (future Phase B feature)
 RERANKER_MODEL_NAME: "cross-encoder/ms-marco-MiniLM-L6-v2"
 
 # --- Service Ports ---
+# type: integer — port the embedding-service listens on
 EMBEDDING_SERVICE_PORT: 8001
+# type: integer — port the rass-engine-service listens on
 RASS_ENGINE_PORT: 8000
+# type: integer — port the mcp-server listens on (also used for the frontend proxy)
 MCP_SERVER_PORT: 8080
+# type: integer — port the reranker service listens on (future Phase B feature)
 RERANKER_PORT: 8008
 
 # --- RAG Parameters ---
-# For Small-to-Big Retrieval
+# For Small-to-Big Retrieval (parent/child chunking strategy)
+# type: integer — maximum character size of parent chunks stored in Redis
 PARENT_CHUNK_SIZE: 2000
+# type: integer — character overlap between adjacent parent chunks (must be < PARENT_CHUNK_SIZE)
 PARENT_CHUNK_OVERLAP: 500
+# type: integer — maximum character size of child chunks indexed in OpenSearch
 CHILD_CHUNK_SIZE: 200
+# type: integer — character overlap between adjacent child chunks (must be < CHILD_CHUNK_SIZE)
 CHILD_CHUNK_OVERLAP: 100
-# Initial candidate pool size for reranking
+# type: integer — number of candidate chunks to retrieve per OpenSearch KNN query
 DEFAULT_K_OPENSEARCH_HITS: 112
-# Vector dimension for OpenSearch index
+# type: integer — embedding vector dimension; must match the chosen embedding model output
+#   OpenAI text-embedding-3-large → 3072 (or 1536 with truncation)
+#   Google text-embedding-004     → 768
 EMBED_DIM: 768
 
 # Search score thresholds
+# type: float — minimum OpenSearch score; results below this are discarded
 OPENSEARCH_SCORE_THRESHOLD: 0.1
 
 search:
+  # type: integer — maximum number of source documents passed to the LLM for generation
   DEFAULT_TOP_K: 50

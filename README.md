@@ -139,3 +139,86 @@ DB connection string is provided via DATABASE_URL; migrations run on mcp-server 
 ## License
 
 MIT (supply your own license text if different).
+
+---
+
+## Service Module Structure (Phase A Refactoring)
+
+Each service has been refactored into a layered module structure for maintainability, testability, and clear separation of concerns. The service entry points (`index.js`) are now thin orchestrators (~20-30 lines) that import modules from `src/`.
+
+### embedding-service/src/
+```
+src/
+  config.js                  ← validated config loading (exits on bad/missing fields)
+  clients/
+    redisClient.js            ← Redis client, connection handlers, docstore state
+    opensearchClient.js       ← OpenSearch client + ensureIndexExists()
+    embedder.js               ← embedding provider factory (OpenAI / Gemini)
+  store/
+    redisDocumentStore.js     ← RedisDocumentStore class (LangChain BaseStore)
+  ingestion/
+    parser.js                 ← file-type detection + document loaders (PDF/DOCX/TXT)
+    chunker.js                ← pre-configured parent/child text splitters
+  routes/
+    upload.js                 ← POST /upload
+    documents.js              ← POST /get-documents, GET /docstore/stats
+    admin.js                  ← POST /clear-docstore
+    health.js                 ← GET /health
+  __tests__/
+    config.test.js            ← unit tests for config loading and validation
+```
+
+### rass-engine-service/src/
+```
+src/
+  config.js                  ← validated config loading
+  clients/
+    llmClient.js              ← LLM client factory (OpenAI / Gemini)
+    embedder.js               ← search-term embedding + embedText() function
+    opensearchClient.js       ← OpenSearch client
+  planner/
+    searchPlanner.js          ← createRefinedSearchPlan() — LLM-based query expansion
+    hydeGenerator.js          ← HyDE hypothetical document generation
+  retrieval/
+    simpleSearch.js           ← hybrid KNN + keyword search with user-scope filter
+    executePlan.js            ← multi-step plan execution + parent-doc fetch
+  generation/
+    generator.js              ← non-streaming LLM answer generation
+    streaming.js              ← writeSSE() + streaming generation pipeline
+  routes/
+    ask.js                    ← POST /ask
+    streamAsk.js              ← POST /stream-ask (SSE)
+  schemas/                    ← reserved for Phase A 2.2 / 2.3 Zod schemas
+  __tests__/
+    config.test.js
+```
+
+### mcp-server/src/
+```
+src/
+  config.js                  ← validated config loading
+  authRoutes.js              ← (unchanged) POST /api/auth/register, /login
+  authMiddleware.js          ← (unchanged) JWT Bearer auth middleware
+  chatRoutes.js              ← (unchanged) CRUD for /api/chats
+  proxy/
+    embedUpload.js            ← POST /api/embed-upload → embedding-service
+    streamAsk.js              ← POST /api/stream-ask  → rass-engine-service (SSE)
+    chatCompletions.js        ← POST /api/chat/completions (OpenAI-compat proxy)
+    userDocuments.js          ← GET /api/user-documents (OpenSearch aggregation)
+    transcribe.js             ← POST /api/transcribe (Whisper)
+  gateway/
+    mcpTools.js               ← MCP tool definitions (queryRASS, addDocumentToRASS)
+    mcpTransport.js           ← POST /mcp (StreamableHTTPServerTransport)
+  __tests__/
+    config.test.js
+```
+
+### Centralized Configuration (config.yml)
+All services load and validate `config.yml` at startup via `src/config.js`. A missing or incorrectly-typed required field causes an immediate, descriptive error (with the field name) before the server binds a port — no more silent `undefined` propagating into service logic.
+
+Run unit tests for config validation:
+```bash
+cd embedding-service && npm test
+cd rass-engine-service && npm test
+cd mcp-server && npm test
+```

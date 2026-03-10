@@ -1,355 +1,46 @@
 // mcp-server/index.js
+// Thin orchestrator: loads modules, registers routes and middleware, and starts the server.
+
 const express = require("express");
-const { McpServer } = require("@modelcontextprotocol/sdk/server/mcp.js");
-const {
-  StreamableHTTPServerTransport,
-} = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
-const { z } = require("zod");
 const cors = require("cors");
-const axios = require("axios");
-const FormData = require("form-data");
-const fs = require("fs");
-const path = require("path");
-const multer = require("multer");
+
+const { MCP_SERVER_PORT } = require("./src/config");
+
+// Existing extracted routes (unchanged)
 const authRoutes = require("./src/authRoutes.js");
 const chatRoutes = require("./src/chatRoutes.js");
-const authMiddleware = require("./src/authMiddleware.js");
-const { OpenAI } = require("openai");
-const { toFile } = require("openai/uploads");
 
-const DEFAULT_TOP_K = Number(process.env.MCP_DEFAULT_TOP_K) || 10;
-const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
+// Proxy handlers
+const embedUploadRoutes = require("./src/proxy/embedUpload.js");
+const streamAskRoutes = require("./src/proxy/streamAsk.js");
+const chatCompletionsRoutes = require("./src/proxy/chatCompletions.js");
+const userDocumentsRoutes = require("./src/proxy/userDocuments.js");
+const transcribeRoutes = require("./src/proxy/transcribe.js");
 
-// --- Express App Setup ---
+// Gateway handlers
+const mcpTransportRoutes = require("./src/gateway/mcpTransport.js");
+
 const app = express();
-app.use(cors()); // Use CORS middleware to allow requests from any origin
+app.use(cors());
 app.use(express.json({ limit: "10mb" }));
-const PORT = process.env.MCP_SERVER_PORT || 8080;
-const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
 
-// --- START: NEW LibreChat OpenAI-Compatible Endpoint ---
-app.post("/api/chat/completions", async (req, res) => {
-  // Extract the last user message from the request body
-  const userMessages = req.body.messages.filter((m) => m.role === "user");
-  const lastUserMessage = userMessages[userMessages.length - 1];
+// --- Proxy routes ---
+app.use(chatCompletionsRoutes);
+app.use(embedUploadRoutes);
+app.use(transcribeRoutes);
+app.use(streamAskRoutes);
+app.use(userDocumentsRoutes);
 
-  let query;
-  if (Array.isArray(lastUserMessage?.content)) {
-    // Handles the expected case for text messages
-    query = lastUserMessage.content[0]?.text;
-  } else if (typeof lastUserMessage?.content === "string") {
-    // Handles the case where content might just be a string
-    query = lastUserMessage.content;
-  } else {
-    // Handles all other unexpected cases
-    query = null;
-  }
-
-  console.log(`[LibreChat Proxy] Received query: "${query}"`);
-
-  if (!query) {
-    return res.status(400).json({ error: "No user message found in request" });
-  }
-
-  try {
-    // The URL for our new streaming endpoint in the RASS engine
-    const rassEngineStreamUrl = "http://rass-engine-service:8000/stream-ask";
-
-    // Use axios to get a readable stream from the RASS engine
-    const response = await axios.post(
-      rassEngineStreamUrl,
-      { query: query, top_k: DEFAULT_TOP_K }, // We can pass other params like top_k if needed
-      { responseType: "stream" }
-    );
-
-    // Set the headers for our response to LibreChat to indicate a stream
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.flushHeaders();
-
-    // Pipe the stream from the RASS engine directly to our response object.
-    response.data.on("data", (chunk) => {
-      // Log the raw chunk we’re about to forward
-      console.log("[Proxy → client]", chunk.toString());
-    });
-
-    // This efficiently forwards the data as it arrives.
-    response.data.pipe(res);
-
-    // Handle the close event
-    req.on("close", () => {
-      console.log("[LibreChat Proxy] Client closed connection.");
-      response.data.destroy(); // Clean up the stream from the RASS engine
-    });
-  } catch (e) {
-    console.error(
-      "[LibreChat Proxy] Error calling RASS engine stream:",
-      e.message
-    );
-    if (!res.headersSent) {
-      res
-        .status(500)
-        .json({ error: "Failed to process stream in RASS engine." });
-    } else {
-      res.end(); // If headers are sent, just end the stream
-    }
-  }
-});
-// --- END: NEW LibreChat OpenAI-Compatible Endpoint ---
-
-// --- START: NEW File Upload Endpoint ---
-app.post(
-  "/api/embed-upload",
-  authMiddleware,
-  upload.single("file"),
-  async (req, res) => {
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded." });
-    }
-
-    console.log(`[Upload Proxy] Received file: ${req.file.originalname}`);
-
-    try {
-      const form = new FormData();
-      // The embedding-service expects the field name to be 'files'
-      form.append("files", req.file.buffer, {
-        filename: req.file.originalname,
-        contentType: req.file.mimetype,
-      });
-
-      // We must forward the userId to the embedding-service.
-      form.append("userId", req.user.userId); // Get from authenticated user
-
-      const embeddingServiceUrl = "http://embedding-service:8001/upload";
-      const response = await axios.post(embeddingServiceUrl, form, {
-        headers: {
-          ...form.getHeaders(),
-        },
-        // It can take a while to embed large docs
-        timeout: process.env.EMBEDDING_SERVICE_TIMEOUT || 300000, // 5 minutes
-      });
-
-      console.log(
-        "[Upload Proxy] File forwarded to embedding-service successfully."
-      );
-      // Forward the success response from the embedding service to the client
-      res.status(response.status).json(response.data);
-    } catch (e) {
-      console.error(
-        "[Upload Proxy] Error forwarding file to embedding-service:",
-        e.message
-      );
-      res.status(500).json({
-        error: "Failed to upload and embed file.",
-        details: e.message,
-      });
-    }
-  }
-);
-// --- END: NEW File Upload Endpoint ---
-
-// --- START: NEW Whisper Transcription Endpoint ---
-app.post(
-  "/api/transcribe",
-  authMiddleware,
-  upload.single("audio"),
-  async (req, res) => {
-    try {
-      if (!openai) {
-        return res.status(503).json({
-          error: "Transcription service unavailable (no OPENAI_API_KEY).",
-        });
-      }
-      if (!req.file) {
-        return res.status(400).json({ error: "No audio file provided." });
-      }
-
-      // Construct a File-like object from buffer for OpenAI SDK
-      const filename = req.file.originalname || "recording.webm";
-      const file = await toFile(req.file.buffer, filename, {
-        type: req.file.mimetype || "audio/webm",
-      });
-
-      const response = await openai.audio.transcriptions.create({
-        file,
-        model: "whisper-1",
-        response_format: "json",
-        temperature: 0,
-        // The SDK infers filename from file.name if present
-        // Set a name on the Blob for better diagnostics
-        // Requires Node 18+ for Blob/File support. No fallback for earlier Node versions is implemented.
-      });
-
-      return res.json({ text: response.text || "" });
-    } catch (e) {
-      console.error("[Transcribe] Error:", e);
-      return res
-        .status(500)
-        .json({ error: "Transcription failed.", details: e.message });
-    }
-  }
-);
-// --- END: NEW Whisper Transcription Endpoint ---
-
-// --- START: NEW Streaming Query Endpoint ---
-app.post("/api/stream-ask", authMiddleware, async (req, res) => {
-  const { query, documents } = req.body;
-  const userId = req.userId; // Get from authenticated user
-
-  console.log(`[Stream Proxy] Query from user: ${userId}`);
-
-  if (!query) {
-    return res.status(400).json({ error: "Query is required" });
-  }
-
-  try {
-    const rassEngineStreamUrl = "http://rass-engine-service:8000/stream-ask";
-
-    const response = await axios.post(
-      rassEngineStreamUrl,
-      { query, documents, userId },
-      { responseType: "stream" }
-    );
-
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.flushHeaders();
-
-    response.data.pipe(res);
-
-    req.on("close", () => {
-      console.log("[Stream Proxy] Client closed connection.");
-      response.data.destroy();
-    });
-  } catch (e) {
-    console.error(
-      "[Stream Proxy] Error calling RASS engine stream:",
-      e.message
-    );
-    if (!res.headersSent) {
-      res
-        .status(500)
-        .json({ error: "Failed to process stream in RASS engine." });
-    } else {
-      res.end();
-    }
-  }
-});
-// --- END: NEW Streaming Query Endpoint ---
-
-// --- START: NEW User Documents Endpoint ---
-app.get("/api/user-documents", authMiddleware, async (req, res) => {
-  const userId = req.userId;
-
-  console.log(`[User Documents] Fetching documents for user: ${userId}`);
-
-  try {
-    // We intentionally avoid terms aggregations on text fields because
-    // the index mapping may not provide `.keyword` subfields.
-    // Instead, we fetch a sample of chunks for this user and group in-process.
-    const axios = require("axios");
-
-    // Build a robust filter that works whether metadata.userId is mapped as
-    // keyword or text.
-    const userFilter = {
-      bool: {
-        should: [
-          { term: { "metadata.userId.keyword": userId } },
-          { term: { "metadata.userId": userId } },
-          { match_phrase: { "metadata.userId": userId } },
-        ],
-        minimum_should_match: 1,
-      },
-    };
-
-    const openSearchQuery = {
-      // Raise the sample window to include all typical user chunks
-      // without relying on field sorting that may not be mapped.
-      size: Number(process.env.DOCUMENT_LIST_SAMPLE_SIZE) || 10000,
-      track_total_hits: true,
-      _source: ["metadata"],
-      query: { bool: { filter: [userFilter] } },
-      // Note: avoid sorting on metadata.uploadedAt as it may be mapped as text.
-    };
-
-    const openSearchUrl =
-      process.env.OPENSEARCH_URL || "http://opensearch:9200";
-    const indexName = process.env.OPENSEARCH_INDEX_NAME || "knowledge_base";
-
-    const response = await axios.post(
-      `${openSearchUrl}/${indexName}/_search`,
-      openSearchQuery,
-      {
-        headers: { "Content-Type": "application/json" },
-        timeout: 30000,
-      }
-    );
-
-    const hits = response.data?.hits?.hits || [];
-    console.log(
-      `[User Documents] OpenSearch returned total: ${
-        response.data?.hits?.total?.value ?? hits.length
-      }, windowed: ${hits.length}`
-    );
-
-    // Group by the physical source (file path) or original filename so chunks from the same upload are grouped.
-    const groups = new Map();
-    for (const h of hits) {
-      const md = h._source?.metadata || {};
-      const source = md.source || md.originalFilename || "Unknown";
-      if (!groups.has(source)) {
-        groups.set(source, {
-          name:
-            md.originalFilename ||
-            (md.source ? md.source.split("/").pop() : "Unknown Document"),
-          source: md.source || md.originalFilename || "Unknown",
-          uploadedAt: md.uploadedAt || new Date(0).toISOString(),
-          chunkCount: 0,
-        });
-      }
-      const g = groups.get(source);
-      g.chunkCount += 1;
-      // Keep the latest uploadedAt if present
-      if (md.uploadedAt) {
-        const a = new Date(g.uploadedAt).getTime();
-        const b = new Date(md.uploadedAt).getTime();
-        if (isFinite(b) && (!isFinite(a) || b > a)) {
-          g.uploadedAt = md.uploadedAt;
-        }
-      }
-    }
-
-    const documents = Array.from(groups.values());
-    console.log(
-      `[User Documents] Found ${documents.length} documents for user ${userId}`
-    );
-    res.json({ documents });
-  } catch (error) {
-    console.error("[User Documents] Error fetching documents:", error);
-    res.status(500).json({
-      error: "Failed to fetch user documents",
-      details: error.message,
-    });
-  }
-});
-// --- END: NEW User Documents Endpoint ---
-
-// --- OLD Simple REST Endpoint for Web Frontend (can be removed later) ---
+// --- Legacy simple-ask (deprecated) ---
+// @deprecated Use /api/stream-ask instead.
+const axios = require("axios");
 app.post("/simple-ask", async (req, res) => {
   const { query, top_k } = req.body;
   console.log(`[REST /simple-ask] Received query: "${query}"`);
-
   if (!query) {
     return res.status(400).json({ error: "Query is required" });
   }
-
   try {
-    // Forward the simple request directly to the rass-engine-service
     const rassEngineUrl = "http://rass-engine-service:8000/ask";
     const response = await axios.post(rassEngineUrl, { query, top_k });
     res.status(200).json(response.data);
@@ -358,106 +49,21 @@ app.post("/simple-ask", async (req, res) => {
     res.status(500).json({ error: "Failed to process query in RASS engine." });
   }
 });
-// --- END OLD SECTION ---
 
-// --- Official MCP Server and Tool Definitions ---
-const server = new McpServer({
-  name: "RASS-MCP-Server",
-  version: "1.0.0",
-});
+// --- MCP transport ---
+app.use(mcpTransportRoutes);
 
-// Define the 'queryRASS' tool for official MCP clients
-server.tool(
-  "queryRASS",
-  {
-    query: z
-      .string()
-      .describe("The natural language question to ask the knowledge base."),
-    top_k: z
-      .optional(z.number())
-      .describe("Optional. The maximum number of document chunks to return."),
-  },
-  async (tool_args) => {
-    console.log(`[MCP Tool 'queryRASS'] Executing with args:`, tool_args);
-    const rassEngineUrl = "http://rass-engine-service:8000/ask";
-    const response = await axios.post(rassEngineUrl, tool_args);
-    return {
-      content: [{ type: "text", text: JSON.stringify(response.data, null, 2) }],
-    };
-  }
-);
-
-// Define the 'addDocumentToRASS' tool for official MCP clients
-server.tool(
-  "addDocumentToRASS",
-  {
-    source_uri: z
-      .string()
-      .describe(
-        "The filename of the document to add, located in the shared uploads volume."
-      ),
-  },
-  async ({ source_uri }) => {
-    console.log(
-      `[MCP Tool 'addDocumentToRASS'] Executing with uri:`,
-      source_uri
-    );
-    const UPLOAD_DIR_MCP = "/usr/src/app/uploads";
-    const fullPath = path.join(UPLOAD_DIR_MCP, source_uri);
-
-    if (!fs.existsSync(fullPath)) {
-      throw new Error(`File not found at source_uri: ${source_uri}`);
-    }
-
-    const form = new FormData();
-    form.append(
-      "files",
-      fs.createReadStream(fullPath),
-      path.basename(fullPath)
-    );
-
-    const embeddingServiceUrl = "http://embedding-service:8001/upload";
-    const response = await axios.post(embeddingServiceUrl, form, {
-      headers: { ...form.getHeaders() },
-    });
-
-    return {
-      content: [{ type: "text", text: JSON.stringify(response.data, null, 2) }],
-    };
-  }
-);
-
-// --- Set up the MCP Transport Endpoint ---
-app.post("/mcp", async (req, res) => {
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-  });
-  res.on("close", () => {
-    transport.close();
-    // Note: Do not close the main MCP server instance here, as it's shared.
-  });
-  try {
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-  } catch (e) {
-    console.error("[MCP Server] Error handling request:", e);
-    if (!res.headersSent) {
-      res.status(500).send("Internal Server Error");
-    }
-  }
-});
-
-// --- Auth Routes ---
+// --- Auth routes ---
 app.use("/api/auth", authRoutes);
 
-// --- Chat Routes (with authentication middleware) ---
+// --- Chat routes ---
 app.use("/api/chats", chatRoutes);
 
-// --- Health Check and Server Start ---
+// --- Health check ---
 app.get("/", (req, res) => {
   res.status(200).send("RASS MCP Server is running.");
 });
 
-app.listen(PORT, () => {
-  console.log(`MCP Server listening on http://localhost:${PORT}`);
+app.listen(MCP_SERVER_PORT, () => {
+  console.log(`MCP Server listening on http://localhost:${MCP_SERVER_PORT}`);
 });
