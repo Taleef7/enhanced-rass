@@ -1,7 +1,10 @@
 // mcp-server/src/routes/internalService.js
-// Internal service-to-service routes (NOT authenticated with JWT).
-// These routes are called only by other backend services (e.g. embedding-service worker)
-// and are expected to be isolated from the public internet by Docker networking.
+// Internal service-to-service routes protected by a shared secret header.
+// These routes are called only by other backend services (e.g. embedding-service worker).
+// They are NOT meant to be reachable by end users.
+//
+// Authentication: every request must carry the header:
+//   X-Internal-Token: <INTERNAL_SERVICE_TOKEN env var>
 //
 // Routes:
 //   PATCH  /internal/documents/:id/status   — Update document lifecycle status
@@ -11,11 +14,32 @@
 "use strict";
 
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
 const { writeAuditLog } = require("../services/auditService");
+const { prisma } = require("../prisma");
 
-const prisma = new PrismaClient();
 const router = express.Router();
+
+// ── Shared-secret guard ───────────────────────────────────────────────────────
+// INTERNAL_SERVICE_TOKEN must be set in production. In development, if unset,
+// the server logs a prominent warning on every request but still allows traffic
+// (to avoid breaking local dev without Docker secrets configured).
+
+const INTERNAL_SERVICE_TOKEN = process.env.INTERNAL_SERVICE_TOKEN || "";
+
+router.use("/internal", (req, res, next) => {
+  if (!INTERNAL_SERVICE_TOKEN) {
+    console.warn(
+      "[Internal] WARNING: INTERNAL_SERVICE_TOKEN is not set. " +
+      "Internal routes are UNSECURED. Set this env var in production."
+    );
+    return next();
+  }
+  const provided = req.headers["x-internal-token"];
+  if (!provided || provided !== INTERNAL_SERVICE_TOKEN) {
+    return res.status(401).json({ error: "Unauthorized." });
+  }
+  next();
+});
 
 // ── PATCH /internal/documents/:id/status ─────────────────────────────────────
 

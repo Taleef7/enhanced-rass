@@ -8,14 +8,13 @@ const express = require("express");
 const axios = require("axios");
 const FormData = require("form-data");
 const multer = require("multer");
-const { PrismaClient } = require("@prisma/client");
 const authMiddleware = require("../authMiddleware");
 const { writeAuditLog } = require("../services/auditService");
 const { EMBEDDING_SERVICE_BASE_URL } = require("../config");
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
-const prisma = new PrismaClient();
+const { prisma } = require("../prisma");
 
 const router = express.Router();
 
@@ -34,7 +33,26 @@ router.post(
 
     console.log(`[Upload Proxy] Received file: ${req.file.originalname} from user: ${userId}`);
 
-    // 1. Create Document registry entry
+    // If kbId is provided, resolve the KB's OpenSearch index and validate membership.
+    let targetIndex = null;
+    if (kbId) {
+      const kb = await prisma.knowledgeBase.findFirst({
+        where: {
+          id: kbId,
+          OR: [
+            { ownerId: userId },
+            { members: { some: { userId } } },
+          ],
+        },
+        select: { openSearchIndex: true },
+      });
+      if (!kb) {
+        return res.status(403).json({ error: "Knowledge base not found or access denied." });
+      }
+      targetIndex = kb.openSearchIndex;
+    }
+
+    // 1. Create Document registry entry (capture targetIndex for deletion routing later)
     let doc;
     try {
       doc = await prisma.document.create({
@@ -45,6 +63,7 @@ router.post(
           fileSizeBytes: req.file.size,
           status: "QUEUED",
           kbId: kbId || null,
+          openSearchIndex: targetIndex || "knowledge_base",
         },
       });
     } catch (dbErr) {
@@ -62,6 +81,7 @@ router.post(
       form.append("userId", userId);
       form.append("documentId", doc.id);
       if (kbId) form.append("kbId", kbId);
+      if (targetIndex) form.append("targetIndex", targetIndex);
       if (chunkingStrategy) form.append("chunkingStrategy", chunkingStrategy);
 
       const embeddingServiceUrl = `${EMBEDDING_SERVICE_BASE_URL}/upload`;

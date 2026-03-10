@@ -4,8 +4,7 @@
 
 "use strict";
 
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const { prisma } = require("../prisma");
 
 /**
  * Write an audit log entry.
@@ -28,4 +27,4 @@ async function writeAuditLog({ userId = null, action, resource = null, outcome, 
   }
 }
 
-module.exports = { writeAuditLog, prisma };
+module.exports = { writeAuditLog };

@@ -146,3 +146,71 @@ describe("UserDocumentsQuerySchema", () => {
     expect(result.success).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// KBCreateSchema
+// ---------------------------------------------------------------------------
+const { KBCreateSchema } = require("../schemas/knowledgeBaseSchema");
+
+describe("KBCreateSchema", () => {
+  test("valid name-only body passes", () => {
+    const result = KBCreateSchema.safeParse({ name: "My KB" });
+    expect(result.success).toBe(true);
+    expect(result.data.name).toBe("My KB");
+    expect(result.data.isPublic).toBe(false); // default
+  });
+
+  test("name is required — empty string fails", () => {
+    const result = KBCreateSchema.safeParse({ name: "" });
+    expect(result.success).toBe(false);
+  });
+
+  test("name is required — missing fails", () => {
+    const result = KBCreateSchema.safeParse({});
+    expect(result.success).toBe(false);
+  });
+
+  test("valid embedDim positive integer passes", () => {
+    const result = KBCreateSchema.safeParse({ name: "KB", embedDim: 768 });
+    expect(result.success).toBe(true);
+    expect(result.data.embedDim).toBe(768);
+  });
+
+  test("embedDim = 0 fails (must be positive)", () => {
+    const result = KBCreateSchema.safeParse({ name: "KB", embedDim: 0 });
+    expect(result.success).toBe(false);
+  });
+
+  test("embedDim = -1 fails (must be positive)", () => {
+    const result = KBCreateSchema.safeParse({ name: "KB", embedDim: -1 });
+    expect(result.success).toBe(false);
+  });
+
+  test("embedDim = 1.5 (non-integer) fails", () => {
+    const result = KBCreateSchema.safeParse({ name: "KB", embedDim: 1.5 });
+    expect(result.success).toBe(false);
+  });
+
+  test("valid known embeddingModel passes", () => {
+    const result = KBCreateSchema.safeParse({ name: "KB", embeddingModel: "text-embedding-3-large" });
+    expect(result.success).toBe(true);
+  });
+
+  test("unknown embeddingModel fails", () => {
+    const result = KBCreateSchema.safeParse({ name: "KB", embeddingModel: "unknown-model" });
+    expect(result.success).toBe(false);
+  });
+
+  test("full valid body passes", () => {
+    const result = KBCreateSchema.safeParse({
+      name: "Research KB",
+      description: "My research knowledge base",
+      isPublic: true,
+      embeddingModel: "text-embedding-004",
+      embedDim: 768,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data.description).toBe("My research knowledge base");
+    expect(result.data.isPublic).toBe(true);
+  });
+});

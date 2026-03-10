@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   Paper,
@@ -74,12 +74,17 @@ const DocumentManager = () => {
   const [provenance, setProvenance] = useState(null);
   const [provenanceLoading, setProvenanceLoading] = useState(false);
 
+  // Track whether any doc is in an active state without using setState as a side-effect trigger
+  const hasActiveRef = useRef(false);
+
   const loadDocuments = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const { data } = await fetchDocuments(1, 50);
-      setDocuments(data.documents || []);
+      const docs = data.documents || [];
+      setDocuments(docs);
+      hasActiveRef.current = docs.some((d) => d.status === 'QUEUED' || d.status === 'PROCESSING');
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Failed to load documents.');
     } finally {
@@ -89,15 +94,12 @@ const DocumentManager = () => {
 
   useEffect(() => {
     loadDocuments();
-    // Auto-refresh every 5 s while any document is in QUEUED/PROCESSING state
+    // Auto-refresh every 5 s while any document is in QUEUED/PROCESSING state.
+    // We read the ref directly to avoid using setState as a side-effect trigger.
     const interval = setInterval(() => {
-      setDocuments((prev) => {
-        const hasActive = prev.some((d) => d.status === 'QUEUED' || d.status === 'PROCESSING');
-        if (hasActive) {
-          loadDocuments();
-        }
-        return prev;
-      });
+      if (hasActiveRef.current) {
+        loadDocuments();
+      }
     }, 5000);
     return () => clearInterval(interval);
   }, [loadDocuments]);
@@ -236,7 +238,7 @@ const DocumentManager = () => {
         <DialogTitle>Delete Document?</DialogTitle>
         <DialogContent>
           <Typography>
-            This will permanently remove <strong>{deleteTarget?.originalFilename}</strong> and all its associated vectors. This action cannot be undone.
+            This will remove <strong>{deleteTarget?.originalFilename}</strong> from your document library and attempt to delete its associated search vectors. This is a soft-delete — the document record will be marked as deleted, but some underlying data (such as Redis parent chunks) may persist temporarily until a cleanup job runs.
           </Typography>
         </DialogContent>
         <DialogActions>

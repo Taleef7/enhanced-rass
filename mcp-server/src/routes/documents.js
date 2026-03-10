@@ -12,13 +12,12 @@
 
 const express = require("express");
 const axios = require("axios");
-const { PrismaClient } = require("@prisma/client");
 const authMiddleware = require("../authMiddleware");
 const { writeAuditLog } = require("../services/auditService");
+const { prisma } = require("../prisma");
 const { OPENSEARCH_HOST, OPENSEARCH_PORT, EMBEDDING_SERVICE_BASE_URL } = require("../config");
 const { apiLimiter, deleteLimiter, uploadLimiter } = require("../middleware/rateLimits");
 
-const prisma = new PrismaClient();
 const router = express.Router();
 
 // ── GET /api/documents ────────────────────────────────────────────────────────
@@ -27,13 +26,21 @@ router.get("/api/documents", apiLimiter, authMiddleware, async (req, res) => {
   const userId = req.userId;
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
-  const status = req.query.status || undefined;
   const skip = (page - 1) * limit;
+
+  const VALID_STATUSES = ["QUEUED", "PROCESSING", "READY", "FAILED", "DELETED"];
+  const statusParam = req.query.status || undefined;
+
+  if (statusParam && !VALID_STATUSES.includes(statusParam)) {
+    return res.status(400).json({
+      error: `Invalid status. Must be one of: ${VALID_STATUSES.join(", ")}`,
+    });
+  }
 
   try {
     const where = {
       userId,
-      status: status ? { equals: status } : { not: "DELETED" },
+      status: statusParam ? { equals: statusParam } : { not: "DELETED" },
     };
 
     const [documents, total] = await Promise.all([
@@ -120,6 +127,10 @@ router.get("/api/documents/:id/provenance", apiLimiter, authMiddleware, async (r
 });
 
 // ── DELETE /api/documents/:id ─────────────────────────────────────────────────
+// Soft-deletes the document record and performs a best-effort removal of its
+// child vectors from OpenSearch. Parent chunks stored in Redis are NOT explicitly
+// cleaned up here — they remain until natural TTL expiry or a future admin cleanup
+// job. This is a known limitation; avoid storing sensitive data in parent chunks.
 
 router.delete("/api/documents/:id", deleteLimiter, authMiddleware, async (req, res) => {
   const { id } = req.params;

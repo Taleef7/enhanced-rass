@@ -119,6 +119,7 @@ All 16 unit tests pass: `cd embedding-service && npm test`.
   - `OPENSEARCH_*` host/port/index, `REDIS_*` host/db, provider names, chunk sizes, `EMBED_DIM`.
   - **New in Phase B**: `CHUNKING_STRATEGY` — choose `fixed_size`, `recursive_character`, or `sentence_window`.
 - `.env` (root): `OPENAI_API_KEY`, `GEMINI_API_KEY`, `JWT_SECRET`, `DATABASE_URL`.
+- **`INTERNAL_SERVICE_TOKEN`** (env var, **required in production**): shared secret used to authenticate the embedding-service worker's calls to mcp-server `/internal/*` routes. Set a strong random value. If unset, the server logs a prominent warning on every internal request but still allows traffic (for local development convenience only).
 
 Provider pairing tips:
 - Gemini text-embedding-004 → `EMBED_DIM: 768`
@@ -135,19 +136,21 @@ Provider pairing tips:
   - `GET /api/ingest/status/:jobId` → `{ status, progress, result }` (poll every 2 s)
   - `POST /api/stream-ask` → SSE stream with citations
   - `GET /api/documents` → paginated document registry list
-  - `DELETE /api/documents/:id` → delete document
+  - `DELETE /api/documents/:id` → soft-delete document (best-effort vector removal; Redis parent chunks are not immediately removed)
   - `GET /api/documents/:id/provenance` → ETL provenance record
   - `GET /api/knowledge-bases` → list accessible KBs
   - `POST /api/knowledge-bases` → create KB
   - `DELETE /api/knowledge-bases/:id` → delete KB
-- embedding-service internal
+- embedding-service (no built-in auth — **must be reachable only from mcp-server/internal network**)
   - `POST /upload` → enqueues async ingestion job, returns `{ jobs: [{ jobId, documentId }] }`
+    - **Security**: `userId` is derived from the authenticated mcp-server request, not client-supplied. Never expose port 8001 publicly. The mcp-server validates KB membership before forwarding.
   - `GET /ingest/status/:jobId` → BullMQ job status
-  - `GET /admin/queues` → Bull Board UI (dev only)
-- Internal service-to-service (no JWT, Docker network only)
-  - `PATCH /internal/documents/:id/status` → update lifecycle status
-  - `POST /internal/documents/:id/provenance` → write provenance record
-  - `POST /internal/audit` → write audit log entry
+  - `GET /admin/queues` → Bull Board UI (**dev only — never expose publicly**)
+  - `POST /get-documents`, `GET /docstore/stats` → internal/diagnostic endpoints (**dev only; must be auth/IP restricted or disabled in production**; exposing these publicly would allow unauthenticated access to all ingested document content)
+- Internal service-to-service (authenticated via `X-Internal-Token` shared secret; no end-user JWT)
+  - `PATCH /internal/documents/:id/status` → update lifecycle status (requires `INTERNAL_SERVICE_TOKEN`)
+  - `POST /internal/documents/:id/provenance` → write provenance record (requires `INTERNAL_SERVICE_TOKEN`)
+  - `POST /internal/audit` → write audit log entry (requires `INTERNAL_SERVICE_TOKEN`)
 
 ---
 
@@ -223,7 +226,7 @@ src/
   routes/
     upload.js                     ← POST /upload → enqueues job, returns 202 + jobId
     ingestStatus.js               ← GET /ingest/status/:jobId
-    documents.js                  ← POST /get-documents, GET /docstore/stats
+    documents.js                  ← POST /get-documents, GET /docstore/stats (internal/diagnostic — dev only; IP-restrict or disable in production)
     admin.js, health.js
   schemas/
     configSchema.js, uploadSchema.js, index.js

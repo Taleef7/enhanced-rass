@@ -12,13 +12,15 @@
 
 const express = require("express");
 const axios = require("axios");
-const { PrismaClient } = require("@prisma/client");
+const { z } = require("zod");
 const authMiddleware = require("../authMiddleware");
 const { writeAuditLog } = require("../services/auditService");
+const { prisma } = require("../prisma");
 const { OPENSEARCH_HOST, OPENSEARCH_PORT, EMBED_DIM } = require("../config");
 const { apiLimiter, deleteLimiter } = require("../middleware/rateLimits");
+const { KBCreateSchema } = require("../schemas/knowledgeBaseSchema");
+const { validateBody } = require("../middleware/validate");
 
-const prisma = new PrismaClient();
 const router = express.Router();
 
 // ── Helper: create an OpenSearch index for a KB ───────────────────────────────
@@ -72,16 +74,12 @@ async function deleteKBIndex(indexName) {
 
 // ── POST /api/knowledge-bases ─────────────────────────────────────────────────
 
-router.post("/api/knowledge-bases", apiLimiter, authMiddleware, async (req, res) => {
+router.post("/api/knowledge-bases", apiLimiter, authMiddleware, validateBody(KBCreateSchema), async (req, res) => {
   const userId = req.userId;
-  const { name, description, isPublic, embeddingModel, embedDim } = req.body;
-
-  if (!name) {
-    return res.status(400).json({ error: "name is required." });
-  }
+  const { name, description, isPublic, embeddingModel, embedDim } = req.validatedBody;
 
   const resolvedEmbedDim = embedDim || EMBED_DIM;
-  const resolvedModel = embeddingModel || "text-embedding-004"; // falls back to a sensible default
+  const resolvedModel = embeddingModel || "text-embedding-004"; // server-side default
 
   // Derive a unique, OpenSearch-safe index name from the KB name
   const safeBase = name
@@ -91,25 +89,33 @@ router.post("/api/knowledge-bases", apiLimiter, authMiddleware, async (req, res)
   const openSearchIndex = `kb_${safeBase}_${Date.now()}`;
 
   try {
-    // Create OpenSearch index first (fail fast before DB write)
+    // 1. Create OpenSearch index first (fail fast before DB write)
     await createKBIndex(openSearchIndex, resolvedEmbedDim);
 
-    const kb = await prisma.knowledgeBase.create({
-      data: {
-        name,
-        description: description || null,
-        ownerId: userId,
-        isPublic: Boolean(isPublic),
-        openSearchIndex,
-        embeddingModel: resolvedModel,
-        embedDim: resolvedEmbedDim,
-      },
-    });
+    let kb;
+    try {
+      // 2. Create DB record + auto-add creator as OWNER
+      kb = await prisma.knowledgeBase.create({
+        data: {
+          name,
+          description: description || null,
+          ownerId: userId,
+          isPublic: Boolean(isPublic),
+          openSearchIndex,
+          embeddingModel: resolvedModel,
+          embedDim: resolvedEmbedDim,
+        },
+      });
 
-    // Auto-add the creator as OWNER member
-    await prisma.kBMember.create({
-      data: { kbId: kb.id, userId, role: "OWNER" },
-    });
+      await prisma.kBMember.create({
+        data: { kbId: kb.id, userId, role: "OWNER" },
+      });
+    } catch (dbErr) {
+      // Rollback orphaned OpenSearch index if DB write fails
+      console.error("[KB] DB write failed; rolling back OpenSearch index:", dbErr.message);
+      await deleteKBIndex(openSearchIndex);
+      throw dbErr;
+    }
 
     await writeAuditLog({
       userId,

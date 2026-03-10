@@ -43,11 +43,15 @@ router.post(
   validateBody(UploadBodySchema),
   async (req, res) => {
     const files = req.files;
-    const { userId } = req.validatedBody;
-    const kbId = req.body.kbId || null;
+    const {
+      userId,
+      kbId = null,
+      documentId: bodyDocumentId = null,
+      chunkingStrategy: chunkingStrategyOverride = null,
+      targetIndex = null,
+    } = req.validatedBody;
     // preassignedDocumentId is only valid for single-file uploads (set by mcp-server upload proxy)
-    const preassignedDocumentId = files.length === 1 ? (req.body.documentId || null) : null;
-    const chunkingStrategyOverride = req.body.chunkingStrategy || null;
+    const preassignedDocumentId = files.length === 1 ? bodyDocumentId : null;
 
     if (!files || files.length === 0) {
       return res.status(400).json({ error: "No files uploaded." });
@@ -74,6 +78,7 @@ router.post(
             userId,
             documentId,
             kbId,
+            targetIndex,
             chunkingStrategyOverride,
           },
           { jobId: uuidv4() }

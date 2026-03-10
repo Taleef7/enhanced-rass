@@ -18,7 +18,7 @@ const {
 } = require("@langchain/community/vectorstores/opensearch");
 
 const { connection } = require("../queue/ingestionQueue");
-const { openSearchClient, ensureIndexExists } = require("../clients/opensearchClient");
+const { openSearchClient } = require("../clients/opensearchClient");
 const { embeddings, EMBEDDING_MODEL_NAME } = require("../clients/embedder");
 const { getDocstore } = require("../clients/redisClient");
 const { getLoader } = require("../ingestion/parser");
@@ -39,6 +39,12 @@ const MCP_SERVER_INTERNAL_URL =
 
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE, 10) || 2000;
 
+// Shared secret for authenticating calls to mcp-server internal routes.
+const INTERNAL_SERVICE_TOKEN = process.env.INTERNAL_SERVICE_TOKEN || "";
+const internalHeaders = INTERNAL_SERVICE_TOKEN
+  ? { "x-internal-token": INTERNAL_SERVICE_TOKEN }
+  : {};
+
 // ── Helper: notify mcp-server of status changes ──────────────────────────────
 
 async function updateDocumentStatus(documentId, status, extra = {}) {
@@ -47,7 +53,7 @@ async function updateDocumentStatus(documentId, status, extra = {}) {
     await axios.patch(
       `${MCP_SERVER_INTERNAL_URL}/internal/documents/${documentId}/status`,
       { status, ...extra },
-      { timeout: 10000 }
+      { timeout: 10000, headers: internalHeaders }
     );
   } catch (err) {
     // Non-fatal — log but don't fail the job
@@ -62,7 +68,7 @@ async function persistProvenance(provenanceData) {
     await axios.post(
       `${MCP_SERVER_INTERNAL_URL}/internal/documents/${provenanceData.documentId}/provenance`,
       provenanceData,
-      { timeout: 10000 }
+      { timeout: 10000, headers: internalHeaders }
     );
   } catch (err) {
     console.warn(`[Worker] Could not persist provenance: ${err.message}`);
@@ -73,6 +79,7 @@ async function writeAuditLog(entry) {
   try {
     await axios.post(`${MCP_SERVER_INTERNAL_URL}/internal/audit`, entry, {
       timeout: 5000,
+      headers: internalHeaders,
     });
   } catch (_) {
     // audit log failure is never fatal
