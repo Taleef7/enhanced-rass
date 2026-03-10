@@ -8,12 +8,19 @@ import {
   Button,
   Chip,
   IconButton,
+  Typography,
+  Card,
+  CardContent,
+  Divider,
 } from "@mui/material";
 import {
   Check as CheckIcon,
   ContentCopy as CopyIcon,
   ExpandLess as ExpandLessIcon,
   ExpandMore as ExpandMoreIcon,
+  WarningAmber as WarningIcon,
+  CheckCircle as CheckCircleIcon,
+  Article as ArticleIcon,
 } from "@mui/icons-material";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
@@ -22,13 +29,127 @@ import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
 import { useAuth } from "../context/AuthContext";
 
+/**
+ * Determines whether a citation object is the new structured format (Issue #117)
+ * or the legacy format.
+ */
+function isStructuredCitation(citation) {
+  return citation && typeof citation.documentName === "string";
+}
+
+/**
+ * Renders a single structured citation card.
+ */
+function StructuredCitationCard({ citation, index }) {
+  const [expanded, setExpanded] = useState(false);
+  const score =
+    typeof citation.relevanceScore === "number"
+      ? citation.relevanceScore.toFixed(3)
+      : "N/A";
+  const isGrounded = citation.grounded !== false;
+
+  return (
+    <Card
+      variant="outlined"
+      sx={{
+        mb: 1,
+        backgroundColor: "rgba(255,255,255,0.03)",
+        borderColor: isGrounded
+          ? "rgba(255,255,255,0.1)"
+          : "warning.dark",
+      }}
+    >
+      <CardContent sx={{ py: 1.5, px: 2, "&:last-child": { pb: 1.5 } }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 1,
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1 }}>
+            <ArticleIcon sx={{ fontSize: 16, color: "primary.main", flexShrink: 0 }} />
+            <Typography
+              variant="caption"
+              sx={{ fontWeight: 600, color: "text.primary", lineHeight: 1.3 }}
+            >
+              [{citation.index}] {citation.documentName}
+            </Typography>
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexShrink: 0 }}>
+            {isGrounded ? (
+              <Tooltip title="Citation grounded in retrieved context">
+                <CheckCircleIcon sx={{ fontSize: 14, color: "success.main" }} />
+              </Tooltip>
+            ) : (
+              <Tooltip title="Citation may not be grounded in retrieved context">
+                <WarningIcon sx={{ fontSize: 14, color: "warning.main" }} />
+              </Tooltip>
+            )}
+            <Chip
+              label={`Score: ${score}`}
+              size="small"
+              sx={{ fontSize: "0.65rem", height: 18 }}
+              variant="outlined"
+            />
+            {citation.pageNumber && (
+              <Chip
+                label={`p.${citation.pageNumber}`}
+                size="small"
+                sx={{ fontSize: "0.65rem", height: 18 }}
+                variant="outlined"
+              />
+            )}
+          </Box>
+        </Box>
+
+        {citation.excerpt && (
+          <Box sx={{ mt: 1 }}>
+            <Button
+              size="small"
+              onClick={() => setExpanded(!expanded)}
+              endIcon={expanded ? <ExpandLessIcon sx={{ fontSize: 14 }} /> : <ExpandMoreIcon sx={{ fontSize: 14 }} />}
+              sx={{
+                color: "text.secondary",
+                textTransform: "none",
+                p: 0,
+                minWidth: "auto",
+                fontSize: "0.7rem",
+              }}
+            >
+              {expanded ? "Hide excerpt" : "Show excerpt"}
+            </Button>
+            <Collapse in={expanded}>
+              <Typography
+                variant="caption"
+                sx={{
+                  display: "block",
+                  mt: 0.5,
+                  color: "text.secondary",
+                  fontStyle: "italic",
+                  lineHeight: 1.5,
+                  borderLeft: "2px solid",
+                  borderColor: "primary.main",
+                  pl: 1,
+                }}
+              >
+                "{citation.excerpt}"
+              </Typography>
+            </Collapse>
+          </Box>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 const MessageBubble = ({ message, index }) => {
   const [copied, setCopied] = useState(false);
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
   const { user } = useAuth();
   const isUser = message.sender === "user";
 
-  // Get user's initials for avatar
   const getInitials = (username) => {
     if (!username) return "U";
     return username.charAt(0).toUpperCase();
@@ -39,6 +160,9 @@ const MessageBubble = ({ message, index }) => {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const sources = message.sources || [];
+  const useStructuredCitations = sources.length > 0 && isStructuredCitation(sources[0]);
 
   return (
     <motion.div
@@ -228,14 +352,34 @@ const MessageBubble = ({ message, index }) => {
                       fontSize: "0.875rem",
                     }}
                   >
-                    Sources ({message.sources.length})
+                    {useStructuredCitations ? "Citations" : "Sources"} ({message.sources.length})
                   </Button>
 
                   <Collapse in={sourcesExpanded}>
                     <Box sx={{ mt: 2 }}>
-                      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                        {Array.isArray(message.sources) &&
-                          message.sources.slice(0, 10).map((source, i) => (
+                      {useStructuredCitations ? (
+                        // Structured citation cards (Phase C #117)
+                        <Box>
+                          {message.sources.slice(0, 10).map((citation, i) => (
+                            <StructuredCitationCard
+                              key={i}
+                              citation={citation}
+                              index={i}
+                            />
+                          ))}
+                          {message.sources.length > 10 && (
+                            <Typography
+                              variant="caption"
+                              sx={{ color: "text.secondary", ml: 1 }}
+                            >
+                              +{message.sources.length - 10} more citations
+                            </Typography>
+                          )}
+                        </Box>
+                      ) : (
+                        // Legacy chip display
+                        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+                          {message.sources.slice(0, 10).map((source, i) => (
                             <Chip
                               key={i}
                               label={`${source.metadata?.source || "Unknown"} (${source.initial_score?.toFixed(3) ?? "N/A"})`}
@@ -249,13 +393,11 @@ const MessageBubble = ({ message, index }) => {
                                 },
                               }}
                               onClick={() => {
-                                // TODO: Implement source viewing
                                 console.log("View source:", source);
                               }}
                             />
                           ))}
-                        {Array.isArray(message.sources) &&
-                          message.sources.length > 10 && (
+                          {message.sources.length > 10 && (
                             <Chip
                               label={`+${message.sources.length - 10} more`}
                               size="small"
@@ -263,7 +405,8 @@ const MessageBubble = ({ message, index }) => {
                               sx={{ fontSize: "0.75rem" }}
                             />
                           )}
-                      </Box>
+                        </Box>
+                      )}
                     </Box>
                   </Collapse>
                 </Box>

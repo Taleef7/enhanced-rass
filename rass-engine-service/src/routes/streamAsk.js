@@ -4,16 +4,19 @@
 // when absent (e.g. LibreChat / MCP tool proxy), results are unscoped.
 
 const express = require("express");
-const { embedText } = require("../clients/embedder");
-const { osClient } = require("../clients/opensearchClient");
-const { simpleSearch } = require("../retrieval/simpleSearch");
 const { writeSSE, streamAnswer } = require("../generation/streaming");
-const { OPENSEARCH_INDEX_NAME, DEFAULT_TOP_K } = require("../config");
+const { DEFAULT_TOP_K } = require("../config");
+const config = require("../config");
 const { validateBody } = require("../middleware/validate");
 const { StreamAskBodySchema } = require("../schemas/askSchema");
 const { RetrievalHitSchema } = require("../schemas/retrievalSchemas");
+const { createPipeline } = require("../retrieval/createPipeline");
+const { createContext } = require("../retrieval/context");
 
 const router = express.Router();
+
+// Create the retrieval pipeline once at startup (all stages are stateless per-run)
+const pipeline = createPipeline(config);
 
 router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) => {
   try {
@@ -25,8 +28,6 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
     res.flushHeaders();
 
     // Register close handler early so we detect client disconnects during retrieval or generation.
-    // We use res.writableEnded / res.destroyed (Node built-ins) to check state rather than a
-    // separate flag, avoiding any ordering concerns.
     res.on("close", () => {
       console.log("[API /stream-ask] Client closed connection.");
     });
@@ -38,23 +39,18 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
     if (userId) console.log(`[API /stream-ask] Request from user: ${userId}`);
     console.log("---------------------------------");
 
-    const top_k_for_generation =
-      typeof top_k === "number" ? top_k : DEFAULT_TOP_K;
+    const topK = typeof top_k === "number" ? top_k : DEFAULT_TOP_K;
 
-    console.log("[Retrieval Stage 1] Performing initial broad search...");
-    const initialHits = await simpleSearch({
-      term: query,
-      embed: embedText,
-      os: osClient,
-      index: OPENSEARCH_INDEX_NAME,
-      userId,
-      documents,
-    });
+    // Run the full retrieval pipeline (HyDE → Embed → Search → Fetch → Dedup → Rerank → TopK)
+    const context = createContext({ query, userId, documents, topK, config });
+    const result = await pipeline.run(context);
 
     if (res.writableEnded || res.destroyed) return;
 
-    if (!initialHits || initialHits.length === 0) {
-      console.warn("[stream-ask] No documents found in initial search.");
+    const selectedDocs = result.selectedDocs || [];
+
+    if (selectedDocs.length === 0) {
+      console.warn("[stream-ask] No documents found after pipeline.");
       writeSSE(res, {
         choices: [
           { delta: { content: "I could not find any relevant information." } },
@@ -68,24 +64,16 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
       return;
     }
 
-    // Stage 2: Context-aware search refinement
-    // TODO: Activate two-stage retrieval by uncommenting the block below once
-    // provider configuration is stabilised (Issue #100 / routes/streamAsk.js).
-    // const initialContext = initialHits.map((hit) => hit._source.text).join("\n\n---\n\n");
-    // const refinedPlan = await createRefinedSearchPlan(query, initialContext);
-    // const finalParentDocs = await runSteps({ plan: refinedPlan, embed: embedText, os: osClient, index: OPENSEARCH_INDEX_NAME, userId, documents });
-    const finalParentDocs = initialHits;
-
     // Validate hits against the canonical schema; log and exclude invalid hits
-    const validHits = finalParentDocs.filter((hit) => {
-      const result = RetrievalHitSchema.safeParse(hit);
-      if (!result.success) {
+    const validHits = selectedDocs.filter((hit) => {
+      const r = RetrievalHitSchema.safeParse(hit);
+      if (!r.success) {
         console.warn(
           `[API /stream-ask] Excluding invalid hit (id=${hit._id}):`,
-          result.error.issues
+          r.error.issues
         );
       }
-      return result.success;
+      return r.success;
     });
 
     const source_documents = validHits
@@ -93,9 +81,9 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
         text: h._source?.text,
         metadata: h._source?.metadata,
         initial_score: h._score,
+        rerank_score: h.rerankScore,
       }))
-      .filter((doc) => doc.text?.trim())
-      .slice(0, top_k_for_generation);
+      .filter((doc) => doc.text?.trim());
 
     if (res.writableEnded || res.destroyed) return;
 

@@ -151,6 +151,7 @@ export const streamQuery = async (
           if (delta?.content) {
             onTextChunk(delta.content);
           } else if (delta?.custom_meta?.citations) {
+            // Support both new structured citation format and legacy format
             onSources(delta.custom_meta.citations);
           }
         } catch (e) {
