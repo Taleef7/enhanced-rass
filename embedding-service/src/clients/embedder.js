@@ -13,9 +13,11 @@ const {
 const { OPENAI_API_KEY, GEMINI_API_KEY } = process.env;
 
 let embeddings;
+let EMBEDDING_MODEL_NAME;
 
 if (EMBEDDING_PROVIDER === "gemini") {
   if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is required.");
+  EMBEDDING_MODEL_NAME = GEMINI_EMBED_MODEL_NAME;
   embeddings = new GoogleGenerativeAIEmbeddings({
     apiKey: GEMINI_API_KEY,
     modelName: GEMINI_EMBED_MODEL_NAME,
@@ -26,6 +28,7 @@ if (EMBEDDING_PROVIDER === "gemini") {
   );
 } else {
   if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is required.");
+  EMBEDDING_MODEL_NAME = OPENAI_EMBED_MODEL_NAME;
   embeddings = new OpenAIEmbeddings({
     apiKey: OPENAI_API_KEY,
     model: OPENAI_EMBED_MODEL_NAME,
@@ -35,4 +38,4 @@ if (EMBEDDING_PROVIDER === "gemini") {
   );
 }
 
-module.exports = { embeddings };
+module.exports = { embeddings, EMBEDDING_MODEL_NAME };

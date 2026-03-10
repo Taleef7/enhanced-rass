@@ -17,9 +17,15 @@ const streamAskRoutes = require("./src/proxy/streamAsk.js");
 const chatCompletionsRoutes = require("./src/proxy/chatCompletions.js");
 const userDocumentsRoutes = require("./src/proxy/userDocuments.js");
 const transcribeRoutes = require("./src/proxy/transcribe.js");
+const ingestStatusRoutes = require("./src/proxy/ingestStatus.js");
 
 // Gateway handlers
 const mcpTransportRoutes = require("./src/gateway/mcpTransport.js");
+
+// Phase B routes
+const documentRoutes = require("./src/routes/documents.js");
+const knowledgeBaseRoutes = require("./src/routes/knowledgeBases.js");
+const internalServiceRoutes = require("./src/routes/internalService.js");
 
 const app = express();
 app.use(cors());
@@ -47,6 +53,16 @@ app.use(embedUploadRoutes);
 app.use(transcribeRoutes);
 app.use(streamAskRoutes);
 app.use(userDocumentsRoutes);
+app.use(ingestStatusRoutes);
+
+// --- Phase B: Internal service routes (service-to-service, no JWT) ---
+app.use(internalServiceRoutes);
+
+// --- Phase B: Document registry API ---
+app.use(documentRoutes);
+
+// --- Phase B: Knowledge Base management API ---
+app.use(knowledgeBaseRoutes);
 
 // --- Legacy simple-ask (deprecated) ---
 // @deprecated Use /api/stream-ask instead.

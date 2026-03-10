@@ -1,104 +1,101 @@
 // embedding-service/src/routes/upload.js
-// POST /upload — Accepts one or more files, runs parent/child chunking,
-// embeds child chunks into OpenSearch, and stores parent chunks in the docstore.
+// POST /upload — Accepts a file, writes it to disk, enqueues an async ingestion job,
+// and immediately returns HTTP 202 with { jobId, documentId, status: "queued" }.
+// Actual ingestion (parse → chunk → embed → index) is handled by ingestionWorker.js.
 
 const express = require("express");
 const multer = require("multer");
-const { v4: uuidv4 } = require("uuid");
-const fs = require("fs-extra");
 const path = require("path");
-const {
-  OpenSearchVectorStore,
-} = require("@langchain/community/vectorstores/opensearch");
+const fs = require("fs-extra");
+const { v4: uuidv4 } = require("uuid");
 
-const { openSearchClient } = require("../clients/opensearchClient");
-const { embeddings } = require("../clients/embedder");
-const { getDocstore } = require("../clients/redisClient");
-const { getLoader } = require("../ingestion/parser");
-const { parentSplitter, childSplitter } = require("../ingestion/chunker");
-const { OPENSEARCH_INDEX_NAME } = require("../config");
+const { ingestionQueue } = require("../queue/ingestionQueue");
 const { validateBody } = require("../middleware/validate");
 const { UploadBodySchema } = require("../schemas/uploadSchema");
 
+// Persist uploaded files to disk so the async worker can access them.
 fs.ensureDirSync("./temp");
-const upload = multer({ dest: "./temp" });
+const storage = multer.diskStorage({
+  destination: "./temp",
+  filename: (_req, file, cb) => {
+    const unique = `${Date.now()}-${uuidv4()}${path.extname(file.originalname)}`;
+    cb(null, unique);
+  },
+});
+const upload = multer({ storage });
 
 const router = express.Router();
 
-router.post("/upload", upload.array("files"), validateBody(UploadBodySchema), async (req, res) => {
-  const files = req.files;
-  const { userId } = req.validatedBody;
+router.post(
+  "/upload",
+  upload.array("files"),
+  validateBody(UploadBodySchema),
+  async (req, res) => {
+    const files = req.files;
+    const { userId } = req.validatedBody;
+    const kbId = req.body.kbId || null;
+    // documentId may be pre-assigned by the mcp-server upload proxy
+    const preassignedDocumentId = req.body.documentId || null;
+    const chunkingStrategyOverride = req.body.chunkingStrategy || null;
 
-  if (!files || files.length === 0) {
-    return res.status(400).json({ error: "No files uploaded." });
-  }
-
-  console.log(`[Upload] Received ${files.length} file(s) from user: ${userId}`);
-
-  try {
-    const docstore = getDocstore();
-    if (!docstore) {
-      return res.status(503).json({ error: "Document store is not yet initialized. Please retry in a moment." });
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: "No files uploaded." });
     }
 
-    for (const file of files) {
-      console.log(`[Processing] Starting: ${file.originalname}`);
-      const loader = getLoader(file.path, file.originalname);
-      const docs = await loader.load();
+    console.log(
+      `[Upload] Received ${files.length} file(s) from user: ${userId}`
+    );
 
-      docs.forEach((doc) => {
-        doc.metadata.userId = userId;
-        doc.metadata.originalFilename = file.originalname;
-        doc.metadata.uploadedAt = new Date().toISOString();
-      });
+    try {
+      const jobs = [];
 
-      const parentChunks = await parentSplitter.splitDocuments(docs);
-      const parentDocIds = parentChunks.map(() => uuidv4());
+      for (const file of files) {
+        // Use pre-assigned documentId from mcp-server, or generate a new one
+        const documentId = preassignedDocumentId || uuidv4();
 
-      await docstore.mset(
-        parentChunks.map((chunk, i) => [parentDocIds[i], chunk])
-      );
+        const job = await ingestionQueue.add(
+          "ingest",
+          {
+            filePath: file.path,
+            originalName: file.originalname,
+            mimeType: file.mimetype,
+            fileSizeBytes: file.size,
+            userId,
+            documentId,
+            kbId,
+            chunkingStrategyOverride,
+          },
+          { jobId: uuidv4() }
+        );
 
-      let childChunks = [];
-      for (let i = 0; i < parentChunks.length; i++) {
-        const subDocs = await childSplitter.splitDocuments([parentChunks[i]]);
-        subDocs.forEach((doc) => {
-          doc.metadata.parentId = parentDocIds[i];
-          doc.metadata.userId = parentChunks[i].metadata.userId;
-          doc.metadata.originalFilename = parentChunks[i].metadata.originalFilename;
-          doc.metadata.uploadedAt = parentChunks[i].metadata.uploadedAt;
-          childChunks.push(doc);
+        console.log(
+          `[Upload] Enqueued job ${job.id} for file: ${file.originalname} (doc: ${documentId})`
+        );
+
+        jobs.push({
+          jobId: job.id,
+          documentId,
+          originalName: file.originalname,
+          status: "queued",
         });
       }
 
-      const BATCH_SIZE = parseInt(process.env.BATCH_SIZE, 10) || 2000;
+      // Return 202 Accepted with job identifiers — client should poll /ingest/status/:jobId
+      res.status(202).json({
+        message: "Files accepted for ingestion.",
+        jobs,
+      });
+    } catch (error) {
+      console.error("[Upload] Error enqueuing ingestion job:", error);
 
-      if (childChunks.length > 0) {
-        console.log(
-          `[Indexing] ${childChunks.length} child chunks in batches of ${BATCH_SIZE}`
-        );
-        for (let i = 0; i < childChunks.length; i += BATCH_SIZE) {
-          const batch = childChunks.slice(i, i + BATCH_SIZE);
-          const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-          console.log(`  → Bulk batch #${batchNum}: ${batch.length} docs`);
-          await OpenSearchVectorStore.fromDocuments(batch, embeddings, {
-            client: openSearchClient,
-            indexName: OPENSEARCH_INDEX_NAME,
-          });
-        }
+      // Clean up temp files if enqueue failed
+      for (const file of files) {
+        fs.unlink(file.path).catch(() => {});
       }
 
-      console.log(
-        `[Success] Finished ${file.originalname}: ${parentChunks.length} parent chunks, ${childChunks.length} child chunks.`
-      );
-      await fs.unlink(file.path);
+      res.status(500).json({ error: "Failed to enqueue ingestion job." });
     }
-
-    res.status(200).json({ success: true, message: "All files processed." });
-  } catch (error) {
-    console.error("[Upload] Critical error:", error);
-    res.status(500).json({ error: "Error during upload." });
   }
-});
+);
 
 module.exports = router;

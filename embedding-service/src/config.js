@@ -29,6 +29,7 @@ console.log("[Config] Loaded and validated configuration from config.yml");
 
 module.exports = {
   EMBEDDING_PROVIDER: config.EMBEDDING_PROVIDER,
+  CHUNKING_STRATEGY: config.CHUNKING_STRATEGY,
   OPENSEARCH_HOST: config.OPENSEARCH_HOST,
   OPENSEARCH_PORT: config.OPENSEARCH_PORT,
   OPENSEARCH_INDEX_NAME: config.OPENSEARCH_INDEX_NAME,

@@ -46,6 +46,14 @@ const ConfigSchema = z
 
     EMBEDDING_SERVICE_PORT: portRange,
 
+    CHUNKING_STRATEGY: z
+      .enum(["fixed_size", "recursive_character", "sentence_window"], {
+        errorMap: () => ({
+          message: "Must be one of: fixed_size, recursive_character, sentence_window",
+        }),
+      })
+      .default("recursive_character"),
+
     EMBED_DIM: z
       .number()
       .int()
