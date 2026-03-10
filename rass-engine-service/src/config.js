@@ -23,6 +23,7 @@ const REQUIRED_FIELDS = [
   "OPENSEARCH_PORT",
   "OPENSEARCH_INDEX_NAME",
   "RASS_ENGINE_PORT",
+  "EMBEDDING_SERVICE_PORT",
   "DEFAULT_K_OPENSEARCH_HITS",
   "EMBED_DIM",
 ];
@@ -68,10 +69,16 @@ const {
   OPENSEARCH_PORT,
   OPENSEARCH_INDEX_NAME,
   RASS_ENGINE_PORT,
+  EMBEDDING_SERVICE_PORT,
   DEFAULT_K_OPENSEARCH_HITS,
   EMBED_DIM,
   search: { DEFAULT_TOP_K },
 } = rawConfig;
+
+// Derive the embedding-service base URL from config; override via env var for local dev.
+const EMBEDDING_SERVICE_BASE_URL =
+  process.env.EMBEDDING_SERVICE_URL ||
+  `http://embedding-service:${EMBEDDING_SERVICE_PORT}`;
 
 console.log("[Config] Loaded and validated configuration from config.yml");
 
@@ -86,6 +93,8 @@ module.exports = {
   OPENSEARCH_PORT,
   OPENSEARCH_INDEX_NAME,
   RASS_ENGINE_PORT,
+  EMBEDDING_SERVICE_PORT,
+  EMBEDDING_SERVICE_BASE_URL,
   DEFAULT_K_OPENSEARCH_HITS,
   EMBED_DIM,
   DEFAULT_TOP_K,

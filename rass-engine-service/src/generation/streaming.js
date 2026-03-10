@@ -29,12 +29,6 @@ function writeSSE(res, data) {
             LLM_PROVIDER === "openai" ? OPENAI_MODEL_NAME : GEMINI_MODEL_NAME,
           ...data,
         });
-  console.log(
-    "[RASS->SSE]",
-    typeof data === "string"
-      ? data
-      : JSON.stringify(data).substring(0, 100) + "..."
-  );
   res.write(`data: ${chunk}\n\n`);
 }
 

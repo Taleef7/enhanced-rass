@@ -1,5 +1,6 @@
 // embedding-service/index.js
-// Thin orchestrator: loads modules, registers routes, and starts the server.
+// Thin orchestrator: initializes dependencies, then binds the server.
+// Dependencies (Redis docstore, OpenSearch index) are ready before any request is served.
 
 const express = require("express");
 const cors = require("cors");
@@ -22,9 +23,18 @@ app.use(documentRoutes);
 app.use(adminRoutes);
 app.use(healthRoutes);
 
-app.listen(EMBEDDING_SERVICE_PORT, async () => {
-  console.log(`Embedding Service running on port ${EMBEDDING_SERVICE_PORT}`);
-  await initializeDocstore();
-  await ensureIndexExists();
-  console.log("[Init] Embedding Service fully initialized and ready");
-});
+async function startServer() {
+  try {
+    await initializeDocstore();
+    await ensureIndexExists();
+    app.listen(EMBEDDING_SERVICE_PORT, () => {
+      console.log(`Embedding Service running on port ${EMBEDDING_SERVICE_PORT}`);
+      console.log("[Init] Embedding Service fully initialized and ready");
+    });
+  } catch (err) {
+    console.error("[Fatal] Service initialization failed:", err);
+    process.exit(1);
+  }
+}
+
+startServer();

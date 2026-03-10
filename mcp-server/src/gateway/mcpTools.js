@@ -8,6 +8,7 @@ const axios = require("axios");
 const FormData = require("form-data");
 const fs = require("fs");
 const path = require("path");
+const { RASS_ENGINE_BASE_URL, EMBEDDING_SERVICE_BASE_URL } = require("../config");
 
 const server = new McpServer({
   name: "RASS-MCP-Server",
@@ -27,7 +28,7 @@ server.tool(
   },
   async (tool_args) => {
     console.log(`[MCP Tool 'queryRASS'] Executing with args:`, tool_args);
-    const rassEngineUrl = "http://rass-engine-service:8000/ask";
+    const rassEngineUrl = `${RASS_ENGINE_BASE_URL}/ask`;
     const response = await axios.post(rassEngineUrl, tool_args);
     return {
       content: [{ type: "text", text: JSON.stringify(response.data, null, 2) }],
@@ -64,7 +65,7 @@ server.tool(
       path.basename(fullPath)
     );
 
-    const embeddingServiceUrl = "http://embedding-service:8001/upload";
+    const embeddingServiceUrl = `${EMBEDDING_SERVICE_BASE_URL}/upload`;
     const response = await axios.post(embeddingServiceUrl, form, {
       headers: { ...form.getHeaders() },
     });

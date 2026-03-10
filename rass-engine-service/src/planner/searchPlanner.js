@@ -3,8 +3,7 @@
 // based on an initial retrieval context.
 //
 // TODO: The createRefinedSearchPlan() integration is currently commented out in
-// the main ask() flow (generation/streaming.js) pending provider config cleanup.
-// Uncomment the refinedPlan block there to activate two-stage retrieval.
+// routes/streamAsk.js. Uncomment the refinedPlan block there to activate two-stage retrieval.
 
 const { DEFAULT_K_OPENSEARCH_HITS } = require("../config");
 const { llmClient } = require("../clients/llmClient");

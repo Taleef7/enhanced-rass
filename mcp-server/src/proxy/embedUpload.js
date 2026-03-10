@@ -6,6 +6,7 @@ const axios = require("axios");
 const FormData = require("form-data");
 const multer = require("multer");
 const authMiddleware = require("../authMiddleware");
+const { EMBEDDING_SERVICE_BASE_URL } = require("../config");
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
@@ -31,7 +32,7 @@ router.post(
       });
       form.append("userId", req.user.userId);
 
-      const embeddingServiceUrl = "http://embedding-service:8001/upload";
+      const embeddingServiceUrl = `${EMBEDDING_SERVICE_BASE_URL}/upload`;
       const response = await axios.post(embeddingServiceUrl, form, {
         headers: { ...form.getHeaders() },
         timeout: process.env.EMBEDDING_SERVICE_TIMEOUT || 300000,

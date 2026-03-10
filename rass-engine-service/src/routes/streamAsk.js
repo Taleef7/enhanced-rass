@@ -1,5 +1,7 @@
 // rass-engine-service/src/routes/streamAsk.js
 // POST /stream-ask — Streaming RAG query endpoint (SSE).
+// userId is optional: when provided, results are scoped to that user;
+// when absent (e.g. LibreChat / MCP tool proxy), results are unscoped.
 
 const express = require("express");
 const { embedText } = require("../clients/embedder");
@@ -13,8 +15,8 @@ const router = express.Router();
 router.post("/stream-ask", async (req, res) => {
   try {
     const { query, documents, userId, top_k } = req.body;
-    if (!query || !userId) {
-      return res.status(400).json({ error: "Missing query or userId" });
+    if (!query) {
+      return res.status(400).json({ error: "Missing query" });
     }
 
     res.setHeader("Content-Type", "text/event-stream");
@@ -22,11 +24,18 @@ router.post("/stream-ask", async (req, res) => {
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
+    // Register close handler early so we detect client disconnects during retrieval or generation.
+    // We use res.writableEnded / res.destroyed (Node built-ins) to check state rather than a
+    // separate flag, avoiding any ordering concerns.
+    res.on("close", () => {
+      console.log("[API /stream-ask] Client closed connection.");
+    });
+
     console.log("---------------------------------");
     console.log(
       `[API /stream-ask] Received query: "${query}", top_k: ${top_k}`
     );
-    console.log(`[API /stream-ask] Received query from user: ${userId}`);
+    if (userId) console.log(`[API /stream-ask] Request from user: ${userId}`);
     console.log("---------------------------------");
 
     const top_k_for_generation =
@@ -41,6 +50,8 @@ router.post("/stream-ask", async (req, res) => {
       userId,
       documents,
     });
+
+    if (res.writableEnded || res.destroyed) return;
 
     if (!initialHits || initialHits.length === 0) {
       console.warn("[stream-ask] No documents found in initial search.");
@@ -59,7 +70,7 @@ router.post("/stream-ask", async (req, res) => {
 
     // Stage 2: Context-aware search refinement
     // TODO: Activate two-stage retrieval by uncommenting the block below once
-    // provider configuration is stabilised (Issue #100 / searchPlanner.js).
+    // provider configuration is stabilised (Issue #100 / routes/streamAsk.js).
     // const initialContext = initialHits.map((hit) => hit._source.text).join("\n\n---\n\n");
     // const refinedPlan = await createRefinedSearchPlan(query, initialContext);
     // const finalParentDocs = await runSteps({ plan: refinedPlan, embed: embedText, os: osClient, index: OPENSEARCH_INDEX_NAME, userId, documents });
@@ -74,15 +85,13 @@ router.post("/stream-ask", async (req, res) => {
       .filter((doc) => doc.text?.trim())
       .slice(0, top_k_for_generation);
 
+    if (res.writableEnded || res.destroyed) return;
+
     console.log(
       `[Generation] Streaming with ${source_documents.length} documents...`
     );
 
     await streamAnswer(res, query, source_documents);
-
-    res.on("close", () => {
-      console.log("[API /stream-ask] Client closed connection.");
-    });
   } catch (e) {
     console.error("[API /stream-ask] Endpoint error:", e);
     if (!res.headersSent) {

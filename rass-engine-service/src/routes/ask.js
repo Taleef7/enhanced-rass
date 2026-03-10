@@ -32,8 +32,6 @@ router.post("/ask", async (req, res) => {
       embed: embedText,
       os: osClient,
       index: OPENSEARCH_INDEX_NAME,
-      userId: undefined,
-      documents: undefined,
     });
 
     if (!initialHits || initialHits.length === 0) {

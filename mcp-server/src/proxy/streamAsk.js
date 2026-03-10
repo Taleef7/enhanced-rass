@@ -4,6 +4,7 @@
 const express = require("express");
 const axios = require("axios");
 const authMiddleware = require("../authMiddleware");
+const { RASS_ENGINE_BASE_URL } = require("../config");
 
 const router = express.Router();
 
@@ -18,7 +19,7 @@ router.post("/api/stream-ask", authMiddleware, async (req, res) => {
   }
 
   try {
-    const rassEngineStreamUrl = "http://rass-engine-service:8000/stream-ask";
+    const rassEngineStreamUrl = `${RASS_ENGINE_BASE_URL}/stream-ask`;
 
     const response = await axios.post(
       rassEngineStreamUrl,

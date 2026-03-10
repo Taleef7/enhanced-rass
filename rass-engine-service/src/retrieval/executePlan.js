@@ -4,8 +4,7 @@
 
 const axios = require("axios");
 const { simpleSearch } = require("./simpleSearch");
-
-const EMBEDDING_SERVICE_URL = "http://embedding-service:8001";
+const { EMBEDDING_SERVICE_BASE_URL } = require("../config");
 
 /**
  * Executes a multi-step search plan, deduplicates results by parent document ID,
@@ -65,7 +64,7 @@ async function runSteps({ plan, embed, os, index, userId, documents }) {
 
   try {
     const response = await axios.post(
-      `${EMBEDDING_SERVICE_URL}/get-documents`,
+      `${EMBEDDING_SERVICE_BASE_URL}/get-documents`,
       { ids: uniqueParentIds }
     );
     const parentDocuments = response.data.documents.filter((doc) => doc !== null);

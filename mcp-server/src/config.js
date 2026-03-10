@@ -17,6 +17,8 @@ const REQUIRED_FIELDS = [
   "OPENSEARCH_HOST",
   "OPENSEARCH_PORT",
   "OPENSEARCH_INDEX_NAME",
+  "RASS_ENGINE_PORT",
+  "EMBEDDING_SERVICE_PORT",
 ];
 
 const missing = REQUIRED_FIELDS.filter(
@@ -34,7 +36,18 @@ const {
   OPENSEARCH_HOST,
   OPENSEARCH_PORT,
   OPENSEARCH_INDEX_NAME,
+  RASS_ENGINE_PORT,
+  EMBEDDING_SERVICE_PORT,
 } = rawConfig;
+
+// Derive upstream service base URLs from config; env vars allow override for local dev.
+const RASS_ENGINE_BASE_URL =
+  process.env.RASS_ENGINE_URL ||
+  `http://rass-engine-service:${RASS_ENGINE_PORT}`;
+
+const EMBEDDING_SERVICE_BASE_URL =
+  process.env.EMBEDDING_SERVICE_URL ||
+  `http://embedding-service:${EMBEDDING_SERVICE_PORT}`;
 
 console.log("[Config] Loaded and validated configuration from config.yml");
 
@@ -43,4 +56,8 @@ module.exports = {
   OPENSEARCH_HOST,
   OPENSEARCH_PORT,
   OPENSEARCH_INDEX_NAME,
+  RASS_ENGINE_PORT,
+  EMBEDDING_SERVICE_PORT,
+  RASS_ENGINE_BASE_URL,
+  EMBEDDING_SERVICE_BASE_URL,
 };

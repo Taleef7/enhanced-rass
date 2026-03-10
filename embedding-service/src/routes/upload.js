@@ -11,7 +11,7 @@ const {
   OpenSearchVectorStore,
 } = require("@langchain/community/vectorstores/opensearch");
 
-const { openSearchClient, ensureIndexExists } = require("../clients/opensearchClient");
+const { openSearchClient } = require("../clients/opensearchClient");
 const { embeddings } = require("../clients/embedder");
 const { getDocstore } = require("../clients/redisClient");
 const { getLoader } = require("../ingestion/parser");
@@ -40,7 +40,10 @@ router.post("/upload", upload.array("files"), async (req, res) => {
   console.log(`[Upload] Received ${files.length} file(s) from user: ${userId}`);
 
   try {
-    await ensureIndexExists();
+    const docstore = getDocstore();
+    if (!docstore) {
+      return res.status(503).json({ error: "Document store is not yet initialized. Please retry in a moment." });
+    }
 
     for (const file of files) {
       console.log(`[Processing] Starting: ${file.originalname}`);
@@ -56,7 +59,6 @@ router.post("/upload", upload.array("files"), async (req, res) => {
       const parentChunks = await parentSplitter.splitDocuments(docs);
       const parentDocIds = parentChunks.map(() => uuidv4());
 
-      const docstore = getDocstore();
       await docstore.mset(
         parentChunks.map((chunk, i) => [parentDocIds[i], chunk])
       );

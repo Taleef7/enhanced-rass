@@ -14,6 +14,8 @@ const VALID_CONFIG = {
   OPENSEARCH_HOST: "opensearch",
   OPENSEARCH_PORT: 9200,
   OPENSEARCH_INDEX_NAME: "knowledge_base",
+  RASS_ENGINE_PORT: 8000,
+  EMBEDDING_SERVICE_PORT: 8001,
 };
 
 function loadConfig() {
@@ -33,6 +35,16 @@ describe("mcp-server/src/config.js", () => {
     expect(config.OPENSEARCH_HOST).toBe("opensearch");
     expect(config.OPENSEARCH_PORT).toBe(9200);
     expect(config.OPENSEARCH_INDEX_NAME).toBe("knowledge_base");
+    expect(config.RASS_ENGINE_PORT).toBe(8000);
+    expect(config.EMBEDDING_SERVICE_PORT).toBe(8001);
+  });
+
+  test("exports derived base URLs built from config ports", () => {
+    fs.readFileSync.mockReturnValue(yaml.dump(VALID_CONFIG));
+    const config = loadConfig();
+
+    expect(config.RASS_ENGINE_BASE_URL).toBe("http://rass-engine-service:8000");
+    expect(config.EMBEDDING_SERVICE_BASE_URL).toBe("http://embedding-service:8001");
   });
 
   test("throws a descriptive error when a required field is missing", () => {
@@ -41,6 +53,14 @@ describe("mcp-server/src/config.js", () => {
     fs.readFileSync.mockReturnValue(yaml.dump(missingFieldConfig));
 
     expect(() => loadConfig()).toThrow(/OPENSEARCH_INDEX_NAME/);
+  });
+
+  test("throws when RASS_ENGINE_PORT is missing", () => {
+    const missingFieldConfig = { ...VALID_CONFIG };
+    delete missingFieldConfig.RASS_ENGINE_PORT;
+    fs.readFileSync.mockReturnValue(yaml.dump(missingFieldConfig));
+
+    expect(() => loadConfig()).toThrow(/RASS_ENGINE_PORT/);
   });
 
   test("throws a descriptive error when config.yml cannot be read", () => {
