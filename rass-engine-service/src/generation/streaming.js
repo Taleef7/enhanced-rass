@@ -9,7 +9,7 @@ const {
   GEMINI_MODEL_NAME,
 } = require("../config");
 const { buildGenerationPrompt } = require("./generator");
-const { CitationSchema } = require("../schemas/retrievalSchemas")
+const { CitationSchema } = require("../schemas/retrievalSchemas");
 
 /**
  * Writes a single Server-Sent Event chunk in OpenAI-compatible format.
