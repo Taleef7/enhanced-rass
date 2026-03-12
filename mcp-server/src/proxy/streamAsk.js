@@ -23,7 +23,10 @@ router.post("/api/stream-ask", authMiddleware, validateBody(StreamAskBodySchema)
     const response = await axios.post(
       rassEngineStreamUrl,
       { query, documents, userId },
-      { responseType: "stream" }
+      {
+        responseType: "stream",
+        headers: { "x-correlation-id": req.correlationId },
+      }
     );
 
     res.setHeader("Content-Type", "text/event-stream");

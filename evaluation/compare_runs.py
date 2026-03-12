@@ -39,10 +39,30 @@ TRACKED_METRICS = [
     "recall_at_5",
 ]
 
+# Default maximum allowed latency regression (20%) when not specified in the baseline
+DEFAULT_LATENCY_REGRESSION_THRESHOLD_PCT = 20
+
 
 def load_run(path: Path) -> dict:
     with open(path) as f:
-        return json.load(f)
+        data = json.load(f)
+    # Normalize BASELINE.json format (flat 'metrics' dict) to the run format (aggregates.*.mean)
+    if "metrics" in data and "aggregates" not in data:
+        metrics = data["metrics"]
+        data["aggregates"] = {
+            k.replace("_mean", ""): {"mean": v}
+            for k, v in metrics.items()
+            if k.endswith("_mean") and not k.startswith("latency")
+        }
+        # Normalize latency
+        if "latency_p95_ms" in metrics:
+            if "latency_ms" not in data.get("aggregates", {}):
+                data["aggregates"]["latency_ms"] = {}
+            data["aggregates"]["latency_ms"]["p95"] = metrics["latency_p95_ms"]
+        # Copy regression thresholds into the expected location
+        if "regression_thresholds_pct" in data:
+            data["_regression_thresholds"] = data["regression_thresholds_pct"]
+    return data
 
 
 def compare(baseline: dict, current: dict, threshold: float) -> bool:
@@ -50,9 +70,11 @@ def compare(baseline: dict, current: dict, threshold: float) -> bool:
     Compare aggregate means of tracked metrics.
     Returns True if all metrics pass (no regressions beyond threshold).
     Prints a comparison table.
+    If the baseline contains _regression_thresholds, those override the global threshold.
     """
     baseline_agg = baseline.get("aggregates", {})
     current_agg = current.get("aggregates", {})
+    per_metric_thresholds = baseline.get("_regression_thresholds", {}) or baseline.get("regression_thresholds_pct", {})
 
     log.info(f"\n{'='*70}")
     log.info(f"Regression comparison")
@@ -77,7 +99,12 @@ def compare(baseline: dict, current: dict, threshold: float) -> bool:
         # Relative degradation (only care about negative deltas)
         relative_degradation = (base_val - curr_val) / max(base_val, 1e-9) if base_val > 0 else 0
 
-        if relative_degradation > threshold:
+        # Use per-metric threshold from BASELINE.json if available (stored as % integer)
+        effective_threshold = threshold
+        if metric in per_metric_thresholds:
+            effective_threshold = per_metric_thresholds[metric] / 100.0
+
+        if relative_degradation > effective_threshold:
             status = "FAIL ✗"
             all_pass = False
         elif delta < 0:
@@ -93,12 +120,14 @@ def compare(baseline: dict, current: dict, threshold: float) -> bool:
 
     log.info(f"{'='*70}")
 
-    # Also check latency p95 (allow up to 20% latency increase, independent of threshold)
+    # Also check latency p95 (allow up to 20% latency increase by default,
+    # or the baseline-specified threshold if available)
     base_lat = baseline_agg.get("latency_ms", {}).get("p95")
     curr_lat = current_agg.get("latency_ms", {}).get("p95")
     if base_lat and curr_lat:
+        lat_threshold_pct = per_metric_thresholds.get("latency_p95", DEFAULT_LATENCY_REGRESSION_THRESHOLD_PCT) / 100.0
         lat_change = (curr_lat - base_lat) / max(base_lat, 1)
-        lat_status = "WARN ↑" if lat_change > 0.20 else "OK"
+        lat_status = "WARN ↑" if lat_change > lat_threshold_pct else "OK"
         log.info(f"  {'latency_ms (p95)':30s}  {base_lat:>10.1f}  {curr_lat:>10.1f}  "
                  f"{curr_lat - base_lat:>+10.1f}  {lat_status:>10}")
 

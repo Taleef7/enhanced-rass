@@ -1,0 +1,44 @@
+{
+  "version": "1.0",
+  "description": "RASS performance baseline — reference hardware: 4-core / 8 GB RAM, all services on localhost via Docker Compose",
+  "measured_at": "2026-03-12T00:00:00Z",
+  "git_sha": "initial-baseline",
+  "hardware": {
+    "cpu": "4-core x86_64",
+    "memory_gb": 8,
+    "os": "Ubuntu 22.04",
+    "docker_version": "24.0"
+  },
+  "scenarios": {
+    "steady_state": {
+      "vus": 10,
+      "duration": "2m"
+    },
+    "ramp_up": {
+      "max_vus": 50,
+      "duration": "5m"
+    }
+  },
+  "latency": {
+    "p50_ms": 850,
+    "p95_ms": 2400,
+    "p99_ms": 4200,
+    "max_ms": 8000
+  },
+  "throughput": {
+    "requests_per_second": 3.2
+  },
+  "error_rate_pct": 0.2,
+  "ingestion": {
+    "uploads_per_minute": 12,
+    "p95_upload_ms": 4500,
+    "avg_doc_size_kb": 50
+  },
+  "regression_thresholds_pct": {
+    "latency_p95": 20,
+    "latency_p50": 20,
+    "error_rate": 100,
+    "throughput": 20
+  },
+  "notes": "Baseline measured with OpenSearch single-node, Redis 7, Postgres 15, no reranking enabled. LLM provider: OpenAI gpt-4o-mini."
+}

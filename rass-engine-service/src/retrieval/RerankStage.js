@@ -49,6 +49,8 @@ class RerankStage extends Stage {
       return context;
     }
 
+    // Use RERANK_TOP_N from config (not the generation topK) so the reranker
+    // returns a larger candidate set that TopKSelectStage can then trim down to topK.
     const rerankTopN =
       this.config.RERANK_TOP_N != null ? this.config.RERANK_TOP_N : context.topK;
 

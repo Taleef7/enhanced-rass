@@ -110,9 +110,6 @@ class HybridSearchStage extends Stage {
       return context;
     });
   }
-
-    return context;
-  }
 }
 
 module.exports = { HybridSearchStage };

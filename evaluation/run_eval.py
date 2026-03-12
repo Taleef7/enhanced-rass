@@ -227,7 +227,11 @@ def main():
                         help="Output path for results JSON (auto-named if omitted)")
     parser.add_argument("--top-k", type=int, default=5,
                         help="Number of documents to retrieve per query")
+    parser.add_argument("--max-queries", type=int, default=None,
+                        help="Limit evaluation to the first N queries (for CI speed)")
     parser.add_argument("--verbose", action="store_true", help="Show per-query details")
+    parser.add_argument("--push-gateway", default=os.environ.get("PUSHGATEWAY_URL", ""),
+                        help="Prometheus Pushgateway URL for quality trend metrics (e.g., http://localhost:9091)")
     args = parser.parse_args()
 
     # Load test set
@@ -238,6 +242,10 @@ def main():
 
     with open(test_set_path) as f:
         test_set = json.load(f)
+
+    if args.max_queries is not None:
+        test_set = test_set[: args.max_queries]
+        log.info(f"Limiting to first {args.max_queries} queries (--max-queries)")
 
     log.info(f"Loaded {len(test_set)} test cases from {test_set_path}")
     log.info(f"RASS URL: {args.url}  top_k={args.top_k}")
@@ -353,6 +361,46 @@ def main():
     for metric, stats in aggregates.items():
         log.info(f"  {metric:25s}  mean={stats['mean']:.3f}  p50={stats['p50']:.3f}  p95={stats['p95']:.3f}")
     log.info(f"{'='*60}")
+
+    # Push metrics to Prometheus Pushgateway (optional) for Grafana quality trend panels
+    if args.push_gateway:
+        _push_metrics_to_gateway(args.push_gateway, aggregates, timestamp)
+
+
+def _push_metrics_to_gateway(gateway_url: str, aggregates: dict, run_id: str) -> None:
+    """Push evaluation metrics to Prometheus Pushgateway in text exposition format."""
+    lines = [
+        f"# HELP rass_eval_context_relevance_mean Mean context relevance score",
+        f"# TYPE rass_eval_context_relevance_mean gauge",
+        f"rass_eval_context_relevance_mean {{run_id=\"{run_id}\"}} {aggregates.get('context_relevance', {}).get('mean', 0):.4f}",
+        f"# HELP rass_eval_answer_faithfulness_mean Mean answer faithfulness score",
+        f"# TYPE rass_eval_answer_faithfulness_mean gauge",
+        f"rass_eval_answer_faithfulness_mean {{run_id=\"{run_id}\"}} {aggregates.get('answer_faithfulness', {}).get('mean', 0):.4f}",
+        f"# HELP rass_eval_answer_relevance_mean Mean answer relevance score",
+        f"# TYPE rass_eval_answer_relevance_mean gauge",
+        f"rass_eval_answer_relevance_mean {{run_id=\"{run_id}\"}} {aggregates.get('answer_relevance', {}).get('mean', 0):.4f}",
+        f"# HELP rass_eval_recall_at_5_mean Mean recall@5 score",
+        f"# TYPE rass_eval_recall_at_5_mean gauge",
+        f"rass_eval_recall_at_5_mean {{run_id=\"{run_id}\"}} {aggregates.get('recall_at_5', {}).get('mean', 0):.4f}",
+        f"# HELP rass_eval_latency_p95_ms Query latency p95 in milliseconds",
+        f"# TYPE rass_eval_latency_p95_ms gauge",
+        f"rass_eval_latency_p95_ms {{run_id=\"{run_id}\"}} {aggregates.get('latency_ms', {}).get('p95', 0):.1f}",
+        "",
+    ]
+    payload = "\n".join(lines)
+    push_url = f"{gateway_url.rstrip('/')}/metrics/job/rass_evaluation/run_id/{run_id}"
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            push_url,
+            data=payload.encode("utf-8"),
+            method="POST",
+            headers={"Content-Type": "text/plain; version=0.0.4"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            log.info(f"Pushed metrics to Pushgateway: HTTP {resp.status}")
+    except Exception as exc:
+        log.warning(f"Failed to push metrics to Pushgateway ({gateway_url}): {exc}")
 
 
 if __name__ == "__main__":

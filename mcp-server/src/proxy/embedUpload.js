@@ -87,7 +87,10 @@ router.post(
 
       const embeddingServiceUrl = `${EMBEDDING_SERVICE_BASE_URL}/upload`;
       const response = await axios.post(embeddingServiceUrl, form, {
-        headers: { ...form.getHeaders() },
+        headers: {
+          ...form.getHeaders(),
+          "x-correlation-id": req.correlationId,
+        },
         timeout: process.env.EMBEDDING_SERVICE_TIMEOUT || 30000,
       });
 

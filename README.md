@@ -493,3 +493,89 @@ cd mcp-server && npm test
 ```
 
 Swagger UI: `http://localhost:8080/api/docs` (non-production)
+
+---
+
+## Phase E Features — Observability and Proof
+
+### #124 — Distributed Tracing with OpenTelemetry
+All three Node.js services (mcp-server, rass-engine-service, embedding-service) are instrumented with OpenTelemetry auto-instrumentation and custom spans:
+- **Custom spans**: `retrieval.embedQuery`, `retrieval.hybridSearch`, `retrieval.rerank`, `ingestion.parse`, `ingestion.chunk`, `ingestion.embed`, `ingestion.index`
+- **Jaeger UI** at `http://localhost:16686` — visualise full request traces across service boundaries
+- Trace context (`traceparent` / `tracestate` headers) is propagated from mcp-server to rass-engine and embedding-service
+- Controlled by `OTEL_ENABLED` env var (set to `"false"` to disable, no code change needed)
+- Uses OTLP gRPC export to Jaeger (port 4317)
+
+Files: `*/src/otel.js`, `*/src/tracing.js`, `docker-compose.yml` (jaeger service)
+
+### #125 — Prometheus & Grafana Metrics Dashboard
+All services expose `GET /metrics` in Prometheus text format:
+- **Metrics**: `rass_requests_total`, `rass_query_latency_seconds`, `rass_ingestion_duration_seconds`, `rass_ingestion_queue_depth`, `rass_ingestion_active_workers`, `rass_http_request_duration_seconds`, `rass_llm_api_errors_total`
+- **Prometheus** at `http://localhost:9090` — scrapes all services every 15 s
+- **Grafana** at `http://localhost:3001` (admin/admin) — 5 pre-built dashboards auto-provisioned:
+  - `RASS — Overview` — request rate, error rate, query latency percentiles
+  - `RASS — Ingestion Pipeline` — queue depth, worker count, stage durations
+  - `RASS — Retrieval Pipeline` — search latency, OpenSearch timing, stream-ask rate
+  - `RASS — Service Logs` — Loki log explorer for each service + correlation ID filter
+  - `RASS — Quality Metric Trends` — evaluation metric trends over time
+- Secured with `METRICS_TOKEN` env var (optional; unprotected in local dev)
+
+Files: `*/src/metrics.js`, `*/src/routes/metrics.js`, `*/src/middleware/metricsMiddleware.js`, `monitoring/`
+
+### #126 — Performance Benchmarking Suite
+k6-based load testing suite with baseline comparison:
+- `benchmarks/query_load.js` — tests `/api/stream-ask` at 10–50 VUs; thresholds: p95 < 3 s, error rate < 1%
+- `benchmarks/ingestion_load.js` — tests `/upload` at 10 VUs with 1/10/100 KB docs
+- `benchmarks/run_benchmarks.sh` — orchestrates both tests, extracts metrics, compares against baseline, generates Markdown summary; exits non-zero on threshold breach
+- `benchmarks/baselines/baseline_v1.json` — committed reference baseline (4-core / 8 GB, no reranker)
+
+```bash
+# Run full suite (Docker Compose starts automatically)
+./benchmarks/run_benchmarks.sh
+
+# Run against already-running stack
+./benchmarks/run_benchmarks.sh --no-stack --auth-token "<jwt>"
+```
+
+### #127 — Structured Logging with Correlation IDs
+All `console.log` / `console.error` / `console.warn` calls replaced with `pino` structured logging:
+- **Log levels**: DEBUG, INFO, WARN, ERROR — configurable via `LOG_LEVEL` env var (default: `info`)
+- **Correlation IDs**: every request gets a `x-correlation-id` header (read or auto-generated UUID); propagated to all downstream services
+- **Structured fields**: every log line includes `correlationId`, `method`, `path`, `statusCode`, `durationMs`
+- **Redaction**: `Authorization` headers, cookies, passwords, and API keys are automatically redacted
+- **Loki + Promtail**: log aggregation added to Docker Compose; Grafana datasource auto-configured
+- Pretty-printed in development (`pino-pretty`), JSON in production
+
+Files: `*/src/logger.js`, `*/src/middleware/correlationId.js`, `monitoring/loki-config.yml`, `monitoring/promtail.yml`
+
+### #128 — Evaluation Discipline and CI Regression Gates
+Formal quality discipline built on top of Phase C evaluation tooling:
+- **`evaluation/BASELINE.json`** — committed baseline with measured metrics and per-metric regression thresholds (5% quality / 20% latency)
+- **CI regression gate** (`.github/workflows/eval-regression-gate.yml`) — runs on every PR to `main` touching retrieval/generation code; evaluates 5-question subset, posts PR comment, fails on regression
+- **Grafana quality trends dashboard** (`rass-quality-trends.json`) — plots `context_relevance`, `answer_faithfulness`, `recall_at_5`, and `latency_p95` over time
+- **`evaluation/README.md`** — documents test set format, how to add test cases, how to update baseline
+- **`--max-queries N`** flag added to `run_eval.py` for fast CI subset runs
+- **Prometheus Pushgateway** integration: `run_eval.py --push-gateway <url>` pushes metrics for Grafana trend visualisation
+
+```bash
+# Run regression check against committed baseline
+python evaluation/compare_runs.py \
+  --baseline evaluation/BASELINE.json \
+  --current evaluation/results/run_<timestamp>.json
+
+# Quick 5-question eval run
+python evaluation/run_eval.py --max-queries 5 --verbose
+```
+
+---
+
+## Observability Services (Phase E)
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Jaeger UI | http://localhost:16686 | Distributed trace explorer |
+| Prometheus | http://localhost:9090 | Metrics query UI |
+| Grafana | http://localhost:3001 | Dashboards (admin/admin) |
+| Loki | http://localhost:3100 | Log aggregation API |
+| Bull Board | http://localhost:8001/admin/queues | BullMQ job queue dashboard (dev only) |
+| Swagger UI | http://localhost:8080/api/docs | API documentation (dev only) |
