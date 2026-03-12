@@ -9,6 +9,7 @@ const axios = require("axios");
 const { prisma } = require("../prisma");
 const { writeAuditLog } = require("./auditService");
 const { OPENSEARCH_HOST, OPENSEARCH_PORT, EMBEDDING_SERVICE_BASE_URL } = require("../config");
+const logger = require("../logger");
 
 /** Convert days to milliseconds for retention cutoff calculations. */
 function daysToMs(days) {
@@ -69,7 +70,7 @@ async function purgeDocument(documentId, requestedBy = "system") {
     summary.openSearchChunksRemoved = deleteRes.data?.deleted || 0;
   } catch (err) {
     summary.errors.push(`OpenSearch purge error: ${err.message}`);
-    console.warn(`[PurgeService] OpenSearch purge failed for ${documentId}: ${err.message}`);
+    logger.warn(`[PurgeService] OpenSearch purge failed for ${documentId}: ${err.message}`);
   }
 
   // 2. Remove Redis parent keys (best-effort) ───────────────────────────────
@@ -90,7 +91,7 @@ async function purgeDocument(documentId, requestedBy = "system") {
       summary.redisKeysRemoved = resp.data?.deleted || 0;
     } catch (err) {
       summary.errors.push(`Redis purge error: ${err.message}`);
-      console.warn(`[PurgeService] Redis parent purge failed for ${documentId} (best-effort): ${err.message}`);
+      logger.warn(`[PurgeService] Redis parent purge failed for ${documentId} (best-effort): ${err.message}`);
     }
   }
 
@@ -108,7 +109,7 @@ async function purgeDocument(documentId, requestedBy = "system") {
     summary.postgresUpdated = true;
   } catch (err) {
     summary.errors.push(`Postgres update error: ${err.message}`);
-    console.error(`[PurgeService] Postgres update failed for ${documentId}: ${err.message}`);
+    logger.error(`[PurgeService] Postgres update failed for ${documentId}: ${err.message}`);
   }
 
   // 4. Write audit log ──────────────────────────────────────────────────────
@@ -176,7 +177,7 @@ async function purgeUserData(targetUserId, requestedBy) {
  * @returns {object[]} Array of purgeSummary objects
  */
 async function runRetentionSweep() {
-  console.log("[PurgeService] Starting retention sweep...");
+  logger.info("[PurgeService] Starting retention sweep...");
 
   // Find workspaces with retention policies
   const workspaces = await prisma.workspace.findMany({
@@ -198,7 +199,7 @@ async function runRetentionSweep() {
       select: { id: true },
     });
 
-    console.log(
+    logger.info(
       `[PurgeService] Workspace '${ws.name}' (${ws.id}): found ${expiredDocs.length} expired documents (cutoff: ${cutoff.toISOString()})`
     );
 
@@ -208,7 +209,7 @@ async function runRetentionSweep() {
     }
   }
 
-  console.log(`[PurgeService] Retention sweep complete. Purged ${allSummaries.length} documents.`);
+  logger.info(`[PurgeService] Retention sweep complete. Purged ${allSummaries.length} documents.`);
   return allSummaries;
 }
 

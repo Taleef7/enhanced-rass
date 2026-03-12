@@ -6,6 +6,7 @@ const multer = require("multer");
 const { OpenAI } = require("openai");
 const { toFile } = require("openai/uploads");
 const authMiddleware = require("../authMiddleware");
+const logger = require("../logger");
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
@@ -45,7 +46,7 @@ router.post(
 
       return res.json({ text: response.text || "" });
     } catch (e) {
-      console.error("[Transcribe] Error:", e);
+      logger.error("[Transcribe] Error:", e);
       return res
         .status(500)
         .json({ error: "Transcription failed.", details: e.message });

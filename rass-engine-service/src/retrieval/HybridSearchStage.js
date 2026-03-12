@@ -7,6 +7,9 @@
 const { Stage } = require("./Stage");
 const { DEFAULT_K_OPENSEARCH_HITS, OPENSEARCH_INDEX_NAME } = require("../config");
 const { osClient } = require("../clients/opensearchClient");
+const logger = require("../logger");
+const { withSpan } = require("../tracing");
+const { opensearchQueryDurationSeconds } = require("../metrics");
 
 /**
  * Builds a hybrid KNN + keyword OpenSearch query.
@@ -88,24 +91,27 @@ class HybridSearchStage extends Stage {
     const k = DEFAULT_K_OPENSEARCH_HITS;
 
     if (!queryEmbedding) {
-      console.warn("[HybridSearchStage] No queryEmbedding found; returning empty candidates.");
+      logger.warn("[HybridSearchStage] No queryEmbedding found; returning empty candidates.");
       context.candidateChunks = [];
       return context;
     }
 
     const searchBody = buildHybridQuery(query, queryEmbedding, k, userId, documents);
 
-    try {
-      const results = await osClient.search({ index: OPENSEARCH_INDEX_NAME, body: searchBody });
-      const hits = results.body.hits.hits || [];
-      console.log(`[HybridSearchStage] Found ${hits.length} candidate chunks (status: ${results.statusCode}).`);
-      context.candidateChunks = hits;
-    } catch (error) {
-      console.warn(`[HybridSearchStage] Search failed: ${error.message}`);
-      context.candidateChunks = [];
-    }
-
-    return context;
+    return withSpan("retrieval.hybridSearch", { "search.k": k, "search.hasUserFilter": !!userId }, async () => {
+      try {
+        const searchStart = Date.now();
+        const results = await osClient.search({ index: OPENSEARCH_INDEX_NAME, body: searchBody });
+        opensearchQueryDurationSeconds.observe({ operation: "hybrid_search" }, (Date.now() - searchStart) / 1000);
+        const hits = results.body.hits.hits || [];
+        logger.info(`[HybridSearchStage] Found ${hits.length} candidate chunks (status: ${results.statusCode}).`);
+        context.candidateChunks = hits;
+      } catch (error) {
+        logger.warn(`[HybridSearchStage] Search failed: ${error.message}`);
+        context.candidateChunks = [];
+      }
+      return context;
+    });
   }
 }
 

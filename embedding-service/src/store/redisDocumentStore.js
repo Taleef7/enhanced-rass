@@ -2,13 +2,14 @@
 // RedisDocumentStore: LangChain BaseStore implementation backed by Redis.
 
 const { BaseStore } = require("@langchain/core/stores");
+const logger = require("../logger");
 
 class RedisDocumentStore extends BaseStore {
   constructor(redisClient, keyPrefix = "docstore:") {
     super();
     this.redis = redisClient;
     this.keyPrefix = keyPrefix;
-    console.log("[RedisDocumentStore] Initialized with prefix:", keyPrefix);
+    logger.info("[RedisDocumentStore] Initialized with prefix:", keyPrefix);
   }
 
   async mget(keys) {
@@ -18,13 +19,13 @@ class RedisDocumentStore extends BaseStore {
 
       const results = values.map((value, index) => {
         if (value === null) {
-          console.warn(`[RedisDocumentStore] Key not found: ${keys[index]}`);
+          logger.warn(`[RedisDocumentStore] Key not found: ${keys[index]}`);
           return null;
         }
         try {
           return JSON.parse(value);
         } catch (error) {
-          console.error(
+          logger.error(
             `[RedisDocumentStore] Failed to parse value for key ${keys[index]}:`,
             error
           );
@@ -32,14 +33,14 @@ class RedisDocumentStore extends BaseStore {
         }
       });
 
-      console.log(
+      logger.info(
         `[RedisDocumentStore] Retrieved ${
           results.filter((r) => r !== null).length
         }/${keys.length} documents`
       );
       return results;
     } catch (error) {
-      console.error("[RedisDocumentStore] Error in mget:", error);
+      logger.error("[RedisDocumentStore] Error in mget:", error);
       throw error;
     }
   }
@@ -55,11 +56,11 @@ class RedisDocumentStore extends BaseStore {
       }
 
       await pipeline.exec();
-      console.log(
+      logger.info(
         `[RedisDocumentStore] Stored ${keyValuePairs.length} documents`
       );
     } catch (error) {
-      console.error("[RedisDocumentStore] Error in mset:", error);
+      logger.error("[RedisDocumentStore] Error in mset:", error);
       throw error;
     }
   }
@@ -68,10 +69,10 @@ class RedisDocumentStore extends BaseStore {
     try {
       const prefixedKeys = keys.map((key) => `${this.keyPrefix}${key}`);
       const result = await this.redis.del(...prefixedKeys);
-      console.log(`[RedisDocumentStore] Deleted ${result} documents`);
+      logger.info(`[RedisDocumentStore] Deleted ${result} documents`);
       return result;
     } catch (error) {
-      console.error("[RedisDocumentStore] Error in mdelete:", error);
+      logger.error("[RedisDocumentStore] Error in mdelete:", error);
       throw error;
     }
   }
@@ -82,7 +83,7 @@ class RedisDocumentStore extends BaseStore {
       const keys = await this.redis.keys(pattern);
       return keys.map((key) => key.replace(this.keyPrefix, ""));
     } catch (error) {
-      console.error("[RedisDocumentStore] Error in yieldKeys:", error);
+      logger.error("[RedisDocumentStore] Error in yieldKeys:", error);
       throw error;
     }
   }

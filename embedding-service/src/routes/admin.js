@@ -5,6 +5,7 @@ const express = require("express");
 const { InMemoryStore } = require("langchain/storage/in_memory");
 const { getDocstore, setDocstore } = require("../clients/redisClient");
 const { RedisDocumentStore } = require("../store/redisDocumentStore");
+const logger = require("../logger");
 
 const router = express.Router();
 
@@ -20,19 +21,19 @@ router.post("/clear-docstore", async (req, res) => {
       const allKeys = await docstore.yieldKeys("");
       if (allKeys.length > 0) {
         await docstore.mdelete(allKeys);
-        console.log(
+        logger.info(
           `[Admin] Redis docstore cleared: ${allKeys.length} documents deleted.`
         );
       } else {
-        console.log(`[Admin] Redis docstore was already empty.`);
+        logger.info(`[Admin] Redis docstore was already empty.`);
       }
     } else {
       setDocstore(new InMemoryStore());
-      console.log(`[Admin] In-memory docstore reset.`);
+      logger.info(`[Admin] In-memory docstore reset.`);
     }
     res.status(200).send({ message: "Document store cleared." });
   } catch (error) {
-    console.error("[Admin] Error clearing docstore:", error);
+    logger.error("[Admin] Error clearing docstore:", error);
     res.status(500).json({ error: "Failed to clear document store." });
   }
 });

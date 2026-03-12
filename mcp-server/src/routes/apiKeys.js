@@ -15,6 +15,7 @@ const authMiddleware = require("../authMiddleware");
 const { writeAuditLog } = require("../services/auditService");
 const { prisma } = require("../prisma");
 const { apiLimiter, deleteLimiter } = require("../middleware/rateLimits");
+const logger = require("../logger");
 
 const router = express.Router();
 
@@ -30,7 +31,7 @@ router.get("/api/api-keys", apiLimiter, authMiddleware, async (req, res) => {
     });
     res.json(keys);
   } catch (err) {
-    console.error("[ApiKeys] Error listing keys:", err.message);
+    logger.error("[ApiKeys] Error listing keys:", err.message);
     res.status(500).json({ error: "Failed to list API keys." });
   }
 });
@@ -87,7 +88,7 @@ router.post("/api/api-keys", apiLimiter, authMiddleware, async (req, res) => {
       warning: "Store this key securely — it will not be shown again.",
     });
   } catch (err) {
-    console.error("[ApiKeys] Error creating key:", err.message);
+    logger.error("[ApiKeys] Error creating key:", err.message);
     res.status(500).json({ error: "Failed to create API key." });
   }
 });
@@ -116,7 +117,7 @@ router.delete("/api/api-keys/:id", deleteLimiter, authMiddleware, async (req, re
 
     res.json({ message: "API key revoked.", id });
   } catch (err) {
-    console.error("[ApiKeys] Error revoking key:", err.message);
+    logger.error("[ApiKeys] Error revoking key:", err.message);
     res.status(500).json({ error: "Failed to revoke API key." });
   }
 });

@@ -1,11 +1,17 @@
 // mcp-server/index.js
 // Thin orchestrator: loads modules, registers routes and middleware, and starts the server.
 
+// OpenTelemetry must be initialized FIRST (before any other imports)
+require("./src/otel");
+
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const path = require("path");
 
+const logger = require("./src/logger");
+const { correlationIdMiddleware } = require("./src/middleware/correlationId");
+const { metricsMiddleware } = require("./src/middleware/metricsMiddleware");
 const { MCP_SERVER_PORT } = require("./src/config");
 
 // Existing extracted routes (unchanged)
@@ -33,6 +39,9 @@ const workspaceRoutes = require("./src/routes/workspaces.js");
 const apiKeyRoutes = require("./src/routes/apiKeys.js");
 const adminRoutes = require("./src/routes/admin.js");
 
+// Phase E: Prometheus metrics
+const metricsRoutes = require("./src/routes/metrics.js");
+
 const app = express();
 app.use(cors({
   origin: process.env.CORS_ORIGIN || true,
@@ -45,6 +54,8 @@ app.use(cors({
 // API-first architecture.
 app.use(cookieParser());
 app.use(express.json({ limit: "10mb" }));
+app.use(correlationIdMiddleware);
+app.use(metricsMiddleware("mcp-server"));
 
 // --- Swagger UI (non-production only) ---
 if (process.env.NODE_ENV !== "production") {
@@ -56,9 +67,9 @@ if (process.env.NODE_ENV !== "production") {
       fs.readFileSync(path.join(__dirname, "openapi.yaml"), "utf8")
     );
     app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openApiSpec));
-    console.log("[API Docs] Swagger UI available at /api/docs");
+    logger.info("[API Docs] Swagger UI available at /api/docs");
   } catch (e) {
-    console.warn("[API Docs] Failed to load openapi.yaml:", e.message);
+    logger.warn("[API Docs] Failed to load openapi.yaml:", e.message);
   }
 }
 
@@ -88,12 +99,15 @@ app.use(apiKeyRoutes);
 // --- Phase D: Admin / compliance / audit reporting ---
 app.use(adminRoutes);
 
+// --- Phase E: Prometheus metrics ---
+app.use(metricsRoutes);
+
 // --- Legacy simple-ask (deprecated) ---
 // @deprecated Use /api/stream-ask instead.
 const axios = require("axios");
 app.post("/simple-ask", async (req, res) => {
   const { query, top_k } = req.body;
-  console.log(`[REST /simple-ask] Received query: "${query}"`);
+  logger.info(`[REST /simple-ask] Received query: "${query}"`);
   if (!query) {
     return res.status(400).json({ error: "Query is required" });
   }
@@ -102,7 +116,7 @@ app.post("/simple-ask", async (req, res) => {
     const response = await axios.post(rassEngineUrl, { query, top_k });
     res.status(200).json(response.data);
   } catch (e) {
-    console.error("[REST /simple-ask] Error calling RASS engine:", e.message);
+    logger.error("[REST /simple-ask] Error calling RASS engine:", e.message);
     res.status(500).json({ error: "Failed to process query in RASS engine." });
   }
 });
@@ -122,16 +136,16 @@ app.get("/", (req, res) => {
 });
 
 app.listen(MCP_SERVER_PORT, () => {
-  console.log(`MCP Server listening on http://localhost:${MCP_SERVER_PORT}`);
+  logger.info(`MCP Server listening on http://localhost:${MCP_SERVER_PORT}`);
 });
 
 // --- Phase D: Schedule nightly retention sweep ---
 const { runRetentionSweep } = require("./src/services/PurgeService");
 const SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 setInterval(() => {
-  console.log("[RetentionSweep] Running scheduled retention sweep...");
+  logger.info("[RetentionSweep] Running scheduled retention sweep...");
   runRetentionSweep().catch((err) =>
-    console.error("[RetentionSweep] Error:", err.message)
+    logger.error("[RetentionSweep] Error:", err.message)
   );
 }, SWEEP_INTERVAL_MS);
-console.log("[RetentionSweep] Nightly retention sweep scheduled (every 24h).");
+logger.info("[RetentionSweep] Nightly retention sweep scheduled (every 24h).");

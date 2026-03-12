@@ -4,6 +4,8 @@
 
 "use strict";
 
+const logger = require("../logger");
+
 class Pipeline {
   /**
    * @param {import('./Stage').Stage[]} stages - Ordered list of stages to execute.
@@ -23,7 +25,7 @@ class Pipeline {
    * @returns {Promise<object>} The final context after all stages have executed.
    */
   async run(context) {
-    console.log(
+    logger.info(
       `[Pipeline] Starting pipeline with ${this.stages.length} stages: [${this.stages.map((s) => s.name).join(" → ")}]`
     );
     const pipelineStart = Date.now();
@@ -33,12 +35,12 @@ class Pipeline {
       try {
         context = await stage.run(context);
       } catch (err) {
-        console.error(`[Pipeline] Stage "${stage.name}" threw an error:`, err.message);
+        logger.error(`[Pipeline] Stage "${stage.name}" threw an error:`, err.message);
         throw err;
       }
       const elapsed = Date.now() - stageStart;
       context.stageTimes[stage.name] = elapsed;
-      console.log(
+      logger.info(
         JSON.stringify({
           level: "INFO",
           pipeline: "retrieval",
@@ -49,7 +51,7 @@ class Pipeline {
     }
 
     const totalMs = Date.now() - pipelineStart;
-    console.log(
+    logger.info(
       JSON.stringify({
         level: "INFO",
         pipeline: "retrieval",

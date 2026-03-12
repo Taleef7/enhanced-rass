@@ -19,6 +19,7 @@ const { OPENSEARCH_HOST, OPENSEARCH_PORT, EMBEDDING_SERVICE_BASE_URL } = require
 const { apiLimiter, deleteLimiter, uploadLimiter } = require("../middleware/rateLimits");
 const { requirePermission } = require("../middleware/requirePermission");
 const { PERMISSIONS } = require("../permissions");
+const logger = require("../logger");
 
 const router = express.Router();
 
@@ -73,7 +74,7 @@ router.get("/api/documents", apiLimiter, authMiddleware, async (req, res) => {
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (err) {
-    console.error("[Documents] Error listing documents:", err.message);
+    logger.error("[Documents] Error listing documents:", err.message);
     res.status(500).json({ error: "Failed to fetch documents." });
   }
 });
@@ -96,7 +97,7 @@ router.get("/api/documents/:id", apiLimiter, authMiddleware, async (req, res) =>
 
     res.json(doc);
   } catch (err) {
-    console.error("[Documents] Error fetching document:", err.message);
+    logger.error("[Documents] Error fetching document:", err.message);
     res.status(500).json({ error: "Failed to fetch document." });
   }
 });
@@ -123,7 +124,7 @@ router.get("/api/documents/:id/provenance", apiLimiter, authMiddleware, async (r
 
     res.json(provenance);
   } catch (err) {
-    console.error("[Documents] Error fetching provenance:", err.message);
+    logger.error("[Documents] Error fetching provenance:", err.message);
     res.status(500).json({ error: "Failed to fetch provenance." });
   }
 });
@@ -167,9 +168,9 @@ router.delete("/api/documents/:id", deleteLimiter, authMiddleware, requirePermis
         },
         { headers: { "Content-Type": "application/json" }, timeout: 30000 }
       );
-      console.log(`[Documents] Deleted OpenSearch vectors for document ${id}`);
+      logger.info(`[Documents] Deleted OpenSearch vectors for document ${id}`);
     } catch (osErr) {
-      console.warn(`[Documents] Could not remove OpenSearch vectors: ${osErr.message}`);
+      logger.warn(`[Documents] Could not remove OpenSearch vectors: ${osErr.message}`);
     }
 
     // 2. Mark document as DELETED in DB
@@ -189,10 +190,10 @@ router.delete("/api/documents/:id", deleteLimiter, authMiddleware, requirePermis
       req,
     });
 
-    console.log(`[Documents] Document ${id} marked as DELETED`);
+    logger.info(`[Documents] Document ${id} marked as DELETED`);
     res.json({ message: "Document deleted successfully.", id });
   } catch (err) {
-    console.error("[Documents] Error deleting document:", err.message);
+    logger.error("[Documents] Error deleting document:", err.message);
     res.status(500).json({ error: "Failed to delete document." });
   }
 });
@@ -235,7 +236,7 @@ router.post("/api/documents", uploadLimiter, authMiddleware, async (req, res) =>
 
     res.status(201).json(doc);
   } catch (err) {
-    console.error("[Documents] Error creating document:", err.message);
+    logger.error("[Documents] Error creating document:", err.message);
     res.status(500).json({ error: "Failed to register document." });
   }
 });

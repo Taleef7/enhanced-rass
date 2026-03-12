@@ -8,6 +8,7 @@
 
 const axios = require("axios");
 const { RerankProvider } = require("./RerankProvider");
+const logger = require("../../logger");
 
 class LocalCrossEncoderProvider extends RerankProvider {
   /**
@@ -26,7 +27,7 @@ class LocalCrossEncoderProvider extends RerankProvider {
     const n = topN || this.topN;
     const docTexts = documents.map((d) => d._source?.text || "");
 
-    console.log(
+    logger.info(
       `[LocalCrossEncoderProvider] Reranking ${documents.length} docs via ${this.rerankUrl} (topN=${n}).`
     );
 
@@ -39,7 +40,7 @@ class LocalCrossEncoderProvider extends RerankProvider {
       );
       ranked = response.data.results;
     } catch (err) {
-      console.error(
+      logger.error(
         `[LocalCrossEncoderProvider] Request failed: ${err.message}. Returning original order.`
       );
       return documents.slice(0, n);
@@ -48,7 +49,7 @@ class LocalCrossEncoderProvider extends RerankProvider {
     const reranked = ranked.map((r) => {
       const doc = documents[r.index];
       const augmented = { ...doc, rerankScore: r.score };
-      console.debug(
+      logger.debug(
         `[LocalCrossEncoderProvider] doc[${r.index}] rerankScore=${r.score.toFixed(4)}`
       );
       return augmented;

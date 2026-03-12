@@ -6,6 +6,7 @@
 
 const { Queue } = require("bullmq");
 const { REDIS_HOST, REDIS_PORT, REDIS_DB } = require("../config");
+const logger = require("../logger");
 
 const connection = {
   host: REDIS_HOST,
@@ -24,7 +25,7 @@ const ingestionQueue = new Queue("rass:ingestion", {
 });
 
 ingestionQueue.on("error", (err) => {
-  console.error("[Queue] ingestionQueue error:", err.message);
+  logger.error("[Queue] ingestionQueue error:", err.message);
 });
 
 module.exports = { ingestionQueue, connection };

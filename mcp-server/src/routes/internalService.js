@@ -16,6 +16,7 @@
 const express = require("express");
 const { writeAuditLog } = require("../services/auditService");
 const { prisma } = require("../prisma");
+const logger = require("../logger");
 
 const router = express.Router();
 
@@ -28,7 +29,7 @@ const INTERNAL_SERVICE_TOKEN = process.env.INTERNAL_SERVICE_TOKEN || "";
 
 router.use("/internal", (req, res, next) => {
   if (!INTERNAL_SERVICE_TOKEN) {
-    console.warn(
+    logger.warn(
       "[Internal] WARNING: INTERNAL_SERVICE_TOKEN is not set. " +
       "Internal routes are UNSECURED. Set this env var in production."
     );
@@ -64,13 +65,13 @@ router.patch("/internal/documents/:id/status", async (req, res) => {
       data: update,
     });
 
-    console.log(`[Internal] Document ${id} status → ${status}`);
+    logger.info(`[Internal] Document ${id} status → ${status}`);
     res.json({ id: doc.id, status: doc.status });
   } catch (err) {
     if (err.code === "P2025") {
       return res.status(404).json({ error: `Document ${id} not found.` });
     }
-    console.error("[Internal] Error updating document status:", err.message);
+    logger.error("[Internal] Error updating document status:", err.message);
     res.status(500).json({ error: "Failed to update document status." });
   }
 });
@@ -121,10 +122,10 @@ router.post("/internal/documents/:id/provenance", async (req, res) => {
       },
     });
 
-    console.log(`[Internal] Provenance created for document ${documentId}`);
+    logger.info(`[Internal] Provenance created for document ${documentId}`);
     res.status(201).json(provenance);
   } catch (err) {
-    console.error("[Internal] Error creating provenance:", err.message);
+    logger.error("[Internal] Error creating provenance:", err.message);
     res.status(500).json({ error: "Failed to create provenance record." });
   }
 });

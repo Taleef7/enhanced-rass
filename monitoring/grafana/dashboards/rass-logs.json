@@ -1,0 +1,94 @@
+{
+  "id": null,
+  "uid": "rass-logs",
+  "title": "RASS — Service Logs",
+  "tags": ["rass", "logs"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "mcp-server Logs",
+      "type": "logs",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "{service=\"mcp-server\"}",
+          "legendFormat": "",
+          "datasource": "Loki"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": true
+      }
+    },
+    {
+      "id": 2,
+      "title": "rass-engine-service Logs",
+      "type": "logs",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
+      "targets": [
+        {
+          "expr": "{service=\"rass-engine-service\"}",
+          "legendFormat": "",
+          "datasource": "Loki"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": true
+      }
+    },
+    {
+      "id": 3,
+      "title": "embedding-service Logs",
+      "type": "logs",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "expr": "{service=\"embedding-service\"}",
+          "legendFormat": "",
+          "datasource": "Loki"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": true
+      }
+    },
+    {
+      "id": 4,
+      "title": "Logs by Correlation ID (filter)",
+      "type": "logs",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 30 },
+      "targets": [
+        {
+          "expr": "{project=\"enhanced-rass\"} |= \"$correlationId\"",
+          "legendFormat": "",
+          "datasource": "Loki"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": true
+      },
+      "templating": {
+        "list": [
+          {
+            "name": "correlationId",
+            "type": "textbox",
+            "label": "Correlation ID",
+            "current": { "value": "" }
+          }
+        ]
+      }
+    }
+  ]
+}

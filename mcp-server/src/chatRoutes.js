@@ -1,9 +1,8 @@
 // mcp-server/src/chatRoutes.js
 const { Router } = require("express");
-const { PrismaClient } = require("@prisma/client");
+const { prisma } = require("./prisma");
 const authMiddleware = require("./authMiddleware.js");
-
-const prisma = new PrismaClient();
+const logger = require("./logger");
 const router = Router();
 
 // Apply authentication middleware to all chat routes
@@ -13,7 +12,7 @@ router.use(authMiddleware);
 router.get("/", async (req, res) => {
   try {
     const userId = req.userId; // From auth middleware
-    console.log("[CHAT LIST] Fetching chats for userId:", userId);
+    logger.info("[CHAT LIST] Fetching chats for userId:", userId);
 
     const chats = await prisma.chat.findMany({
       where: { userId },
@@ -26,10 +25,10 @@ router.get("/", async (req, res) => {
       orderBy: { updatedAt: "desc" },
     });
 
-    console.log(`[CHAT LIST] Found ${chats.length} chats for user ${userId}`);
+    logger.info(`[CHAT LIST] Found ${chats.length} chats for user ${userId}`);
     res.json(chats);
   } catch (error) {
-    console.error("Error fetching chats:", error);
+    logger.error("Error fetching chats:", error);
     res.status(500).json({ error: "Failed to fetch chats" });
   }
 });
@@ -59,7 +58,7 @@ router.get("/:chatId", async (req, res) => {
 
     res.json(chat);
   } catch (error) {
-    console.error("Error fetching chat:", error);
+    logger.error("Error fetching chat:", error);
     res.status(500).json({ error: "Failed to fetch chat" });
   }
 });
@@ -71,12 +70,12 @@ router.post("/", async (req, res) => {
     const userId = req.userId;
 
     // Debug logging
-    console.log("[CHAT CREATE] userId:", userId);
-    console.log("[CHAT CREATE] req.user:", req.user);
-    console.log("[CHAT CREATE] title:", title);
+    logger.info("[CHAT CREATE] userId:", userId);
+    logger.info("[CHAT CREATE] req.user:", req.user);
+    logger.info("[CHAT CREATE] title:", title);
 
     if (!userId) {
-      console.error("[CHAT CREATE] No userId found - authentication failed");
+      logger.error("[CHAT CREATE] No userId found - authentication failed");
       return res.status(401).json({ error: "Authentication required" });
     }
 
@@ -89,10 +88,10 @@ router.post("/", async (req, res) => {
       },
     });
 
-    console.log("[CHAT CREATE] Success:", chat.id);
+    logger.info("[CHAT CREATE] Success:", chat.id);
     res.status(201).json(chat);
   } catch (error) {
-    console.error("Error creating chat:", error);
+    logger.error("Error creating chat:", error);
     res.status(500).json({ error: "Failed to create chat" });
   }
 });
@@ -132,7 +131,7 @@ router.patch("/:chatId", async (req, res) => {
 
     res.json(updatedChat);
   } catch (error) {
-    console.error("Error updating chat:", error);
+    logger.error("Error updating chat:", error);
     res.status(500).json({ error: "Failed to update chat" });
   }
 });
@@ -161,7 +160,7 @@ router.delete("/:chatId", async (req, res) => {
 
     res.status(204).send();
   } catch (error) {
-    console.error("Error deleting chat:", error);
+    logger.error("Error deleting chat:", error);
     res.status(500).json({ error: "Failed to delete chat" });
   }
 });
@@ -203,7 +202,7 @@ router.post("/:chatId/messages", async (req, res) => {
 
     res.status(201).json(message);
   } catch (error) {
-    console.error("Error adding message:", error);
+    logger.error("Error adding message:", error);
     res.status(500).json({ error: "Failed to add message" });
   }
 });
@@ -245,10 +244,10 @@ router.patch("/:chatId/messages/:messageId", async (req, res) => {
       data: { updatedAt: new Date() },
     });
 
-    console.log(`[MESSAGE UPDATE] Updated message ${messageId} in chat ${chatId}`);
+    logger.info(`[MESSAGE UPDATE] Updated message ${messageId} in chat ${chatId}`);
     res.json(updatedMessage);
   } catch (error) {
-    console.error("Error updating message:", error);
+    logger.error("Error updating message:", error);
     res.status(500).json({ error: "Failed to update message" });
   }
 });
@@ -287,7 +286,7 @@ router.delete("/:chatId/messages/:messageId", async (req, res) => {
 
     res.status(204).send();
   } catch (error) {
-    console.error("Error deleting message:", error);
+    logger.error("Error deleting message:", error);
     res.status(500).json({ error: "Failed to delete message" });
   }
 });
@@ -318,10 +317,10 @@ router.delete("/:chatId/documents/cleanup", async (req, res) => {
       },
     });
 
-    console.log(`[CLEANUP] Deleted ${result.count} polluted documents from chat ${chatId}`);
+    logger.info(`[CLEANUP] Deleted ${result.count} polluted documents from chat ${chatId}`);
     res.json({ message: `Cleaned up ${result.count} documents`, deleted: result.count });
   } catch (error) {
-    console.error("Error cleaning up chat documents:", error);
+    logger.error("Error cleaning up chat documents:", error);
     res.status(500).json({ error: "Failed to clean up documents" });
   }
 });

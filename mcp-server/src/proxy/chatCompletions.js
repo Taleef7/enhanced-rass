@@ -11,6 +11,7 @@ const axios = require("axios");
 const { RASS_ENGINE_BASE_URL } = require("../config");
 const { validateBody } = require("../middleware/validate");
 const { ChatCompletionsBodySchema } = require("../schemas/chatCompletionsSchema");
+const logger = require("../logger");
 
 const DEFAULT_TOP_K = Number(process.env.MCP_DEFAULT_TOP_K) || 10;
 
@@ -30,7 +31,7 @@ router.post("/api/chat/completions", validateBody(ChatCompletionsBodySchema), as
     query = null;
   }
 
-  console.log(`[LibreChat Proxy] Received query: "${query}"`);
+  logger.info(`[LibreChat Proxy] Received query: "${query}"`);
 
   if (!query) {
     return res.status(400).json({ error: "No user message found in request" });
@@ -53,11 +54,11 @@ router.post("/api/chat/completions", validateBody(ChatCompletionsBodySchema), as
     response.data.pipe(res);
 
     req.on("close", () => {
-      console.log("[LibreChat Proxy] Client closed connection.");
+      logger.info("[LibreChat Proxy] Client closed connection.");
       response.data.destroy();
     });
   } catch (e) {
-    console.error(
+    logger.error(
       "[LibreChat Proxy] Error calling RASS engine stream:",
       e.message
     );

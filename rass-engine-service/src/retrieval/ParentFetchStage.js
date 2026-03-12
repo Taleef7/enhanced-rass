@@ -7,6 +7,7 @@
 const axios = require("axios");
 const { Stage } = require("./Stage");
 const { EMBEDDING_SERVICE_BASE_URL } = require("../config");
+const logger = require("../logger");
 
 class ParentFetchStage extends Stage {
   constructor() {
@@ -17,7 +18,7 @@ class ParentFetchStage extends Stage {
     const { candidateChunks } = context;
 
     if (!candidateChunks || candidateChunks.length === 0) {
-      console.warn("[ParentFetchStage] No candidate chunks; skipping parent fetch.");
+      logger.warn("[ParentFetchStage] No candidate chunks; skipping parent fetch.");
       context.parentDocs = [];
       return context;
     }
@@ -37,7 +38,7 @@ class ParentFetchStage extends Stage {
     const uniqueParentIds = Array.from(parentIdMap.keys());
 
     if (uniqueParentIds.length === 0) {
-      console.warn("[ParentFetchStage] No parentId found in chunk metadata; falling back to raw chunks.");
+      logger.warn("[ParentFetchStage] No parentId found in chunk metadata; falling back to raw chunks.");
       // Fall back to using the candidate chunks directly (no parent/child splitting used)
       context.parentDocs = candidateChunks.map((hit) => ({
         _source: { text: hit._source?.text, metadata: hit._source?.metadata },
@@ -46,7 +47,7 @@ class ParentFetchStage extends Stage {
       return context;
     }
 
-    console.log(`[ParentFetchStage] Fetching ${uniqueParentIds.length} unique parent documents.`);
+    logger.info(`[ParentFetchStage] Fetching ${uniqueParentIds.length} unique parent documents.`);
 
     try {
       const response = await axios.post(`${EMBEDDING_SERVICE_BASE_URL}/get-documents`, {
@@ -71,12 +72,12 @@ class ParentFetchStage extends Stage {
         });
       });
 
-      console.log(
+      logger.info(
         `[ParentFetchStage] Successfully fetched ${parentDocs.length} parent documents (from ${rawDocs.length} returned).`
       );
       context.parentDocs = parentDocs;
     } catch (error) {
-      console.warn(`[ParentFetchStage] Failed to fetch parent documents: ${error.message}. Falling back to raw chunks.`);
+      logger.warn(`[ParentFetchStage] Failed to fetch parent documents: ${error.message}. Falling back to raw chunks.`);
       context.parentDocs = candidateChunks.map((hit) => ({
         _source: { text: hit._source?.text, metadata: hit._source?.metadata },
         _score: hit._score,

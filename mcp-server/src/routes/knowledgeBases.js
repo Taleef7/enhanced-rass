@@ -20,6 +20,7 @@ const { OPENSEARCH_HOST, OPENSEARCH_PORT, EMBED_DIM } = require("../config");
 const { apiLimiter, deleteLimiter } = require("../middleware/rateLimits");
 const { KBCreateSchema } = require("../schemas/knowledgeBaseSchema");
 const { validateBody } = require("../middleware/validate");
+const logger = require("../logger");
 
 const router = express.Router();
 
@@ -54,7 +55,7 @@ async function createKBIndex(indexName, embedDim) {
     },
     { headers: { "Content-Type": "application/json" }, timeout: 15000 }
   );
-  console.log(`[KB] Created OpenSearch index: ${indexName}`);
+  logger.info(`[KB] Created OpenSearch index: ${indexName}`);
 }
 
 // ── Helper: delete an OpenSearch index ────────────────────────────────────────
@@ -66,9 +67,9 @@ async function deleteKBIndex(indexName) {
       validateStatus: (s) => s === 200 || s === 404,
       timeout: 15000,
     });
-    console.log(`[KB] Deleted OpenSearch index: ${indexName}`);
+    logger.info(`[KB] Deleted OpenSearch index: ${indexName}`);
   } catch (err) {
-    console.warn(`[KB] Could not delete OpenSearch index ${indexName}: ${err.message}`);
+    logger.warn(`[KB] Could not delete OpenSearch index ${indexName}: ${err.message}`);
   }
 }
 
@@ -112,7 +113,7 @@ router.post("/api/knowledge-bases", apiLimiter, authMiddleware, validateBody(KBC
       });
     } catch (dbErr) {
       // Rollback orphaned OpenSearch index if DB write fails
-      console.error("[KB] DB write failed; rolling back OpenSearch index:", dbErr.message);
+      logger.error("[KB] DB write failed; rolling back OpenSearch index:", dbErr.message);
       await deleteKBIndex(openSearchIndex);
       throw dbErr;
     }
@@ -130,7 +131,7 @@ router.post("/api/knowledge-bases", apiLimiter, authMiddleware, validateBody(KBC
 
     res.status(201).json(kb);
   } catch (err) {
-    console.error("[KB] Error creating knowledge base:", err.message);
+    logger.error("[KB] Error creating knowledge base:", err.message);
     res.status(500).json({ error: "Failed to create knowledge base." });
   }
 });
@@ -158,7 +159,7 @@ router.get("/api/knowledge-bases", apiLimiter, authMiddleware, async (req, res) 
 
     res.json({ knowledgeBases: kbs });
   } catch (err) {
-    console.error("[KB] Error listing knowledge bases:", err.message);
+    logger.error("[KB] Error listing knowledge bases:", err.message);
     res.status(500).json({ error: "Failed to fetch knowledge bases." });
   }
 });
@@ -191,7 +192,7 @@ router.get("/api/knowledge-bases/:id", apiLimiter, authMiddleware, async (req, r
 
     res.json(kb);
   } catch (err) {
-    console.error("[KB] Error fetching knowledge base:", err.message);
+    logger.error("[KB] Error fetching knowledge base:", err.message);
     res.status(500).json({ error: "Failed to fetch knowledge base." });
   }
 });
@@ -236,7 +237,7 @@ router.delete("/api/knowledge-bases/:id", deleteLimiter, authMiddleware, async (
 
     res.json({ message: "Knowledge base deleted successfully.", id });
   } catch (err) {
-    console.error("[KB] Error deleting knowledge base:", err.message);
+    logger.error("[KB] Error deleting knowledge base:", err.message);
     res.status(500).json({ error: "Failed to delete knowledge base." });
   }
 });
@@ -276,7 +277,7 @@ router.post("/api/knowledge-bases/:id/members", apiLimiter, authMiddleware, asyn
 
     res.status(201).json(member);
   } catch (err) {
-    console.error("[KB] Error adding member:", err.message);
+    logger.error("[KB] Error adding member:", err.message);
     res.status(500).json({ error: "Failed to add member." });
   }
 });

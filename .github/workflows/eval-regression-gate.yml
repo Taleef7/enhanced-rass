@@ -1,0 +1,177 @@
+name: Evaluation Regression Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      # Only run when retrieval, ingestion, or generation code changes
+      - "rass-engine-service/**"
+      - "embedding-service/**"
+      - "mcp-server/**"
+      - "evaluation/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  eval-regression-gate:
+    name: Eval Regression Gate (5 queries)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create .env file for services
+        run: |
+          cat > .env << 'EOF'
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+          JWT_SECRET=ci-regression-secret
+          EOF
+
+      - name: Start RASS stack (core services only)
+        run: |
+          OTEL_ENABLED=false docker compose up -d opensearch redis db embedding-service rass-engine-service mcp-server
+          echo "Waiting for services to become healthy..."
+          sleep 45
+
+      - name: Wait for services to be ready
+        run: |
+          for i in $(seq 1 12); do
+            if curl -sf http://localhost:8000/ > /dev/null 2>&1 && \
+               curl -sf http://localhost:8080/ > /dev/null 2>&1; then
+              echo "Services ready on attempt $i."
+              break
+            fi
+            echo "Attempt $i/12 — not ready yet, waiting 10s..."
+            sleep 10
+          done
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install evaluation dependencies
+        run: pip install requests
+
+      - name: Ingest lightweight evaluation corpus
+        run: |
+          MCP_URL="http://localhost:8080"
+          curl -sf -X POST "$MCP_URL/api/auth/register" \
+            -H "Content-Type: application/json" \
+            -d '{"username":"eval-bot","password":"eval-bot-ci-secret"}' || true
+
+          TOKEN=$(curl -sf -X POST "$MCP_URL/api/auth/login" \
+            -H "Content-Type: application/json" \
+            -d '{"username":"eval-bot","password":"eval-bot-ci-secret"}' \
+            | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))")
+
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Failed to obtain auth token."
+            exit 1
+          fi
+
+          curl -sf -X POST "$MCP_URL/api/embed-upload" \
+            -H "Authorization: Bearer $TOKEN" \
+            -F "file=@evaluation/source_documents/waroftheworlds.pdf" || true
+
+          echo "Waiting 30s for ingestion to complete..."
+          sleep 30
+
+      - name: Run lightweight eval suite (5 questions)
+        id: run_eval
+        env:
+          RASS_URL: http://localhost:8000
+        run: |
+          TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          OUTPUT_FILE="evaluation/results/ci_run_${TIMESTAMP}.json"
+
+          # Run with only the first 5 questions for speed
+          python evaluation/run_eval.py \
+            --url "$RASS_URL" \
+            --test-set evaluation/datasets/test_set.json \
+            --output "$OUTPUT_FILE" \
+            --top-k 5 \
+            --max-queries 5
+
+          echo "output_file=$OUTPUT_FILE" >> "$GITHUB_OUTPUT"
+          echo "timestamp=$TIMESTAMP" >> "$GITHUB_OUTPUT"
+
+      - name: Compare against BASELINE.json
+        id: regression_check
+        run: |
+          OUTPUT_FILE="${{ steps.run_eval.outputs.output_file }}"
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "::warning::No evaluation output found. Skipping regression check."
+            exit 0
+          fi
+
+          python evaluation/compare_runs.py \
+            --baseline evaluation/BASELINE.json \
+            --current "$OUTPUT_FILE" \
+            --threshold 0.05
+
+      - name: Post PR comment with results
+        if: always() && steps.run_eval.outputs.output_file != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const outputFile = '${{ steps.run_eval.outputs.output_file }}';
+            if (!fs.existsSync(outputFile)) {
+              console.log('No output file found, skipping comment.');
+              return;
+            }
+            const data = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
+            const agg = data.aggregates || {};
+            const status = '${{ steps.regression_check.outcome }}' === 'success' ? '✅ Passed' : '❌ Regression Detected';
+
+            const rows = Object.entries(agg)
+              .filter(([k]) => k !== 'latency_ms')
+              .map(([k, v]) => `| ${k} | ${v.mean?.toFixed(3) ?? 'N/A'} | ${v.p50?.toFixed(3) ?? 'N/A'} | ${v.p95?.toFixed(3) ?? 'N/A'} |`)
+              .join('\n');
+
+            const latency = agg.latency_ms || {};
+            const body = `## 🧪 Evaluation Regression Gate — ${status}
+
+**Run**: \`${{ steps.run_eval.outputs.timestamp }}\` | **Queries evaluated**: ${data.n_queries ?? 'N/A'} (lightweight CI subset)
+
+### Quality Metrics
+
+| Metric | Mean | p50 | p95 |
+|--------|------|-----|-----|
+${rows}
+
+### Latency
+| p50 | p95 | max |
+|-----|-----|-----|
+| ${latency.p50 ?? 'N/A'} ms | ${latency.p95 ?? 'N/A'} ms | ${latency.max ?? 'N/A'} ms |
+
+> Compared against \`evaluation/BASELINE.json\` (5% quality / 20% latency regression thresholds).
+> For the full 22-question suite, see the weekly evaluation workflow.`;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });
+
+      - name: Stop RASS stack
+        if: always()
+        run: docker compose down -v
+
+      - name: Fail on regression
+        if: steps.regression_check.outcome == 'failure'
+        run: |
+          echo "::error::Quality regression detected! Metrics fell below the acceptable threshold."
+          echo "Review the comparison output above and update evaluation/BASELINE.json if the change is intentional."
+          exit 1

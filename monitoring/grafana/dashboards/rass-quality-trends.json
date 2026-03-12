@@ -1,0 +1,179 @@
+{
+  "id": null,
+  "uid": "rass-quality-trends",
+  "title": "RASS — Quality Metric Trends",
+  "tags": ["rass", "evaluation", "quality"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "1h",
+  "description": "Shows RASS evaluation quality metrics over time. Datasource is Prometheus pushgateway populated by evaluation/run_eval.py.",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Context Relevance (mean) — Historical Trend",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "rass_eval_context_relevance_mean",
+          "legendFormat": "context_relevance",
+          "datasource": "Prometheus"
+        },
+        {
+          "expr": "rass_eval_context_relevance_baseline",
+          "legendFormat": "baseline",
+          "datasource": "Prometheus"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Answer Faithfulness (mean) — Historical Trend",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "rass_eval_answer_faithfulness_mean",
+          "legendFormat": "answer_faithfulness",
+          "datasource": "Prometheus"
+        },
+        {
+          "expr": "rass_eval_answer_faithfulness_baseline",
+          "legendFormat": "baseline",
+          "datasource": "Prometheus"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Recall@5 (mean) — Historical Trend",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "rass_eval_recall_at_5_mean",
+          "legendFormat": "recall_at_5",
+          "datasource": "Prometheus"
+        },
+        {
+          "expr": "rass_eval_recall_at_5_baseline",
+          "legendFormat": "baseline",
+          "datasource": "Prometheus"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Answer Relevance (mean) — Historical Trend",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "rass_eval_answer_relevance_mean",
+          "legendFormat": "answer_relevance",
+          "datasource": "Prometheus"
+        },
+        {
+          "expr": "rass_eval_answer_relevance_baseline",
+          "legendFormat": "baseline",
+          "datasource": "Prometheus"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Query Latency p95 (ms) — Historical Trend",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "rass_eval_latency_p95_ms",
+          "legendFormat": "latency_p95",
+          "datasource": "Prometheus"
+        },
+        {
+          "expr": "rass_eval_latency_p95_ms_baseline",
+          "legendFormat": "baseline",
+          "datasource": "Prometheus"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "All Quality Metrics — Latest Run",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "rass_eval_context_relevance_mean",
+          "legendFormat": "Context Relevance",
+          "datasource": "Prometheus"
+        },
+        {
+          "expr": "rass_eval_answer_faithfulness_mean",
+          "legendFormat": "Answer Faithfulness",
+          "datasource": "Prometheus"
+        },
+        {
+          "expr": "rass_eval_answer_relevance_mean",
+          "legendFormat": "Answer Relevance",
+          "datasource": "Prometheus"
+        },
+        {
+          "expr": "rass_eval_recall_at_5_mean",
+          "legendFormat": "Recall@5",
+          "datasource": "Prometheus"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "yellow", "value": 0.6 },
+              { "color": "green", "value": 0.75 }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

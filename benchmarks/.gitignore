@@ -1,0 +1,8 @@
+# Benchmarks — .gitignore
+# Ignore raw k6 JSON output (can be very large) but keep baselines and summaries
+results/*/query_load.json
+results/*/ingestion_load.json
+# Keep summary JSONs and markdown reports
+!results/*/query_summary.json
+!results/*/ingestion_summary.json
+!results/*/summary.md

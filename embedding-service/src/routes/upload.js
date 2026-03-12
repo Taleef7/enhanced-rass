@@ -13,6 +13,7 @@ const rateLimit = require("express-rate-limit");
 const { ingestionQueue } = require("../queue/ingestionQueue");
 const { validateBody } = require("../middleware/validate");
 const { UploadBodySchema } = require("../schemas/uploadSchema");
+const logger = require("../logger");
 
 // Rate limit: 20 uploads per hour per IP
 const uploadLimiter = rateLimit({
@@ -57,7 +58,7 @@ router.post(
       return res.status(400).json({ error: "No files uploaded." });
     }
 
-    console.log(
+    logger.info(
       `[Upload] Received ${files.length} file(s) from user: ${userId}`
     );
 
@@ -84,7 +85,7 @@ router.post(
           { jobId: uuidv4() }
         );
 
-        console.log(
+        logger.info(
           `[Upload] Enqueued job ${job.id} for file: ${file.originalname} (doc: ${documentId})`
         );
 
@@ -102,7 +103,7 @@ router.post(
         jobs,
       });
     } catch (error) {
-      console.error("[Upload] Error enqueuing ingestion job:", error);
+      logger.error("[Upload] Error enqueuing ingestion job:", error);
 
       // Clean up temp files if enqueue failed
       for (const file of files) {

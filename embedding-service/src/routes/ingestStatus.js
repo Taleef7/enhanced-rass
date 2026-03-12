@@ -6,6 +6,7 @@
 
 const express = require("express");
 const { ingestionQueue } = require("../queue/ingestionQueue");
+const logger = require("../logger");
 
 const router = express.Router();
 
@@ -40,7 +41,7 @@ router.get("/ingest/status/:jobId", async (req, res) => {
       },
     });
   } catch (err) {
-    console.error(`[IngestStatus] Error fetching job ${jobId}:`, err.message);
+    logger.error(`[IngestStatus] Error fetching job ${jobId}:`, err.message);
     res.status(500).json({ error: "Failed to retrieve job status." });
   }
 });

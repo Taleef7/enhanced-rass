@@ -26,6 +26,7 @@ const { writeAuditLog } = require("../services/auditService");
 const { prisma } = require("../prisma");
 const { OPENSEARCH_HOST, OPENSEARCH_PORT, EMBED_DIM } = require("../config");
 const { apiLimiter, deleteLimiter } = require("../middleware/rateLimits");
+const logger = require("../logger");
 
 const router = express.Router();
 
@@ -65,7 +66,7 @@ async function provisionWorkspaceIndex(indexName, embedDim) {
     },
     { headers: { "Content-Type": "application/json" }, timeout: 15000 }
   );
-  console.log(`[Workspaces] Provisioned OpenSearch index: ${indexName}`);
+  logger.info(`[Workspaces] Provisioned OpenSearch index: ${indexName}`);
 }
 
 async function deleteWorkspaceIndex(indexName) {
@@ -75,9 +76,9 @@ async function deleteWorkspaceIndex(indexName) {
       validateStatus: (s) => s === 200 || s === 404,
       timeout: 15000,
     });
-    console.log(`[Workspaces] Deleted OpenSearch index: ${indexName}`);
+    logger.info(`[Workspaces] Deleted OpenSearch index: ${indexName}`);
   } catch (err) {
-    console.warn(`[Workspaces] Could not delete OS index ${indexName}: ${err.message}`);
+    logger.warn(`[Workspaces] Could not delete OS index ${indexName}: ${err.message}`);
   }
 }
 
@@ -158,7 +159,7 @@ router.post("/api/organizations", apiLimiter, authMiddleware, async (req, res) =
     if (err.code === "P2002") {
       return res.status(409).json({ error: "Organization name already taken." });
     }
-    console.error("[Workspaces] Error creating org:", err.message);
+    logger.error("[Workspaces] Error creating org:", err.message);
     res.status(500).json({ error: "Failed to create organization." });
   }
 });
@@ -177,7 +178,7 @@ router.get("/api/organizations", apiLimiter, authMiddleware, async (req, res) =>
     });
     res.json(memberships.map((m) => ({ ...m.Org, myRole: m.role })));
   } catch (err) {
-    console.error("[Workspaces] Error listing orgs:", err.message);
+    logger.error("[Workspaces] Error listing orgs:", err.message);
     res.status(500).json({ error: "Failed to list organizations." });
   }
 });
@@ -198,7 +199,7 @@ router.get("/api/organizations/:orgId", apiLimiter, authMiddleware, async (req, 
     if (!org) return res.status(404).json({ error: "Organization not found." });
     res.json(org);
   } catch (err) {
-    console.error("[Workspaces] Error fetching org:", err.message);
+    logger.error("[Workspaces] Error fetching org:", err.message);
     res.status(500).json({ error: "Failed to fetch organization." });
   }
 });
@@ -244,7 +245,7 @@ router.post("/api/organizations/:orgId/members", apiLimiter, authMiddleware, asy
 
     res.status(201).json(member);
   } catch (err) {
-    console.error("[Workspaces] Error adding org member:", err.message);
+    logger.error("[Workspaces] Error adding org member:", err.message);
     res.status(500).json({ error: "Failed to add organization member." });
   }
 });
@@ -324,7 +325,7 @@ router.post("/api/organizations/:orgId/workspaces", apiLimiter, authMiddleware, 
 
     res.status(201).json(workspace);
   } catch (err) {
-    console.error("[Workspaces] Error creating workspace:", err.message);
+    logger.error("[Workspaces] Error creating workspace:", err.message);
     res.status(500).json({ error: "Failed to create workspace." });
   }
 });
@@ -350,7 +351,7 @@ router.get("/api/organizations/:orgId/workspaces", apiLimiter, authMiddleware, a
       myRole: ws.members[0]?.role || null,
     })));
   } catch (err) {
-    console.error("[Workspaces] Error listing workspaces:", err.message);
+    logger.error("[Workspaces] Error listing workspaces:", err.message);
     res.status(500).json({ error: "Failed to list workspaces." });
   }
 });
@@ -375,7 +376,7 @@ router.get("/api/workspaces/:id", apiLimiter, authMiddleware, async (req, res) =
 
     res.json(ws);
   } catch (err) {
-    console.error("[Workspaces] Error fetching workspace:", err.message);
+    logger.error("[Workspaces] Error fetching workspace:", err.message);
     res.status(500).json({ error: "Failed to fetch workspace." });
   }
 });
@@ -398,7 +399,7 @@ router.get("/api/workspaces/:id/usage", apiLimiter, authMiddleware, async (req, 
     const usagePct = ws.quotaMb > 0 ? ((ws.usedMb / ws.quotaMb) * 100).toFixed(1) : 0;
     res.json({ ...ws, usagePct: parseFloat(usagePct), limitReached: ws.usedMb >= ws.quotaMb });
   } catch (err) {
-    console.error("[Workspaces] Error fetching usage:", err.message);
+    logger.error("[Workspaces] Error fetching usage:", err.message);
     res.status(500).json({ error: "Failed to fetch workspace usage." });
   }
 });
@@ -440,7 +441,7 @@ router.delete("/api/workspaces/:id", deleteLimiter, authMiddleware, async (req, 
 
     res.json({ message: "Workspace deleted successfully.", id });
   } catch (err) {
-    console.error("[Workspaces] Error deleting workspace:", err.message);
+    logger.error("[Workspaces] Error deleting workspace:", err.message);
     res.status(500).json({ error: "Failed to delete workspace." });
   }
 });
@@ -477,7 +478,7 @@ router.post("/api/workspaces/:id/members", apiLimiter, authMiddleware, async (re
 
     res.status(201).json(member);
   } catch (err) {
-    console.error("[Workspaces] Error adding workspace member:", err.message);
+    logger.error("[Workspaces] Error adding workspace member:", err.message);
     res.status(500).json({ error: "Failed to add workspace member." });
   }
 });
@@ -521,7 +522,7 @@ router.delete("/api/workspaces/:workspaceId/members/:memberId", deleteLimiter, a
     res.json({ message: "Member removed." });
   } catch (err) {
     if (err.code === "P2025") return res.status(404).json({ error: "Member not found." });
-    console.error("[Workspaces] Error removing member:", err.message);
+    logger.error("[Workspaces] Error removing member:", err.message);
     res.status(500).json({ error: "Failed to remove workspace member." });
   }
 });
@@ -573,7 +574,7 @@ router.patch("/api/workspaces/:workspaceId/members/:memberId", apiLimiter, authM
     res.json(updated);
   } catch (err) {
     if (err.code === "P2025") return res.status(404).json({ error: "Member not found." });
-    console.error("[Workspaces] Error updating member role:", err.message);
+    logger.error("[Workspaces] Error updating member role:", err.message);
     res.status(500).json({ error: "Failed to update member role." });
   }
 });
@@ -652,7 +653,7 @@ router.patch("/api/workspaces/:id", apiLimiter, authMiddleware, async (req, res)
 
     res.json(updated);
   } catch (err) {
-    console.error("[Workspaces] Error updating workspace:", err.message);
+    logger.error("[Workspaces] Error updating workspace:", err.message);
     res.status(500).json({ error: "Failed to update workspace." });
   }
 });

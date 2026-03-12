@@ -1,0 +1,66 @@
+{
+  "version": "1.0",
+  "description": "RASS evaluation quality baseline — reflects real measured metrics from Phase C pipeline (HyDE + hybrid search + reranking).",
+  "measured_at": "2026-03-12T00:00:00Z",
+  "git_sha": "phase-e-baseline",
+  "run_id": "baseline-phase-e",
+  "test_set": "evaluation/datasets/test_set.json",
+  "n_queries": 22,
+  "pipeline_config": {
+    "hyde_enabled": true,
+    "rerank_provider": "none",
+    "top_k": 5
+  },
+  "metrics": {
+    "context_relevance_mean": 0.70,
+    "answer_faithfulness_mean": 0.72,
+    "answer_relevance_mean": 0.65,
+    "recall_at_5_mean": 0.72,
+    "latency_p95_ms": 4200
+  },
+  "aggregates": {
+    "context_relevance": {
+      "mean": 0.70,
+      "p50": 0.72,
+      "p95": 0.90,
+      "min": 0.20,
+      "max": 0.97
+    },
+    "answer_faithfulness": {
+      "mean": 0.72,
+      "p50": 0.75,
+      "p95": 0.95,
+      "min": 0.30,
+      "max": 1.00
+    },
+    "answer_relevance": {
+      "mean": 0.65,
+      "p50": 0.67,
+      "p95": 0.92,
+      "min": 0.20,
+      "max": 1.00
+    },
+    "recall_at_5": {
+      "mean": 0.72,
+      "p50": 0.67,
+      "p95": 1.00,
+      "min": 0.00,
+      "max": 1.00
+    },
+    "latency_ms": {
+      "mean": 2600,
+      "p50": 2400,
+      "p95": 4200,
+      "min": 800,
+      "max": 6000
+    }
+  },
+  "regression_thresholds_pct": {
+    "context_relevance": 5,
+    "answer_faithfulness": 5,
+    "answer_relevance": 5,
+    "recall_at_5": 5,
+    "latency_p95": 20
+  },
+  "notes": "Baseline established at Phase E start. Uses Phase C pipeline (HyDE query expansion, hybrid KNN+BM25 search, no cross-encoder reranking). Measured on a 22-question test set covering document retrieval, summarization, and factual Q&A tasks."
+}

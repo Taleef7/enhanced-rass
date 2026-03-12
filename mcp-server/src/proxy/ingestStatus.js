@@ -5,6 +5,7 @@ const axios = require("axios");
 const authMiddleware = require("../authMiddleware");
 const { EMBEDDING_SERVICE_BASE_URL } = require("../config");
 const { statusPollLimiter } = require("../middleware/rateLimits");
+const logger = require("../logger");
 
 const router = express.Router();
 
@@ -21,7 +22,7 @@ router.get("/api/ingest/status/:jobId", statusPollLimiter, authMiddleware, async
     if (err.response?.status === 404) {
       return res.status(404).json({ error: `Job ${jobId} not found.` });
     }
-    console.error("[IngestStatus Proxy] Error:", err.message);
+    logger.error("[IngestStatus Proxy] Error:", err.message);
     res.status(500).json({ error: "Failed to retrieve job status." });
   }
 });

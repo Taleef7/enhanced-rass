@@ -3,6 +3,7 @@
 
 const { OpenAI } = require("openai");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const logger = require("../logger");
 const {
   SEARCH_TERM_EMBEDDING_PROVIDER,
   OPENAI_EMBED_MODEL_FOR_SEARCH_TERMS,
@@ -16,7 +17,7 @@ let searchEmbedderClient;
 if (SEARCH_TERM_EMBEDDING_PROVIDER === "openai") {
   if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is required.");
   searchEmbedderClient = new OpenAI({ apiKey: OPENAI_API_KEY });
-  console.log(
+  logger.info(
     `[Init] Search Embedder: OpenAI, Model: ${OPENAI_EMBED_MODEL_FOR_SEARCH_TERMS}`
   );
 } else {
@@ -25,7 +26,7 @@ if (SEARCH_TERM_EMBEDDING_PROVIDER === "openai") {
   searchEmbedderClient = googleGenAI_Embed.getGenerativeModel({
     model: GEMINI_EMBED_MODEL_FOR_SEARCH_TERMS,
   });
-  console.log(
+  logger.info(
     `[Init] Search Embedder: Gemini, Model: ${GEMINI_EMBED_MODEL_FOR_SEARCH_TERMS}`
   );
 }
@@ -38,7 +39,7 @@ if (SEARCH_TERM_EMBEDDING_PROVIDER === "openai") {
  */
 async function embedText(text) {
   if (!text?.trim()) throw new Error("Empty text provided for embedding");
-  console.log(`[EmbedSearchTerm] Embedding text...`);
+  logger.info(`[EmbedSearchTerm] Embedding text...`);
   try {
     if (SEARCH_TERM_EMBEDDING_PROVIDER === "openai") {
       const { data } = await searchEmbedderClient.embeddings.create({
@@ -54,7 +55,7 @@ async function embedText(text) {
       return result.embedding.values;
     }
   } catch (err) {
-    console.error(
+    logger.error(
       `[EmbedSearchTerm] Error with ${SEARCH_TERM_EMBEDDING_PROVIDER}:`,
       err.message
     );

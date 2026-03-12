@@ -2,6 +2,7 @@
 // KNN + keyword hybrid search against OpenSearch with optional per-user security filtering.
 
 const { DEFAULT_K_OPENSEARCH_HITS } = require("../config");
+const logger = require("../logger");
 
 /**
  * Builds a hybrid KNN + keyword query.
@@ -98,16 +99,16 @@ function createSecureQuery(term, vector, k, userId, documents) {
  * @returns {Promise<object[]>} Array of OpenSearch hit objects.
  */
 async function simpleSearch({ term, embed, os, index, userId, documents }) {
-  console.log(`[Simple Search] Executing for term: "${term}"`);
-  if (userId) console.log(`[Simple Search] UserId: "${userId}"`);
-  console.log(
+  logger.info(`[Simple Search] Executing for term: "${term}"`);
+  if (userId) logger.info(`[Simple Search] UserId: "${userId}"`);
+  logger.info(
     `[Simple Search] Documents filter: ${
       documents ? JSON.stringify(documents) : "none"
     }`
   );
 
   const vector = await embed(term);
-  console.log(
+  logger.info(
     `[Simple Search] Generated embedding vector length: ${vector?.length || "undefined"}`
   );
 
@@ -117,11 +118,11 @@ async function simpleSearch({ term, embed, os, index, userId, documents }) {
   try {
     const results = await os.search({ index, body: searchQuery });
     const hitCount = results.body.hits.hits.length;
-    console.log(`[Simple Search] Found ${hitCount} hits (status: ${results.statusCode}).`);
+    logger.info(`[Simple Search] Found ${hitCount} hits (status: ${results.statusCode}).`);
     return results.body.hits.hits || [];
   } catch (error) {
-    console.warn(`[Simple Search] Failed: ${error.message}`);
-    console.error(`[Simple Search] Full error:`, error);
+    logger.warn(`[Simple Search] Failed: ${error.message}`);
+    logger.error(`[Simple Search] Full error:`, error);
     return [];
   }
 }

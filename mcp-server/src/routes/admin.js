@@ -15,6 +15,7 @@ const { writeAuditLog } = require("../services/auditService");
 const { purgeUserData, runRetentionSweep } = require("../services/PurgeService");
 const { prisma } = require("../prisma");
 const { apiLimiter, deleteLimiter } = require("../middleware/rateLimits");
+const logger = require("../logger");
 
 const router = express.Router();
 
@@ -128,7 +129,7 @@ router.get("/api/admin/audit-logs", apiLimiter, authMiddleware, requireAdmin, as
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (err) {
-    console.error("[Admin] Error fetching audit logs:", err.message);
+    logger.error("[Admin] Error fetching audit logs:", err.message);
     res.status(500).json({ error: "Failed to fetch audit logs." });
   }
 });
@@ -219,7 +220,7 @@ router.get("/api/admin/audit-logs/export", apiLimiter, authMiddleware, requireAd
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.send(csv);
   } catch (err) {
-    console.error("[Admin] Error exporting audit logs:", err.message);
+    logger.error("[Admin] Error exporting audit logs:", err.message);
     res.status(500).json({ error: "Failed to export audit logs." });
   }
 });
@@ -243,7 +244,7 @@ router.delete("/api/users/:id/data", deleteLimiter, authMiddleware, requireAdmin
       purgeSummary: summary,
     });
   } catch (err) {
-    console.error("[Admin] Error purging user data:", err.message);
+    logger.error("[Admin] Error purging user data:", err.message);
     res.status(500).json({ error: "Failed to purge user data." });
   }
 });
@@ -266,10 +267,10 @@ router.post("/api/admin/retention-sweep", apiLimiter, authMiddleware, requireAdm
     // Run sweep asynchronously — respond immediately with 202
     res.status(202).json({ message: "Retention sweep started." });
     runRetentionSweep().catch((err) =>
-      console.error("[Admin] Retention sweep error:", err.message)
+      logger.error("[Admin] Retention sweep error:", err.message)
     );
   } catch (err) {
-    console.error("[Admin] Error triggering retention sweep:", err.message);
+    logger.error("[Admin] Error triggering retention sweep:", err.message);
     res.status(500).json({ error: "Failed to trigger retention sweep." });
   }
 });
@@ -304,7 +305,7 @@ router.get("/api/admin/users", apiLimiter, authMiddleware, requireAdmin, async (
     ]);
     res.json({ users, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
   } catch (err) {
-    console.error("[Admin] Error listing users:", err.message);
+    logger.error("[Admin] Error listing users:", err.message);
     res.status(500).json({ error: "Failed to list users." });
   }
 });

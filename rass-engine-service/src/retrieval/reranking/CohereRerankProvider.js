@@ -5,6 +5,7 @@
 "use strict";
 
 const { RerankProvider } = require("./RerankProvider");
+const logger = require("../../logger");
 
 class CohereRerankProvider extends RerankProvider {
   /**
@@ -34,7 +35,7 @@ class CohereRerankProvider extends RerankProvider {
     const n = topN || this.topN;
     const docTexts = documents.map((d) => d._source?.text || "");
 
-    console.log(
+    logger.info(
       `[CohereRerankProvider] Reranking ${documents.length} documents (topN=${n}).`
     );
 
@@ -64,7 +65,7 @@ class CohereRerankProvider extends RerankProvider {
       );
       ranked = response.data.results;
     } catch (err) {
-      console.error(`[CohereRerankProvider] API error: ${err.message}. Returning original order.`);
+      logger.error(`[CohereRerankProvider] API error: ${err.message}. Returning original order.`);
       return documents.slice(0, n);
     }
 
@@ -72,7 +73,7 @@ class CohereRerankProvider extends RerankProvider {
     const reranked = ranked.map((r) => {
       const doc = documents[r.index];
       const augmented = { ...doc, rerankScore: r.relevance_score };
-      console.debug(
+      logger.debug(
         `[CohereRerankProvider] doc[${r.index}] rerankScore=${r.relevance_score.toFixed(4)}`
       );
       return augmented;

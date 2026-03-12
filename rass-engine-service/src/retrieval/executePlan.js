@@ -6,6 +6,7 @@ const axios = require("axios");
 const { simpleSearch } = require("./simpleSearch");
 const { EMBEDDING_SERVICE_BASE_URL } = require("../config");
 const { ExecutionPlanSchema } = require("../schemas/plannerSchemas");
+const logger = require("../logger");
 
 /**
  * Executes a multi-step search plan, deduplicates results by parent document ID,
@@ -38,17 +39,17 @@ async function runSteps({ plan, embed, os, index, userId, documents }) {
     const term = (step.query || step.search_term)?.trim();
     if (!term) continue;
     const results = await simpleSearch({ term, embed, os, index, userId, documents });
-    console.log(
+    logger.info(
       `[runSteps] Refined search for "${term}" returned ${results.length} results.`
     );
     allChildHits.push(...results);
   }
 
   if (allChildHits.length === 0) {
-    console.warn("[runSteps] All refined search steps returned no results.");
+    logger.warn("[runSteps] All refined search steps returned no results.");
     return [];
   }
-  console.log(
+  logger.info(
     `[runSteps] Total child hits collected after refinement: ${allChildHits.length}`
   );
 
@@ -66,11 +67,11 @@ async function runSteps({ plan, embed, os, index, userId, documents }) {
 
   const uniqueParentIds = Array.from(parentIdMap.keys());
   if (uniqueParentIds.length === 0) {
-    console.warn("[runSteps] No parent IDs found in child document metadata.");
+    logger.warn("[runSteps] No parent IDs found in child document metadata.");
     return [];
   }
 
-  console.log(
+  logger.info(
     `[runSteps] Found ${uniqueParentIds.length} unique parent documents to fetch.`
   );
 
@@ -80,7 +81,7 @@ async function runSteps({ plan, embed, os, index, userId, documents }) {
       { ids: uniqueParentIds }
     );
     const parentDocuments = response.data.documents.filter((doc) => doc !== null);
-    console.log(
+    logger.info(
       `[runSteps] Successfully fetched ${parentDocuments.length} parent documents.`
     );
     return parentDocuments.map((doc) => ({
@@ -88,7 +89,7 @@ async function runSteps({ plan, embed, os, index, userId, documents }) {
       _score: parentIdMap.get(doc.metadata.docId)?._score || 0,
     }));
   } catch (error) {
-    console.warn(`[runSteps] Failed to fetch parent documents: ${error.message}`);
+    logger.warn(`[runSteps] Failed to fetch parent documents: ${error.message}`);
     return [];
   }
 }
