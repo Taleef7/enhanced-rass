@@ -11,11 +11,14 @@ import {
   Divider,
   Badge,
   Typography,
+  Tooltip,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import FolderIcon from "@mui/icons-material/Folder";
 import LogoutIcon from "@mui/icons-material/Logout";
 import PersonIcon from "@mui/icons-material/Person";
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
+import ExploreIcon from "@mui/icons-material/Explore";
 import { useChat } from "../context/ChatContext";
 import { useAuth } from "../context/AuthContext";
 import { streamQuery } from "../apiClient"; // We'll update apiClient next
@@ -24,12 +27,17 @@ import MessageList from "./MessageList";
 import ChatInput from "./ChatInput";
 import WelcomeScreen from "./WelcomeScreen";
 import DocumentPanel from "./DocumentPanel";
+import ContextPanel from "./ContextPanel";
+import GuidedTour from "./GuidedTour";
 
 function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
   const [query, setQuery] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
   const [isDocumentPanelOpen, setIsDocumentPanelOpen] = useState(false);
+  const [isContextPanelOpen, setIsContextPanelOpen] = useState(false);
+  const [contextChunks, setContextChunks] = useState([]);
+  const [runTour, setRunTour] = useState(false);
   const abortControllerRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const open = Boolean(anchorEl);
@@ -97,7 +105,12 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
           finalBotSources = sources;
         },
         abortControllerRef.current.signal,
-        token
+        token,
+        (chunks) => {
+          // Phase F (#129): "What RASS is thinking" — show context panel with retrieved chunks
+          setContextChunks(chunks);
+          setIsContextPanelOpen(true);
+        }
       );
 
       // After streaming completes, save the complete bot message to database
@@ -183,6 +196,14 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
                 <FolderIcon />
               </IconButton>
             </Badge>
+            <Tooltip title="Take a tour">
+              <IconButton
+                onClick={() => setRunTour(true)}
+                sx={{ color: "#fff" }}
+              >
+                <ExploreIcon />
+              </IconButton>
+            </Tooltip>
             <IconButton
               onClick={handleProfileClick}
               sx={{ color: "#fff", p: 0 }}
@@ -289,6 +310,22 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
               <FolderIcon />
             </IconButton>
           </Badge>
+          <Tooltip title="What RASS is thinking">
+            <IconButton
+              onClick={() => setIsContextPanelOpen((prev) => !prev)}
+              sx={{ color: isContextPanelOpen ? "primary.main" : "#fff" }}
+            >
+              <AutoAwesomeIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Take a tour">
+            <IconButton
+              onClick={() => setRunTour(true)}
+              sx={{ color: "#fff" }}
+            >
+              <ExploreIcon />
+            </IconButton>
+          </Tooltip>
           <IconButton onClick={handleProfileClick} sx={{ color: "#fff", p: 0 }}>
             <Avatar
               sx={{
@@ -431,6 +468,31 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
       <DocumentPanel
         open={isDocumentPanelOpen}
         onClose={() => setIsDocumentPanelOpen(false)}
+      />
+
+      {/* Phase F (#129): "What RASS is thinking" context panel */}
+      {isContextPanelOpen && (
+        <Box
+          sx={{
+            position: "fixed",
+            top: 0,
+            right: 0,
+            height: "100vh",
+            zIndex: 1200,
+          }}
+        >
+          <ContextPanel
+            chunks={contextChunks}
+            isStreaming={isTyping}
+            onClose={() => setIsContextPanelOpen(false)}
+          />
+        </Box>
+      )}
+
+      {/* Phase F (#131): Guided tour */}
+      <GuidedTour
+        run={runTour}
+        onFinish={() => setRunTour(false)}
       />
     </Box>
   );

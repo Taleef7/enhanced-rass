@@ -125,6 +125,26 @@ async function streamAnswer(res, query, sourceDocuments) {
   const generationPrompt = buildGenerationPrompt(context, query);
   let fullAnswer = "";
 
+  // Phase F (#129): Emit a 'context' event with the retrieved chunks before generation.
+  // This powers the "What RASS is thinking" transparency panel in the frontend.
+  const contextChunks = sourceDocuments.map((doc) => ({
+    text: (doc.text || "").substring(0, 300),
+    score: typeof doc.rerank_score === "number" ? doc.rerank_score : doc.initial_score,
+    documentName: doc.metadata?.originalFilename || doc.metadata?.source || "Unknown",
+  }));
+  writeSSE(res, {
+    choices: [
+      {
+        delta: {
+          custom_meta: {
+            type: "context",
+            chunks: contextChunks,
+          },
+        },
+      },
+    ],
+  });
+
   try {
     if (LLM_PROVIDER === "openai") {
       const completionStream = await llmClient.chat.completions.create({

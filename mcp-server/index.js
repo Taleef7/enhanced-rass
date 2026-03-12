@@ -42,6 +42,9 @@ const adminRoutes = require("./src/routes/admin.js");
 // Phase E: Prometheus metrics
 const metricsRoutes = require("./src/routes/metrics.js");
 
+// Phase F: Health check
+const healthRoutes = require("./src/routes/health.js");
+
 const app = express();
 app.use(cors({
   origin: process.env.CORS_ORIGIN || true,
@@ -101,6 +104,9 @@ app.use(adminRoutes);
 
 // --- Phase E: Prometheus metrics ---
 app.use(metricsRoutes);
+
+// --- Phase F: Health check ---
+app.use(healthRoutes);
 
 // --- Legacy simple-ask (deprecated) ---
 // @deprecated Use /api/stream-ask instead.

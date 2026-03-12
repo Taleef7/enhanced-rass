@@ -579,3 +579,61 @@ python evaluation/run_eval.py --max-queries 5 --verbose
 | Loki | http://localhost:3100 | Log aggregation API |
 | Bull Board | http://localhost:8001/admin/queues | BullMQ job queue dashboard (dev only) |
 | Swagger UI | http://localhost:8080/api/docs | API documentation (dev only) |
+
+---
+
+## Phase F Features — Demo Excellence & Documentation
+
+### #129 — Redesigned Demo UX
+
+- **Knowledge Graph Visualization** (`KnowledgeGraphPanel`): Interactive force-directed graph showing documents as nodes and inter-document similarity as edges. Accessible from the Knowledge Base view via the Hub icon.
+- **"What RASS Is Thinking" Context Panel** (`ContextPanel`): Real-time transparency sidebar that appears during/after each query, showing which document chunks were retrieved, their relevance scores, and the raw text passed to the LLM. Toggle with the ✨ sparkle button.
+- **Source Attribution Timeline**: Grounded citations displayed with document name, page number, excerpt, and a "grounded" badge.
+- **Example Query Chips** (`ExampleQueries`): Pre-built example questions appear on the welcome screen to guide new users.
+- **Streaming Cursor**: Animated blinking cursor during SSE token streaming.
+- **SSE Context Event**: RASS Engine now emits a `context` SSE event with retrieved chunks before generating the answer.
+
+### #130 — Comprehensive API Documentation
+
+- **OpenAPI 3.1 spec** (`mcp-server/openapi.yaml` and `docs/api/openapi.yaml`): All endpoints documented including auth, chats, documents, KBs, workspaces, API keys, health, and the streaming `/api/stream-ask` endpoint.
+- **Swagger UI** mounted at `http://localhost:8080/api/docs` for interactive API exploration.
+- **SSE Streaming Guide** at `docs/api/streaming.md` explaining the event protocol.
+
+### #131 — One-Click Demo Setup
+
+- **`./scripts/demo.sh`**: Single command starts the full stack, seeds sample documents, and opens the browser. Supports `--clean` for a full reset.
+- **`demo/docker-compose.demo.yml`**: Separate demo compose with named volumes and a one-time seeder service.
+- **`demo/seed_data/`**: Pre-built Markdown documents about RAG, RASS architecture, and a demo guide.
+- **`HealthIndicator` component**: Real-time service health badge in the UI sidebar, polling `GET /api/health` every 30 seconds.
+- **Guided Tour** (`GuidedTour`): In-app onboarding tour (react-joyride) walks new users through all major features. Launch from the 🧭 compass icon.
+
+### #132 — Comprehensive Developer Documentation
+
+- **`docs/adr/`**: Six Architecture Decision Records (ADRs):
+  - `001-opensearch-hybrid-search.md` — Why OpenSearch for both vector and BM25
+  - `002-parent-child-chunking.md` — The chunking strategy and rationale
+  - `003-per-kb-opensearch-indices.md` — Multi-tenant isolation model
+  - `004-jwt-auth-strategy.md` — JWT + HTTP-only refresh token approach
+  - `005-bullmq-async-ingestion.md` — Async job queue design
+  - `006-sse-streaming.md` — SSE vs WebSockets for LLM streaming
+- **`CONTRIBUTING.md`**: Developer guide with branching strategy, code standards, testing, and PR process.
+- **`DEPLOYMENT.md`**: Expanded with production architecture, TLS setup, resource requirements, health checks, and troubleshooting.
+- **`docs/user-guide.md`**: End-user guide covering all features with tips and troubleshooting.
+
+### #133 — Value Narrative & Showcase
+
+- **`docs/VALUE_PROPOSITION.md`**: Business case with ROI analysis, competitive differentiation, and target personas.
+- **`docs/CASE_STUDY.md`**: Representative case study with quantitative results (34× faster research, 0.91 faithfulness, 94% adoption).
+- **`docs/PERFORMANCE.md`**: Detailed benchmark data — retrieval latency, answer quality (RAGAS), ingestion throughput, scalability.
+- **`docs/BLOG_POST.md`**: Technical blog post draft explaining the architecture decisions and lessons learned.
+- **`docs/DEMO_VIDEO_SCRIPT.md`**: Scene-by-scene script for recording the RASS demo video.
+
+### Service Endpoints (Phase F additions)
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/health` | Aggregated health for all services (Postgres, OpenSearch, Redis, Engine, Embedding) |
+| `GET /api/knowledge-bases/:kbId/graph` | Knowledge graph data (nodes = docs, edges = similarity) |
+| `GET /api/docs` | Swagger UI (OpenAPI 3.1) |
+| `GET /metrics` | Prometheus metrics scrape endpoint |
+

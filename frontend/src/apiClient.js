@@ -170,7 +170,8 @@ export const streamQuery = async (
   onTextChunk,
   onSources,
   signal,
-  token = null
+  token = null,
+  onContext = null
 ) => {
   const response = await fetch("/api/stream-ask", {
     method: "POST",
@@ -189,31 +190,39 @@ export const streamQuery = async (
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  let buffer = "";
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
-    const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split("\n\n");
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n\n");
+    buffer = lines.pop(); // Keep incomplete line in buffer
 
     for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        const dataContent = line.substring(6);
-        if (dataContent === "[DONE]") break;
+      if (!line.startsWith("data: ")) continue;
+      const dataContent = line.substring(6).trim();
+      if (dataContent === "[DONE]") break;
 
-        try {
-          const parsed = JSON.parse(dataContent);
-          const delta = parsed.choices[0]?.delta;
+      try {
+        const parsed = JSON.parse(dataContent);
+        const delta = parsed.choices?.[0]?.delta;
+        if (!delta) continue;
 
-          if (delta?.content) {
-            onTextChunk(delta.content);
-          } else if (delta?.custom_meta?.citations) {
-            onSources(delta.custom_meta.citations);
+        if (delta.content) {
+          onTextChunk(delta.content);
+        } else if (delta.custom_meta) {
+          const meta = delta.custom_meta;
+          if (meta.type === "citations" && meta.citations) {
+            onSources(meta.citations);
+          } else if (meta.type === "context" && meta.chunks && onContext) {
+            // Phase F (#129): "What RASS is thinking" context chunks
+            onContext(meta.chunks);
           }
-        } catch (e) {
-          console.error("Error parsing stream data:", e);
         }
+      } catch (e) {
+        console.error("Error parsing stream data:", e);
       }
     }
   }
