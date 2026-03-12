@@ -25,11 +25,15 @@ const VALID_HIT = {
 };
 
 const VALID_CITATION = {
-  id: "cit-001",
-  source: "report.pdf",
-  score: 0.87,
-  text: "This is the relevant passage.",
+  index: 1,
+  documentId: "parent-001",
+  documentName: "report.pdf",
+  chunkId: "chunk-abc",
+  relevanceScore: 0.87,
+  excerpt: "This is the relevant passage from the document.",
+  pageNumber: 3,
   uploadedAt: "2026-01-01T00:00:00.000Z",
+  grounded: true,
 };
 
 describe("RetrievalHitSchema", () => {
@@ -85,26 +89,38 @@ describe("RetrievalResultSchema", () => {
 });
 
 describe("CitationSchema", () => {
-  test("valid citation passes", () => {
+  test("valid structured citation passes", () => {
     const result = CitationSchema.safeParse(VALID_CITATION);
     expect(result.success).toBe(true);
   });
 
-  test("citation missing source fails", () => {
-    const { source, ...rest } = VALID_CITATION;
+  test("citation missing documentName fails", () => {
+    const { documentName, ...rest } = VALID_CITATION;
     const result = CitationSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
 
-  test("citation missing id fails", () => {
-    const { id, ...rest } = VALID_CITATION;
+  test("citation missing documentId fails", () => {
+    const { documentId, ...rest } = VALID_CITATION;
     const result = CitationSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
 
-  test("uploadedAt is optional", () => {
-    const { uploadedAt, ...rest } = VALID_CITATION;
+  test("citation missing index fails", () => {
+    const { index, ...rest } = VALID_CITATION;
     const result = CitationSchema.safeParse(rest);
+    expect(result.success).toBe(false);
+  });
+
+  test("optional fields (pageNumber, uploadedAt, chunkId, grounded) can be omitted", () => {
+    const minimal = {
+      index: 1,
+      documentId: "doc-001",
+      documentName: "report.pdf",
+      relevanceScore: 0.75,
+      excerpt: "A short excerpt.",
+    };
+    const result = CitationSchema.safeParse(minimal);
     expect(result.success).toBe(true);
   });
 });

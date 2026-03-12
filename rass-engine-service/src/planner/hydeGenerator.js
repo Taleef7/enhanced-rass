@@ -9,10 +9,11 @@ const { LLM_PROVIDER, OPENAI_MODEL_NAME, GEMINI_MODEL_NAME } = require("../confi
  * Generates a hypothetical document in response to a user's query.
  *
  * @param {string} query - The user's original query.
+ * @param {number} [maxTokens=300] - Maximum tokens to generate for the hypothetical document.
  * @returns {Promise<string>} The generated hypothetical document text.
  */
-async function generateHypotheticalDocument(query) {
-  console.log(`[HyDE] Generating hypothetical document for query: "${query}"`);
+async function generateHypotheticalDocument(query, maxTokens = 300) {
+  console.log(`[HyDE] Generating hypothetical document for query: "${query}" (maxTokens=${maxTokens})`);
 
   const prompt = `Based on the context of a user's documents, write a short, hypothetical passage that perfectly answers the following user question.
 The passage should sound like it was extracted directly from one of the user's documents. Do not use general knowledge.
@@ -27,7 +28,7 @@ Hypothetical Passage:`;
         model: OPENAI_MODEL_NAME,
         messages: [{ role: "user", content: prompt }],
         temperature: 0.5,
-        max_tokens: 300,
+        max_tokens: maxTokens,
       });
       const hypotheticalDoc = completion.choices[0].message.content;
       console.log(
@@ -35,7 +36,10 @@ Hypothetical Passage:`;
       );
       return hypotheticalDoc;
     } else if (LLM_PROVIDER === "gemini") {
-      const result = await llmClient.generateContent(prompt);
+      const result = await llmClient.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: maxTokens },
+      });
       const response = await result.response;
       const hypotheticalDoc = response.text();
       console.log(

@@ -59,6 +59,18 @@ const ConfigSchema = z
     MCP_SERVER_PORT: portRange,
     RERANKER_PORT: portRange.optional(),
 
+    // Phase C: Reranking
+    RERANK_PROVIDER: z
+      .enum(["none", "cohere", "local"])
+      .optional()
+      .default("none"),
+    RERANK_TOP_N: z.number().int().positive().optional().default(5),
+    COHERE_RERANK_MODEL: z.string().min(1).optional(),
+
+    // Phase C: HyDE
+    HYDE_ENABLED: z.boolean().optional().default(false),
+    HYDE_MAX_TOKENS: z.number().int().positive().optional().default(200),
+
     // RAG parameters
     EMBED_DIM: z
       .number()

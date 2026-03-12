@@ -1,0 +1,192 @@
+name: Weekly RAG Evaluation
+
+on:
+  schedule:
+    # Run every Monday at 06:00 UTC
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      top_k:
+        description: "Number of documents to retrieve per query"
+        required: false
+        default: "5"
+      threshold:
+        description: "Regression threshold (e.g. 0.05 = 5%)"
+        required: false
+        default: "0.05"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  evaluate:
+    name: Run RAG Evaluation Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create .env file for services
+        run: |
+          cat > .env << 'EOF'
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+          COHERE_API_KEY=${{ secrets.COHERE_API_KEY }}
+          JWT_SECRET=ci-evaluation-secret
+          EOF
+
+      - name: Start RASS stack
+        run: |
+          docker compose up -d --build
+          echo "Waiting for services to become healthy..."
+          sleep 30
+
+      - name: Wait for RASS stack to be ready
+        run: |
+          for i in $(seq 1 18); do
+            RASS_OK=false
+            MCP_OK=false
+            curl -sf http://localhost:8000/health > /dev/null 2>&1 && RASS_OK=true
+            curl -sf http://localhost:8080/health > /dev/null 2>&1 && MCP_OK=true
+            if $RASS_OK && $MCP_OK; then
+              echo "RASS engine and MCP server are ready."
+              break
+            fi
+            echo "Attempt $i/18: RASS_OK=$RASS_OK MCP_OK=$MCP_OK — waiting 10s..."
+            sleep 10
+          done
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install evaluation dependencies
+        run: |
+          pip install requests
+
+      - name: Ingest evaluation corpus
+        run: |
+          MCP_URL="http://localhost:8080"
+          # Register the evaluation user (ignore 409 if it already exists)
+          curl -sf -X POST "$MCP_URL/api/auth/register" \
+            -H "Content-Type: application/json" \
+            -d '{"username":"eval-bot","password":"eval-bot-ci-secret"}' || true
+
+          # Login and capture JWT
+          TOKEN=$(curl -sf -X POST "$MCP_URL/api/auth/login" \
+            -H "Content-Type: application/json" \
+            -d '{"username":"eval-bot","password":"eval-bot-ci-secret"}' \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Failed to obtain auth token for evaluation corpus ingestion."
+            exit 1
+          fi
+
+          echo "Uploading evaluation corpus (War of the Worlds)..."
+          RESPONSE=$(curl -sf -X POST "$MCP_URL/api/embed-upload" \
+            -H "Authorization: Bearer $TOKEN" \
+            -F "file=@evaluation/source_documents/waroftheworlds.pdf")
+          JOB_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('jobs',[{}])[0].get('jobId',''))")
+
+          if [ -z "$JOB_ID" ]; then
+            echo "::warning::Could not determine ingestion job ID; skipping status poll."
+          else
+            echo "Polling ingestion status for job $JOB_ID..."
+            for attempt in $(seq 1 30); do
+              STATUS=$(curl -sf -H "Authorization: Bearer $TOKEN" \
+                "$MCP_URL/api/ingest/status/$JOB_ID" \
+                | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))")
+              echo "Attempt $attempt/30: status=$STATUS"
+              if [ "$STATUS" = "completed" ] || [ "$STATUS" = "READY" ]; then
+                echo "Corpus ingestion complete."
+                break
+              fi
+              if [ "$STATUS" = "failed" ] || [ "$STATUS" = "FAILED" ]; then
+                echo "::error::Corpus ingestion failed."
+                exit 1
+              fi
+              sleep 10
+            done
+          fi
+
+      - name: Run evaluation suite
+        id: run_eval
+        env:
+          RASS_URL: http://localhost:8000
+        run: |
+          TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          OUTPUT_FILE="evaluation/results/run_${TIMESTAMP}.json"
+          python evaluation/run_eval.py \
+            --url "$RASS_URL" \
+            --test-set evaluation/datasets/test_set.json \
+            --output "$OUTPUT_FILE" \
+            --top-k ${{ github.event.inputs.top_k || '5' }} \
+            --verbose
+          echo "output_file=$OUTPUT_FILE" >> "$GITHUB_OUTPUT"
+          echo "timestamp=$TIMESTAMP" >> "$GITHUB_OUTPUT"
+
+      - name: Run regression comparison
+        id: regression
+        continue-on-error: true
+        env:
+          REGRESSION_THRESHOLD: ${{ github.event.inputs.threshold || '0.05' }}
+        run: |
+          python evaluation/compare_runs.py \
+            --results-dir evaluation/results \
+            --threshold ${{ github.event.inputs.threshold || '0.05' }}
+
+      - name: Publish evaluation summary
+        if: always()
+        run: |
+          OUTPUT_FILE="${{ steps.run_eval.outputs.output_file }}"
+          if [ -f "$OUTPUT_FILE" ]; then
+            python - << 'PYEOF'
+          import json, os, sys
+          path = os.environ.get("OUTPUT_FILE") or sys.argv[1] if len(sys.argv) > 1 else None
+          output_file = "${{ steps.run_eval.outputs.output_file }}"
+          with open(output_file) as f:
+            data = json.load(f)
+          agg = data.get("aggregates", {})
+          summary = ["# RAG Evaluation Results", ""]
+          summary.append(f"**Run ID**: `{data.get('run_id', 'unknown')}`")
+          summary.append(f"**Run At**: {data.get('run_at', '')[:19]} UTC")
+          summary.append(f"**Queries**: {data.get('n_queries', 0)}")
+          summary.append("")
+          summary.append("## Aggregate Metrics")
+          summary.append("")
+          summary.append("| Metric | Mean | p50 | p95 |")
+          summary.append("|--------|------|-----|-----|")
+          for metric, stats in agg.items():
+            summary.append(f"| {metric} | {stats['mean']:.3f} | {stats['p50']:.3f} | {stats['p95']:.3f} |")
+          print("\n".join(summary))
+          with open(os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout"), "a") as f:
+            f.write("\n".join(summary) + "\n")
+          PYEOF
+          fi
+
+      - name: Commit evaluation results
+        if: steps.run_eval.outputs.output_file != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add evaluation/results/
+          git diff --cached --quiet || git commit -m "ci: add evaluation run ${{ steps.run_eval.outputs.timestamp }}"
+          git push
+
+      - name: Stop RASS stack
+        if: always()
+        run: docker compose down -v
+
+      - name: Fail if regression detected
+        if: steps.regression.outcome == 'failure'
+        run: |
+          echo "::error::Regression detected! One or more metrics degraded beyond the threshold."
+          exit 1

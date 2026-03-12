@@ -34,15 +34,95 @@ function writeSSE(res, data) {
 }
 
 /**
+ * Builds a structured citation array from source documents.
+ * Returns validated citations conforming to CitationSchema.
+ *
+ * @param {object[]} sourceDocuments - Array of {text, metadata, initial_score, rerank_score} objects.
+ * @param {string}   llmAnswer       - The generated answer text (for grounding verification).
+ * @returns {object[]} Validated structured citations.
+ */
+function buildStructuredCitations(sourceDocuments, llmAnswer) {
+  return sourceDocuments.reduce((acc, doc, i) => {
+    const meta = doc.metadata || {};
+    const relevanceScore =
+      typeof doc.rerank_score === "number"
+        ? doc.rerank_score
+        : typeof doc.initial_score === "number"
+        ? doc.initial_score
+        : 0;
+
+    const excerpt = (doc.text || "").substring(0, 200).trim();
+
+    // Grounding estimate: heuristic check that the cited passage is represented in the answer.
+    // Two-tier test: (1) direct phrase match — any PHRASE_LEN-char substring of the excerpt appears
+    // verbatim in the answer; (2) significant-term match — at least 3 tokens >= MIN_WORD_LEN chars from
+    // the excerpt appear in the answer. This reduces spurious "grounded" flags from trivial
+    // single-word overlaps while remaining useful as a lightweight, dependency-free signal.
+    let grounded = false;
+    if (llmAnswer && excerpt) {
+      const normalizedAnswer = llmAnswer.toLowerCase();
+      const normalizedExcerpt = excerpt.toLowerCase();
+
+      // Tier 1: look for any PHRASE_LEN-character phrase match
+      const PHRASE_LEN = 30;
+      const PHRASE_STEP = 10;
+      const MIN_WORD_LEN = 5;
+      for (let start = 0; start <= normalizedExcerpt.length - PHRASE_LEN; start += PHRASE_STEP) {
+        if (normalizedAnswer.includes(normalizedExcerpt.substring(start, start + PHRASE_LEN))) {
+          grounded = true;
+          break;
+        }
+      }
+
+      // Tier 2 fallback: require at least 3 significant tokens (>= MIN_WORD_LEN chars) from excerpt in answer
+      if (!grounded) {
+        const significantWords = normalizedExcerpt
+          .split(/\W+/)
+          .filter((w) => w.length >= MIN_WORD_LEN);
+        const matchCount = significantWords.filter((w) => normalizedAnswer.includes(w)).length;
+        grounded = matchCount >= 3;
+      }
+    }
+
+    // Coerce pageNumber to an integer; omit when not a valid positive integer
+    const rawPage = meta.pageNumber ?? meta.page_number;
+    const pageNumber = rawPage !== undefined ? parseInt(rawPage, 10) : undefined;
+
+    const raw = {
+      index: i + 1,
+      documentId:
+        meta.documentId || meta.parentId || meta.docId || meta.id || uuidv4(),
+      documentName:
+        meta.originalFilename || meta.source || "Unknown",
+      chunkId: meta.chunkId || undefined,
+      relevanceScore,
+      excerpt,
+      pageNumber: Number.isFinite(pageNumber) && pageNumber > 0 ? pageNumber : undefined,
+      uploadedAt: meta.uploadedAt || undefined,
+      grounded,
+    };
+
+    const parsed = CitationSchema.safeParse(raw);
+    if (!parsed.success) {
+      console.warn("[Generation] Excluding invalid citation:", parsed.error.issues);
+      return acc;
+    }
+    acc.push(parsed.data);
+    return acc;
+  }, []);
+}
+
+/**
  * Streams the LLM answer back to the client using SSE, then sends citations and [DONE].
  *
  * @param {import('express').Response} res - The Express response object.
  * @param {string} query - The user's question.
- * @param {object[]} sourceDocuments - Array of {text, metadata} objects.
+ * @param {object[]} sourceDocuments - Array of {text, metadata, initial_score, rerank_score} objects.
  */
 async function streamAnswer(res, query, sourceDocuments) {
   const context = sourceDocuments.map((doc) => doc.text).join("\n\n---\n\n");
   const generationPrompt = buildGenerationPrompt(context, query);
+  let fullAnswer = "";
 
   try {
     if (LLM_PROVIDER === "openai") {
@@ -54,9 +134,11 @@ async function streamAnswer(res, query, sourceDocuments) {
         stream: true,
       });
       for await (const chunk of completionStream) {
-        if (chunk.choices[0]?.delta?.content) {
+        const token = chunk.choices[0]?.delta?.content;
+        if (token) {
+          fullAnswer += token;
           writeSSE(res, {
-            choices: [{ delta: { content: chunk.choices[0].delta.content } }],
+            choices: [{ delta: { content: token } }],
           });
         }
       }
@@ -64,31 +146,29 @@ async function streamAnswer(res, query, sourceDocuments) {
       // Gemini streaming
       const result = await llmClient.generateContentStream(generationPrompt);
       for await (const chunk of result.stream) {
-        if (chunk.text()) {
-          writeSSE(res, { choices: [{ delta: { content: chunk.text() } }] });
+        const token = chunk.text();
+        if (token) {
+          fullAnswer += token;
+          writeSSE(res, { choices: [{ delta: { content: token } }] });
         }
       }
     }
-    // Assemble and validate citations before sending them to the client
-    const rawCitations = sourceDocuments.map((doc) => ({
-      id: doc.metadata?.parentId || uuidv4(),
-      source: doc.metadata?.originalFilename || doc.metadata?.source || "Unknown",
-      score: doc.initial_score ?? 0,
-      text: doc.text || "",
-      uploadedAt: doc.metadata?.uploadedAt,
-    }));
 
-    const validatedCitations = rawCitations.filter((citation) => {
-      const result = CitationSchema.safeParse(citation);
-      if (!result.success) {
-        console.warn("[Generation] Excluding invalid citation:", result.error.issues);
-      }
-      return result.success;
-    });
+    // Build structured citations after generation is complete (grounding needs the full answer)
+    const structuredCitations = buildStructuredCitations(sourceDocuments, fullAnswer);
 
-    // Send citations after the token stream
+    // Emit a dedicated 'citations' SSE event (structured)
     writeSSE(res, {
-      choices: [{ delta: { custom_meta: { citations: validatedCitations } } }],
+      choices: [
+        {
+          delta: {
+            custom_meta: {
+              type: "citations",
+              citations: structuredCitations,
+            },
+          },
+        },
+      ],
     });
   } catch (e) {
     console.error("[Generation] Error during LLM stream:", e);

@@ -33,14 +33,29 @@ const RetrievalResultSchema = z.array(RetrievalHitSchema);
 
 /**
  * A single citation assembled for the LLM response.
- * Serialized into SSE events and the non-streaming /ask response.
+ * Serialized into SSE events emitted by the /stream-ask endpoint.
+ *
+ * Follows the Phase C structured citation spec (Issue #117):
+ *   index          — [1], [2], etc. (1-based position in the citations array)
+ *   documentId     — unique document identifier from metadata
+ *   documentName   — human-readable document name (filename or title)
+ *   chunkId        — OpenSearch document ID of the source chunk
+ *   relevanceScore — initial hybrid search score (or rerank score when available)
+ *   excerpt        — up to 200-char snippet from the chunk text
+ *   pageNumber     — page number if available in metadata
+ *   uploadedAt     — ISO timestamp of when the document was ingested
+ *   grounded       — heuristic estimate of whether the excerpt is present in the answer
  */
 const CitationSchema = z.object({
-  id: z.string(),
-  source: z.string(),      // document filename or title
-  score: z.number(),
-  text: z.string(),        // relevant excerpt passed to the LLM
+  index: z.number().int().positive(),
+  documentId: z.string(),
+  documentName: z.string(),
+  chunkId: z.string().optional(),
+  relevanceScore: z.number(),
+  excerpt: z.string(),
+  pageNumber: z.number().int().positive().optional(),
   uploadedAt: z.string().optional(),
+  grounded: z.boolean().optional(),
 });
 
 /**

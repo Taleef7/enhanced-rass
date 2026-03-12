@@ -113,11 +113,115 @@ All 16 unit tests pass: `cd embedding-service && npm test`.
 
 ---
 
+## Phase C Features — Retrieval Excellence
+
+### #114 — Modular, Pluggable Multi-Stage Retrieval Pipeline
+The retrieval logic is now expressed as an **ordered pipeline of independent, testable stages**:
+
+| Stage | File | Description |
+|---|---|---|
+| `HydeQueryExpansionStage` | `src/retrieval/HydeQueryExpansionStage.js` | Optionally expand query with hypothetical document (HyDE) |
+| `EmbedQueryStage` | `src/retrieval/EmbedQueryStage.js` | Embed the (expanded) query string |
+| `HybridSearchStage` | `src/retrieval/HybridSearchStage.js` | KNN + BM25 hybrid search against OpenSearch |
+| `ParentFetchStage` | `src/retrieval/ParentFetchStage.js` | Fetch full parent documents from the embedding service |
+| `DeduplicateStage` | `src/retrieval/DeduplicateStage.js` | Remove duplicate parent documents by content |
+| `RerankStage` | `src/retrieval/RerankStage.js` | Apply cross-encoder reranking (no-op if disabled) |
+| `TopKSelectStage` | `src/retrieval/TopKSelectStage.js` | Select top-K documents for generation |
+
+- Each stage can be **individually unit-tested** by providing a mock context object.
+- Stage wall-clock times are **logged as structured JSON** at INFO level with `stage`, `durationMs`, `pipeline` fields.
+- A stage can be disabled/replaced via `config.yml` without modifying any stage implementation.
+- The pipeline is assembled in `src/retrieval/createPipeline.js` and created once at startup.
+
+### #115 — Cross-Encoder Reranking
+Three reranking providers with a clean provider abstraction:
+
+| Provider | Config value | Description |
+|---|---|---|
+| `NoopRerankProvider` | `RERANK_PROVIDER: none` | Default; returns documents unchanged |
+| `CohereRerankProvider` | `RERANK_PROVIDER: cohere` | Uses Cohere Rerank API (`COHERE_API_KEY` required) |
+| `LocalCrossEncoderProvider` | `RERANK_PROVIDER: local` | Calls a local Python cross-encoder microservice on `RERANKER_PORT` |
+
+```yaml
+# config.yml
+RERANK_PROVIDER: "none"     # none | cohere | local
+RERANK_TOP_N: 5
+COHERE_RERANK_MODEL: "rerank-english-v3.0"
+```
+Rerank scores are logged at DEBUG level and propagated to citations as `relevanceScore`.
+
+### #116 — HyDE (Hypothetical Document Embeddings) Query Expansion
+- `HydeQueryExpansionStage` generates a hypothetical answer document before embedding.
+- The original query is always preserved in `context.originalQuery` for display and citation.
+- **Falls back gracefully** to the original query if LLM generation fails (no crash).
+- Stage timing surfaced in structured log output.
+
+```yaml
+# config.yml
+HYDE_ENABLED: false        # opt-in
+HYDE_MAX_TOKENS: 200
+```
+
+### #117 — Structured Citations with Source Attribution and Confidence
+Every answer stream now emits a **structured `citations` SSE event** after the token stream:
+
+```json
+{
+  "choices": [{
+    "delta": {
+      "custom_meta": {
+        "type": "citations",
+        "citations": [{
+          "index": 1,
+          "documentId": "...",
+          "documentName": "report.pdf",
+          "chunkId": "...",
+          "relevanceScore": 0.87,
+          "excerpt": "First 200 chars of the source chunk...",
+          "pageNumber": 3,
+          "uploadedAt": "2026-01-01T00:00:00.000Z",
+          "grounded": true
+        }]
+      }
+    }
+  }]
+}
+```
+
+- `relevanceScore` reflects the reranker score (if reranking is enabled) or the raw hybrid search score.
+- `grounded: true/false` — post-hoc verification that the cited excerpt is semantically present in the answer.
+- Frontend renders **expandable citation cards** with document name, score badge, page number, excerpt, and a grounding indicator (✓ or ⚠).
+
+### #118 — Automated RAG Evaluation Harness
+A complete evaluation harness with CI integration:
+
+| Component | Path | Description |
+|---|---|---|
+| Test set | `evaluation/datasets/test_set.json` | 22 labeled queries across 6 categories |
+| Runner | `evaluation/run_eval.py` | CLI runner; produces `run_<timestamp>.json` |
+| Comparison | `evaluation/compare_runs.py` | Regression detector; exits 1 if any metric degrades > threshold |
+| CI workflow | `.github/workflows/weekly-eval.yml` | Runs every Monday; publishes GitHub Actions summary |
+| Baselines | `evaluation/results/run_*.json` | Two reference runs checked in |
+
+**Metrics per query:** `context_relevance`, `answer_faithfulness`, `answer_relevance`, `recall_at_5`, `latency_ms`  
+**Aggregates:** mean, p50, p95 for each metric.
+
+```bash
+# Run evaluation
+python evaluation/run_eval.py --url http://localhost:8000 --top-k 5
+
+# Compare against previous baseline (exits 1 on regression > 5%)
+python evaluation/compare_runs.py --threshold 0.05
+```
+
+---
+
 ## Configuration
 
 - `config.yml` (root, mounted into services):
   - `OPENSEARCH_*` host/port/index, `REDIS_*` host/db, provider names, chunk sizes, `EMBED_DIM`.
-  - **New in Phase B**: `CHUNKING_STRATEGY` — choose `fixed_size`, `recursive_character`, or `sentence_window`.
+  - **Phase B**: `CHUNKING_STRATEGY` — choose `fixed_size`, `recursive_character`, or `sentence_window`.
+  - **Phase C**: `RERANK_PROVIDER`, `RERANK_TOP_N`, `COHERE_RERANK_MODEL`, `HYDE_ENABLED`, `HYDE_MAX_TOKENS`.
 - `.env` (root): `OPENAI_API_KEY`, `GEMINI_API_KEY`, `JWT_SECRET`, `DATABASE_URL`.
 - **`INTERNAL_SERVICE_TOKEN`** (env var, **required in production**): shared secret used to authenticate the embedding-service worker's calls to mcp-server `/internal/*` routes. Set a strong random value. If unset, the server logs a prominent warning on every internal request but still allows traffic (for local development convenience only).
 
@@ -182,7 +286,15 @@ Migrations: `mcp-server/prisma/migrations/`
 
 ## Evaluation
 
-`evaluation/` contains a TruLens-based evaluator (Python). See `evaluation/requirements.txt`.
+`evaluation/` contains a complete evaluation harness:
+
+- `evaluation/datasets/test_set.json` — 22 labeled queries (Phase C #118)
+- `evaluation/run_eval.py` — CLI runner; measures context_relevance, answer_faithfulness, answer_relevance, recall@5, and latency
+- `evaluation/compare_runs.py` — regression detector (exits 1 if any metric degrades > configurable threshold)
+- `evaluation/results/` — baseline runs and impact analysis for reranking and HyDE
+- `.github/workflows/weekly-eval.yml` — scheduled CI workflow (Mondays at 06:00 UTC)
+
+Legacy TruLens script: `evaluation/trulens_evaluator/evaluate.py`. See `evaluation/trulens_evaluator/requirements.txt`.
 
 ---
 

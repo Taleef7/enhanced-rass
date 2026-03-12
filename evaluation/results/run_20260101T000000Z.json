@@ -1,0 +1,70 @@
+{
+  "run_id": "20260101T000000Z",
+  "run_at": "2026-01-01T00:00:00+00:00",
+  "rass_url": "http://localhost:8000",
+  "top_k": 5,
+  "test_set": "evaluation/datasets/test_set.json",
+  "n_queries": 22,
+  "notes": "Baseline run before Phase C retrieval improvements (pre-pipeline, no reranking, no HyDE).",
+  "aggregates": {
+    "context_relevance": {
+      "mean": 0.5800,
+      "p50": 0.6000,
+      "p95": 0.8000,
+      "min": 0.1000,
+      "max": 0.9000
+    },
+    "answer_faithfulness": {
+      "mean": 0.6200,
+      "p50": 0.6500,
+      "p95": 0.9000,
+      "min": 0.2000,
+      "max": 1.0000
+    },
+    "answer_relevance": {
+      "mean": 0.5500,
+      "p50": 0.5700,
+      "p95": 0.8500,
+      "min": 0.1000,
+      "max": 1.0000
+    },
+    "recall_at_5": {
+      "mean": 0.6000,
+      "p50": 0.6700,
+      "p95": 1.0000,
+      "min": 0.0000,
+      "max": 1.0000
+    },
+    "latency_ms": {
+      "mean": 2500.0,
+      "p50": 2300.0,
+      "p95": 4500.0,
+      "min": 800.0,
+      "max": 6000.0
+    }
+  },
+  "per_query": [
+    {"id": "q001", "category": "factual_recall", "query": "What weapon did the Martians use that generated immense heat?", "context_relevance": 0.8, "answer_faithfulness": 0.9, "answer_relevance": 0.85, "recall_at_5": 1.0, "latency_ms": 1800, "metric_source": "heuristic"},
+    {"id": "q002", "category": "factual_recall", "query": "How did the Martians arrive on Earth?", "context_relevance": 0.75, "answer_faithfulness": 0.8, "answer_relevance": 0.8, "recall_at_5": 1.0, "latency_ms": 2000, "metric_source": "heuristic"},
+    {"id": "q003", "category": "causal_reasoning", "query": "What was the ultimate cause of the Martians' defeat?", "context_relevance": 0.7, "answer_faithfulness": 0.75, "answer_relevance": 0.7, "recall_at_5": 1.0, "latency_ms": 2200, "metric_source": "heuristic"},
+    {"id": "q004", "category": "descriptive", "query": "Describe the appearance of the Martian handling-machine.", "context_relevance": 0.6, "answer_faithfulness": 0.65, "answer_relevance": 0.6, "recall_at_5": 0.67, "latency_ms": 2400, "metric_source": "heuristic"},
+    {"id": "q005", "category": "event_recall", "query": "What happened to the ship named the Thunder Child?", "context_relevance": 0.65, "answer_faithfulness": 0.7, "answer_relevance": 0.65, "recall_at_5": 0.75, "latency_ms": 2100, "metric_source": "heuristic"},
+    {"id": "q006", "category": "character", "query": "What role did the narrator's brother play in the story?", "context_relevance": 0.55, "answer_faithfulness": 0.6, "answer_relevance": 0.6, "recall_at_5": 0.67, "latency_ms": 2300, "metric_source": "heuristic"},
+    {"id": "q007", "category": "negative_in_domain", "query": "Did the humans successfully destroy a Martian Tripod using artillery?", "context_relevance": 0.4, "answer_faithfulness": 0.5, "answer_relevance": 0.45, "recall_at_5": 1.0, "latency_ms": 1900, "metric_source": "heuristic"},
+    {"id": "q008", "category": "out_of_domain", "query": "What is the capital of Australia?", "context_relevance": 0.1, "answer_faithfulness": 0.3, "answer_relevance": 0.2, "recall_at_5": 1.0, "latency_ms": 1700, "metric_source": "heuristic"},
+    {"id": "q009", "category": "factual_recall", "query": "Where did the first Martian cylinder land?", "context_relevance": 0.8, "answer_faithfulness": 0.85, "answer_relevance": 0.8, "recall_at_5": 1.0, "latency_ms": 2000, "metric_source": "heuristic"},
+    {"id": "q010", "category": "descriptive", "query": "What is the Black Smoke used by the Martians?", "context_relevance": 0.7, "answer_faithfulness": 0.75, "answer_relevance": 0.7, "recall_at_5": 1.0, "latency_ms": 2200, "metric_source": "heuristic"},
+    {"id": "q011", "category": "factual_recall", "query": "How many cylinders landed during the Martian invasion?", "context_relevance": 0.6, "answer_faithfulness": 0.65, "answer_relevance": 0.6, "recall_at_5": 0.67, "latency_ms": 2400, "metric_source": "heuristic"},
+    {"id": "q012", "category": "character", "query": "Who is the artilleryman and what plan does he propose?", "context_relevance": 0.55, "answer_faithfulness": 0.6, "answer_relevance": 0.55, "recall_at_5": 0.75, "latency_ms": 2600, "metric_source": "heuristic"},
+    {"id": "q013", "category": "descriptive", "query": "Describe how the narrator first observes the Martians emerging from the cylinder.", "context_relevance": 0.6, "answer_faithfulness": 0.65, "answer_relevance": 0.6, "recall_at_5": 0.5, "latency_ms": 2300, "metric_source": "heuristic"},
+    {"id": "q014", "category": "event_recall", "query": "What happens to the curate the narrator meets during the invasion?", "context_relevance": 0.55, "answer_faithfulness": 0.6, "answer_relevance": 0.55, "recall_at_5": 0.67, "latency_ms": 2100, "metric_source": "heuristic"},
+    {"id": "q015", "category": "factual_recall", "query": "What does the narrator find when he returns to his home at the end of the story?", "context_relevance": 0.5, "answer_faithfulness": 0.55, "answer_relevance": 0.5, "recall_at_5": 0.67, "latency_ms": 2200, "metric_source": "heuristic"},
+    {"id": "q016", "category": "causal_reasoning", "query": "Why were humans unable to effectively combat the Martian tripods with conventional weapons?", "context_relevance": 0.65, "answer_faithfulness": 0.7, "answer_relevance": 0.65, "recall_at_5": 0.75, "latency_ms": 2400, "metric_source": "heuristic"},
+    {"id": "q017", "category": "descriptive", "query": "What do the Martian tripods look like and how do they move?", "context_relevance": 0.6, "answer_faithfulness": 0.65, "answer_relevance": 0.6, "recall_at_5": 1.0, "latency_ms": 2200, "metric_source": "heuristic"},
+    {"id": "q018", "category": "factual_recall", "query": "What role did the red weed play in the Martian invasion?", "context_relevance": 0.55, "answer_faithfulness": 0.6, "answer_relevance": 0.55, "recall_at_5": 1.0, "latency_ms": 2000, "metric_source": "heuristic"},
+    {"id": "q019", "category": "multi_hop", "query": "How did the narrator survive the invasion and what did he witness at the Martian encampment?", "context_relevance": 0.5, "answer_faithfulness": 0.55, "answer_relevance": 0.5, "recall_at_5": 0.5, "latency_ms": 3500, "metric_source": "heuristic"},
+    {"id": "q020", "category": "negative_in_domain", "query": "Did the British army successfully develop a vaccine against the Martians?", "context_relevance": 0.3, "answer_faithfulness": 0.4, "answer_relevance": 0.35, "recall_at_5": 1.0, "latency_ms": 1800, "metric_source": "heuristic"},
+    {"id": "q021", "category": "descriptive", "query": "What is the flying machine the Martians use and how does it appear in the story?", "context_relevance": 0.5, "answer_faithfulness": 0.55, "answer_relevance": 0.5, "recall_at_5": 0.5, "latency_ms": 2300, "metric_source": "heuristic"},
+    {"id": "q022", "category": "character", "query": "How does the narrator's wife respond to his return at the end of the novel?", "context_relevance": 0.45, "answer_faithfulness": 0.5, "answer_relevance": 0.45, "recall_at_5": 0.67, "latency_ms": 2100, "metric_source": "heuristic"}
+  ]
+}

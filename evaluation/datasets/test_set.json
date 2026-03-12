@@ -1,0 +1,159 @@
+[
+  {
+    "id": "q001",
+    "category": "factual_recall",
+    "query": "What weapon did the Martians use that generated immense heat?",
+    "expected_answer_contains": ["heat ray", "Heat-Ray"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q002",
+    "category": "factual_recall",
+    "query": "How did the Martians arrive on Earth?",
+    "expected_answer_contains": ["cylinder", "capsule", "Woking"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q003",
+    "category": "causal_reasoning",
+    "query": "What was the ultimate cause of the Martians' defeat?",
+    "expected_answer_contains": ["bacteria", "disease", "microbe"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q004",
+    "category": "descriptive",
+    "query": "Describe the appearance of the Martian handling-machine.",
+    "expected_answer_contains": ["tentacle", "metal", "glitter"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q005",
+    "category": "event_recall",
+    "query": "What happened to the ship named the Thunder Child?",
+    "expected_answer_contains": ["torpedo", "destroy", "ram", "sink"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q006",
+    "category": "character",
+    "query": "What role did the narrator's brother play in the story?",
+    "expected_answer_contains": ["London", "escape", "medical student"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q007",
+    "category": "negative_in_domain",
+    "query": "Did the humans successfully destroy a Martian Tripod using artillery?",
+    "expected_answer_contains": [],
+    "expected_negative": true,
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q008",
+    "category": "out_of_domain",
+    "query": "What is the capital of Australia?",
+    "expected_answer_contains": [],
+    "expected_negative": true,
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q009",
+    "category": "factual_recall",
+    "query": "Where did the first Martian cylinder land?",
+    "expected_answer_contains": ["Horsell Common", "Woking", "Common"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q010",
+    "category": "descriptive",
+    "query": "What is the Black Smoke used by the Martians?",
+    "expected_answer_contains": ["smoke", "poison", "gas", "black"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q011",
+    "category": "factual_recall",
+    "query": "How many cylinders landed during the Martian invasion?",
+    "expected_answer_contains": ["ten", "10", "cylinder"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q012",
+    "category": "character",
+    "query": "Who is the artilleryman and what plan does he propose?",
+    "expected_answer_contains": ["underground", "tunnel", "survive", "artilleryman"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q013",
+    "category": "descriptive",
+    "query": "Describe how the narrator first observes the Martians emerging from the cylinder.",
+    "expected_answer_contains": ["pit", "tentacle", "grayish", "brown"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q014",
+    "category": "event_recall",
+    "query": "What happens to the curate the narrator meets during the invasion?",
+    "expected_answer_contains": ["curate", "killed", "Martian", "noise"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q015",
+    "category": "factual_recall",
+    "query": "What does the narrator find when he returns to his home at the end of the story?",
+    "expected_answer_contains": ["wife", "Leatherhead", "house"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q016",
+    "category": "causal_reasoning",
+    "query": "Why were humans unable to effectively combat the Martian tripods with conventional weapons?",
+    "expected_answer_contains": ["heat ray", "armor", "fast", "superior"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q017",
+    "category": "descriptive",
+    "query": "What do the Martian tripods look like and how do they move?",
+    "expected_answer_contains": ["three", "legs", "stride", "machine"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q018",
+    "category": "factual_recall",
+    "query": "What role did the red weed play in the Martian invasion?",
+    "expected_answer_contains": ["red weed", "plant", "spread", "Martian"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q019",
+    "category": "multi_hop",
+    "query": "How did the narrator survive the invasion and what did he witness at the Martian encampment?",
+    "expected_answer_contains": ["house", "cellar", "Martian", "dead"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q020",
+    "category": "negative_in_domain",
+    "query": "Did the British army successfully develop a vaccine against the Martians?",
+    "expected_answer_contains": [],
+    "expected_negative": true,
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q021",
+    "category": "descriptive",
+    "query": "What is the flying machine the Martians use and how does it appear in the story?",
+    "expected_answer_contains": ["flying", "machine", "manta", "bat"],
+    "relevant_document_ids": []
+  },
+  {
+    "id": "q022",
+    "category": "character",
+    "query": "How does the narrator's wife respond to his return at the end of the novel?",
+    "expected_answer_contains": ["wife", "dead", "alive", "return"],
+    "relevant_document_ids": []
+  }
+]
