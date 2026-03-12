@@ -7,11 +7,29 @@ const { Router } = require('express');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const { PrismaClient } = require('@prisma/client');
 const { writeAuditLog } = require('./services/auditService');
 
 const prisma = new PrismaClient();
 const router = Router();
+
+// Rate limiters for auth endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,  // 15 minutes
+  max: 20,                    // 20 attempts per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many authentication attempts. Please try again later.' },
+});
+
+const refreshLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10,             // 10 refreshes per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many token refresh requests. Please slow down.' },
+});
 
 let JWT_SECRET = process.env.JWT_SECRET;
 
@@ -62,7 +80,7 @@ async function issueRefreshToken(userId, res) {
 }
 
 // === POST /api/auth/register ===
-router.post('/register', async (req, res) => {
+router.post('/register', authLimiter, async (req, res) => {
   const { username, password } = req.body;
 
   if (!username || !password || password.length < 8) {
@@ -101,7 +119,7 @@ router.post('/register', async (req, res) => {
 });
 
 // === POST /api/auth/login ===
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
@@ -153,7 +171,10 @@ router.post('/login', async (req, res) => {
 
 // === POST /api/auth/refresh ===
 // Validates the HTTP-only refresh token cookie and issues a new JWT + rotated refresh token.
-router.post('/refresh', async (req, res) => {
+// CSRF note: The refresh token cookie is set with SameSite=Strict which prevents
+// cross-site requests from triggering this endpoint. This is the modern alternative
+// to CSRF tokens for cookie-based flows on same-origin requests.
+router.post('/refresh', refreshLimiter, async (req, res) => {
   const raw = req.cookies?.refreshToken;
   if (!raw) {
     return res.status(401).json({ error: 'No refresh token provided.' });
@@ -204,7 +225,7 @@ router.post('/refresh', async (req, res) => {
 });
 
 // === POST /api/auth/logout ===
-router.post('/logout', async (req, res) => {
+router.post('/logout', authLimiter, async (req, res) => {
   const raw = req.cookies?.refreshToken;
 
   if (raw) {

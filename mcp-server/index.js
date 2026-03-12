@@ -38,6 +38,11 @@ app.use(cors({
   origin: process.env.CORS_ORIGIN || true,
   credentials: true,
 }));
+// Cookie parser is used for the HTTP-only refresh token cookie.
+// CSRF mitigation: refresh token cookies are set with SameSite=Strict, preventing
+// cross-site requests. All other endpoints use Authorization Bearer/ApiKey headers
+// (not susceptible to CSRF). No additional CSRF middleware is required for this
+// API-first architecture.
 app.use(cookieParser());
 app.use(express.json({ limit: "10mb" }));
 
