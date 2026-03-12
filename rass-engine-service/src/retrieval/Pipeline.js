@@ -2,8 +2,9 @@
 // Executes an ordered array of Stage objects, threading a context object through each.
 // Records wall-clock time per stage and logs structured JSON at INFO level.
 
-const logger = require("../logger");
 "use strict";
+
+const logger = require("../logger");
 
 class Pipeline {
   /**

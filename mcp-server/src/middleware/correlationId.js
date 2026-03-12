@@ -24,7 +24,6 @@ function correlationIdMiddleware(req, res, next) {
   // Child logger bound to this request's context
   req.log = logger.child({
     correlationId,
-    userId: req.user?.id || undefined,
     method: req.method,
     path: req.path,
   });
