@@ -17,6 +17,8 @@ const { writeAuditLog } = require("../services/auditService");
 const { prisma } = require("../prisma");
 const { OPENSEARCH_HOST, OPENSEARCH_PORT, EMBEDDING_SERVICE_BASE_URL } = require("../config");
 const { apiLimiter, deleteLimiter, uploadLimiter } = require("../middleware/rateLimits");
+const { requirePermission } = require("../middleware/requirePermission");
+const { PERMISSIONS } = require("../permissions");
 
 const router = express.Router();
 
@@ -132,12 +134,20 @@ router.get("/api/documents/:id/provenance", apiLimiter, authMiddleware, async (r
 // cleaned up here — they remain until natural TTL expiry or a future admin cleanup
 // job. This is a known limitation; avoid storing sensitive data in parent chunks.
 
-router.delete("/api/documents/:id", deleteLimiter, authMiddleware, async (req, res) => {
+router.delete("/api/documents/:id", deleteLimiter, authMiddleware, requirePermission(PERMISSIONS.DOCUMENT_DELETE), async (req, res) => {
   const { id } = req.params;
   const userId = req.userId;
 
   try {
-    const doc = await prisma.document.findFirst({ where: { id, userId } });
+    // Look up by id only — workspace members may delete documents they didn't upload.
+    // Ownership is enforced by the requirePermission middleware (workspace ADMIN role
+    // required); for personal (non-workspace) documents we still apply userId scoping.
+    const workspaceId = req.workspaceId || null; // populated by requirePermission if workspace context
+    const doc = await prisma.document.findFirst({
+      where: workspaceId
+        ? { id } // workspace context: role already verified by middleware
+        : { id, userId }, // personal context: must own the document
+    });
     if (!doc) {
       return res.status(404).json({ error: "Document not found." });
     }
@@ -171,9 +181,12 @@ router.delete("/api/documents/:id", deleteLimiter, authMiddleware, async (req, r
     await writeAuditLog({
       userId,
       action: "DOCUMENT_DELETED",
+      resourceType: "Document",
+      resourceId: id,
       resource: id,
       outcome: "SUCCESS",
       metadata: { originalFilename: doc.originalFilename },
+      req,
     });
 
     console.log(`[Documents] Document ${id} marked as DELETED`);
@@ -212,9 +225,12 @@ router.post("/api/documents", uploadLimiter, authMiddleware, async (req, res) =>
     await writeAuditLog({
       userId,
       action: "DOCUMENT_UPLOADED",
+      resourceType: "Document",
+      resourceId: doc.id,
       resource: doc.id,
       outcome: "SUCCESS",
       metadata: { originalFilename, mimeType, fileSizeBytes },
+      req,
     });
 
     res.status(201).json(doc);

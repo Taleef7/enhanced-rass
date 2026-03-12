@@ -132,8 +132,8 @@ router.post("/internal/documents/:id/provenance", async (req, res) => {
 // ── POST /internal/audit ──────────────────────────────────────────────────────
 
 router.post("/internal/audit", async (req, res) => {
-  const { userId, action, resource, outcome, metadata } = req.body;
-  await writeAuditLog({ userId, action, resource, outcome, metadata });
+  const { userId, action, resource, resourceType, resourceId, outcome, metadata, workspaceId } = req.body;
+  await writeAuditLog({ userId, action, resource, resourceType, resourceId, outcome, metadata, workspaceId });
   res.status(201).json({ ok: true });
 });
 

@@ -30,6 +30,7 @@ import {
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchDocuments, deleteDocument, fetchDocumentProvenance } from '../apiClient';
+import { useAuth } from '../context/AuthContext';
 
 const STATUS_META = {
   QUEUED:     { color: 'default',  label: 'Queued',      icon: <QueuedIcon fontSize="small" /> },
@@ -74,6 +75,8 @@ const DocumentManager = () => {
   const [provenance, setProvenance] = useState(null);
   const [provenanceLoading, setProvenanceLoading] = useState(false);
 
+  const { token } = useAuth();
+
   // Track whether any doc is in an active state without using setState as a side-effect trigger
   const hasActiveRef = useRef(false);
 
@@ -81,7 +84,7 @@ const DocumentManager = () => {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await fetchDocuments(1, 50);
+      const { data } = await fetchDocuments(1, 50, null, token);
       const docs = data.documents || [];
       setDocuments(docs);
       hasActiveRef.current = docs.some((d) => d.status === 'QUEUED' || d.status === 'PROCESSING');
@@ -90,7 +93,7 @@ const DocumentManager = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     loadDocuments();
@@ -108,7 +111,7 @@ const DocumentManager = () => {
     if (!deleteTarget) return;
     setDeleteLoading(true);
     try {
-      await deleteDocument(deleteTarget.id);
+      await deleteDocument(deleteTarget.id, token);
       setDocuments((prev) => prev.filter((d) => d.id !== deleteTarget.id));
       setDeleteTarget(null);
     } catch (err) {
@@ -123,7 +126,7 @@ const DocumentManager = () => {
     setProvenance(null);
     setProvenanceLoading(true);
     try {
-      const { data } = await fetchDocumentProvenance(doc.id);
+      const { data } = await fetchDocumentProvenance(doc.id, token);
       setProvenance(data);
     } catch (err) {
       setProvenance({ error: err.response?.data?.error || 'No provenance record available.' });

@@ -10,16 +10,120 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─── Phase D Enums ────────────────────────────────────────────────────────────
+
+enum OrgPlan {
+  FREE
+  TEAM
+  ENTERPRISE
+}
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum WsRole {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+  PARTIAL
+}
+
+// ─── Phase D: Organization / Workspace / Multi-tenancy ───────────────────────
+
+model Organization {
+  id        String      @id @default(cuid())
+  name      String      @unique
+  plan      OrgPlan     @default(FREE)
+  createdAt DateTime    @default(now())
+  workspaces Workspace[]
+  members   OrgMember[]
+}
+
+model OrgMember {
+  id     String       @id @default(cuid())
+  orgId  String
+  userId String
+  role   OrgRole      @default(MEMBER)
+  Org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  User   User         @relation(fields: [userId], references: [id])
+
+  @@unique([orgId, userId])
+}
+
+model Workspace {
+  id              String            @id @default(cuid())
+  orgId           String
+  name            String
+  openSearchIndex String            @unique
+  quotaMb         Int               @default(500)
+  usedMb          Int               @default(0)
+  retentionDays   Int?
+  createdAt       DateTime          @default(now())
+  Org             Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  members         WorkspaceMember[]
+  documents       Document[]
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WsRole    @default(VIEWER)
+  Workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  User        User      @relation(fields: [userId], references: [id])
+
+  @@unique([workspaceId, userId])
+}
+
+// ─── Phase D: API Key Authentication ─────────────────────────────────────────
+
+model ApiKey {
+  id        String    @id @default(cuid())
+  keyHash   String    @unique
+  name      String
+  userId    String
+  lastUsed  DateTime?
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  User      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── Core Models ─────────────────────────────────────────────────────────────
+
 model User {
-  id             String          @id @default(cuid())
-  username       String          @unique
-  password       String          // This will store the HASHED password
-  chats          Chat[]
-  documents      Document[]
-  knowledgeBases KnowledgeBase[]
-  kbMemberships  KBMember[]
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  id               String            @id @default(cuid())
+  username         String            @unique
+  password         String
+  chats            Chat[]
+  documents        Document[]
+  knowledgeBases   KnowledgeBase[]
+  kbMemberships    KBMember[]
+  orgMemberships   OrgMember[]
+  wsMemberships    WorkspaceMember[]
+  apiKeys          ApiKey[]
+  refreshTokens    RefreshToken[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+// ─── Phase D: Refresh Tokens ─────────────────────────────────────────────────
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  User      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Chat {
@@ -81,12 +185,16 @@ model Document {
   redisKeyPrefix   String?
   ingestionJobId   String?
   kbId             String?
+  workspaceId      String?
   uploadedAt       DateTime           @default(now())
   processedAt      DateTime?
   deletedAt        DateTime?
+  purgedAt         DateTime?
+  purgedBy         String?
   provenance       DocumentProvenance?
   User             User               @relation(fields: [userId], references: [id])
   KB               KnowledgeBase?     @relation(fields: [kbId], references: [id])
+  Workspace        Workspace?         @relation(fields: [workspaceId], references: [id])
 }
 
 model DocumentProvenance {
@@ -109,13 +217,22 @@ model DocumentProvenance {
 }
 
 model AuditLog {
-  id        String   @id @default(cuid())
-  userId    String?
-  action    String
-  resource  String?
-  outcome   String
-  metadata  Json?
-  createdAt DateTime @default(now())
+  id           String        @id @default(cuid())
+  timestamp    DateTime      @default(now())
+  userId       String?
+  workspaceId  String?
+  action       String
+  resourceType String?
+  resourceId   String?
+  resource     String?
+  ipAddress    String?
+  userAgent    String?
+  outcome      AuditOutcome  @default(SUCCESS)
+  metadata     Json?
+  createdAt    DateTime      @default(now())
+
+  @@index([userId, timestamp])
+  @@index([workspaceId, timestamp])
 }
 
 enum KBRole {

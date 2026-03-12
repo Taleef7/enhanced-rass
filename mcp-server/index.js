@@ -3,6 +3,7 @@
 
 const express = require("express");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 const path = require("path");
 
 const { MCP_SERVER_PORT } = require("./src/config");
@@ -27,8 +28,22 @@ const documentRoutes = require("./src/routes/documents.js");
 const knowledgeBaseRoutes = require("./src/routes/knowledgeBases.js");
 const internalServiceRoutes = require("./src/routes/internalService.js");
 
+// Phase D routes
+const workspaceRoutes = require("./src/routes/workspaces.js");
+const apiKeyRoutes = require("./src/routes/apiKeys.js");
+const adminRoutes = require("./src/routes/admin.js");
+
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || true,
+  credentials: true,
+}));
+// Cookie parser is used for the HTTP-only refresh token cookie.
+// CSRF mitigation: refresh token cookies are set with SameSite=Strict, preventing
+// cross-site requests. All other endpoints use Authorization Bearer/ApiKey headers
+// (not susceptible to CSRF). No additional CSRF middleware is required for this
+// API-first architecture.
+app.use(cookieParser());
 app.use(express.json({ limit: "10mb" }));
 
 // --- Swagger UI (non-production only) ---
@@ -63,6 +78,15 @@ app.use(documentRoutes);
 
 // --- Phase B: Knowledge Base management API ---
 app.use(knowledgeBaseRoutes);
+
+// --- Phase D: Multi-tenant workspaces ---
+app.use(workspaceRoutes);
+
+// --- Phase D: API key management ---
+app.use(apiKeyRoutes);
+
+// --- Phase D: Admin / compliance / audit reporting ---
+app.use(adminRoutes);
 
 // --- Legacy simple-ask (deprecated) ---
 // @deprecated Use /api/stream-ask instead.
@@ -100,3 +124,14 @@ app.get("/", (req, res) => {
 app.listen(MCP_SERVER_PORT, () => {
   console.log(`MCP Server listening on http://localhost:${MCP_SERVER_PORT}`);
 });
+
+// --- Phase D: Schedule nightly retention sweep ---
+const { runRetentionSweep } = require("./src/services/PurgeService");
+const SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+setInterval(() => {
+  console.log("[RetentionSweep] Running scheduled retention sweep...");
+  runRetentionSweep().catch((err) =>
+    console.error("[RetentionSweep] Error:", err.message)
+  );
+}, SWEEP_INTERVAL_MS);
+console.log("[RetentionSweep] Nightly retention sweep scheduled (every 24h).");

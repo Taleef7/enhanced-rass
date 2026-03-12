@@ -1,16 +1,21 @@
 // In frontend/src/apiClient.js
+// Phase D: Token is managed in memory (AuthContext) rather than localStorage.
+// All API calls that need auth accept a token parameter from useAuth().
 import axios from "axios";
 
 // The base URL for all our backend requests
 const API_BASE_URL = "http://localhost:8080/api";
 
-// Helper function to get auth token
+// Helper to read token from memory — falls back to localStorage for backward compat
+// during the session migration period.
 export const getAuthToken = () => {
-  return localStorage.getItem("authToken");
+  // This is kept for compatibility; prefer passing token directly from useAuth()
+  return null; // No longer stored in localStorage (Phase D)
 };
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true, // Phase D: send refresh-token cookie automatically
   headers: {
     "Content-Type": "application/json",
   },
@@ -24,85 +29,138 @@ export const registerUser = (username, password) => {
 
 export const loginUser = async (username, password) => {
   const response = await apiClient.post("/auth/login", { username, password });
-  // On successful login, we store the token
-  if (response.data.token) {
-    localStorage.setItem("authToken", response.data.token);
-  }
+  // Token is returned in the response body — caller stores it in AuthContext memory.
+  // The server also sets an HTTP-only refresh-token cookie automatically.
   return response;
 };
 
-export const logoutUser = () => {
-  localStorage.removeItem("authToken");
+export const logoutUser = (token) => {
+  return apiClient.post(
+    "/auth/logout",
+    {},
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+  );
 };
 
-export const uploadFile = (file, kbId = null, chunkingStrategy = null) => {
+export const uploadFile = (file, kbId = null, chunkingStrategy = null, token = null) => {
   const formData = new FormData();
   formData.append("file", file);
   if (kbId) formData.append("kbId", kbId);
   if (chunkingStrategy) formData.append("chunkingStrategy", chunkingStrategy);
 
-  const token = localStorage.getItem("authToken"); // <-- Get the token
-
-  // We use the base apiClient to get the proxy URL automatically
   return apiClient.post("/embed-upload", formData, {
     headers: {
       "Content-Type": "multipart/form-data",
-      Authorization: `Bearer ${token}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
 };
 
-export const pollIngestionStatus = (jobId) => {
-  const token = localStorage.getItem("authToken");
+export const pollIngestionStatus = (jobId, token = null) => {
   return apiClient.get(`/ingest/status/${jobId}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
 };
 
-export const fetchDocuments = (page = 1, limit = 20, status = null) => {
-  const token = localStorage.getItem("authToken");
+export const fetchDocuments = (page = 1, limit = 20, status = null, token = null) => {
   const params = { page, limit };
   if (status) params.status = status;
   return apiClient.get("/documents", {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
     params,
   });
 };
 
-export const deleteDocument = (documentId) => {
-  const token = localStorage.getItem("authToken");
+export const deleteDocument = (documentId, token = null) => {
   return apiClient.delete(`/documents/${documentId}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
 };
 
-export const fetchDocumentProvenance = (documentId) => {
-  const token = localStorage.getItem("authToken");
+export const fetchDocumentProvenance = (documentId, token = null) => {
   return apiClient.get(`/documents/${documentId}/provenance`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
 };
 
-export const fetchKnowledgeBases = () => {
-  const token = localStorage.getItem("authToken");
+export const fetchKnowledgeBases = (token = null) => {
   return apiClient.get("/knowledge-bases", {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
 };
 
-export const createKnowledgeBase = (name, description = "", isPublic = false) => {
-  const token = localStorage.getItem("authToken");
+export const createKnowledgeBase = (name, description = "", isPublic = false, token = null) => {
   return apiClient.post(
     "/knowledge-bases",
     { name, description, isPublic },
-    { headers: { Authorization: `Bearer ${token}` } }
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} }
   );
 };
 
-export const deleteKnowledgeBase = (kbId) => {
-  const token = localStorage.getItem("authToken");
+export const deleteKnowledgeBase = (kbId, token = null) => {
   return apiClient.delete(`/knowledge-bases/${kbId}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+};
+
+// --- Phase D: API Key Management ---
+
+export const fetchApiKeys = (token = null) => {
+  return apiClient.get("/api-keys", {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+};
+
+export const createApiKey = (name, expiresAt = null, token = null) => {
+  return apiClient.post(
+    "/api-keys",
+    { name, expiresAt },
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+  );
+};
+
+export const revokeApiKey = (keyId, token = null) => {
+  return apiClient.delete(`/api-keys/${keyId}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+};
+
+// --- Phase D: Workspace Management ---
+
+export const fetchOrganizations = (token = null) => {
+  return apiClient.get("/organizations", {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+};
+
+export const createOrganization = (name, plan = "FREE", token = null) => {
+  return apiClient.post(
+    "/organizations",
+    { name, plan },
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+  );
+};
+
+export const fetchWorkspaces = (orgId, token = null) => {
+  return apiClient.get(`/organizations/${orgId}/workspaces`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+};
+
+export const createWorkspace = (orgId, name, quotaMb = 500, token = null) => {
+  return apiClient.post(
+    `/organizations/${orgId}/workspaces`,
+    { name, quotaMb },
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+  );
+};
+
+// --- Phase D: Admin / Audit Logs ---
+
+export const fetchAuditLogs = (params = {}, token = null) => {
+  return apiClient.get("/admin/audit-logs", {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    params,
   });
 };
 
@@ -111,18 +169,18 @@ export const streamQuery = async (
   documents = [],
   onTextChunk,
   onSources,
-  signal
+  signal,
+  token = null
 ) => {
-  const token = localStorage.getItem("authToken");
-
   const response = await fetch("/api/stream-ask", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ query }), // Remove documents filter to search across all user's documents
+    body: JSON.stringify({ query }),
     signal,
+    credentials: "include",
   });
 
   if (!response.ok) {
@@ -151,7 +209,6 @@ export const streamQuery = async (
           if (delta?.content) {
             onTextChunk(delta.content);
           } else if (delta?.custom_meta?.citations) {
-            // Support both new structured citation format and legacy format
             onSources(delta.custom_meta.citations);
           }
         } catch (e) {
@@ -168,17 +225,17 @@ export default apiClient;
 export { API_BASE_URL };
 
 // New: Transcribe audio blob via backend Whisper endpoint
-export const transcribeAudio = async (audioBlob) => {
+export const transcribeAudio = async (audioBlob, token = null) => {
   const formData = new FormData();
   formData.append("audio", audioBlob, "recording.webm");
 
-  const token = getAuthToken();
   const response = await fetch(`${API_BASE_URL}/transcribe`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: formData,
+    credentials: "include",
   });
 
   if (!response.ok) {

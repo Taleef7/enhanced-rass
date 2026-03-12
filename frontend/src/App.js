@@ -17,7 +17,7 @@ const LoadingFallback = () => (
 );
 
 function App() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
 
   return (
     <Router>
@@ -25,7 +25,9 @@ function App() {
         <Routes>
           <Route
             path="/login"
-            element={isAuthenticated ? <Navigate to="/" /> : <AuthPage />}
+            // Don't redirect to "/" until the silent refresh attempt finishes —
+            // otherwise a page reload during a valid session briefly flashes /login.
+            element={isLoading ? <LoadingFallback /> : isAuthenticated ? <Navigate to="/" /> : <AuthPage />}
           />
           <Route
             path="/*"

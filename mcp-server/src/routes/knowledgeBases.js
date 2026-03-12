@@ -120,9 +120,12 @@ router.post("/api/knowledge-bases", apiLimiter, authMiddleware, validateBody(KBC
     await writeAuditLog({
       userId,
       action: "KB_CREATED",
+      resourceType: "KnowledgeBase",
+      resourceId: kb.id,
       resource: kb.id,
       outcome: "SUCCESS",
       metadata: { name, openSearchIndex },
+      req,
     });
 
     res.status(201).json(kb);
@@ -223,9 +226,12 @@ router.delete("/api/knowledge-bases/:id", deleteLimiter, authMiddleware, async (
     await writeAuditLog({
       userId,
       action: "KB_DELETED",
+      resourceType: "KnowledgeBase",
+      resourceId: id,
       resource: id,
       outcome: "SUCCESS",
       metadata: { name: kb.name, openSearchIndex: kb.openSearchIndex },
+      req,
     });
 
     res.json({ message: "Knowledge base deleted successfully.", id });

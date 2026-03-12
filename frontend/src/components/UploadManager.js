@@ -3,6 +3,7 @@ import { Paper, Typography, Box, Button, LinearProgress, Alert, IconButton, Tool
 import { CloudUpload as UploadIcon, Delete as DeleteIcon, CheckCircle as CheckIcon, Error as ErrorIcon, HourglassEmpty as QueuedIcon, PlayArrow as ProcessingIcon } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uploadFile, pollIngestionStatus } from '../apiClient';
+import { useAuth } from '../context/AuthContext';
 
 // Status → MUI chip color + label mapping
 const STATUS_META = {
@@ -52,6 +53,7 @@ const UploadManager = ({ onUploadSuccess }) => {
   const fileInputRef = useRef(null);
   const dropZoneRef = useRef(null);
   const pollingRef = useRef(null);
+  const { token } = useAuth();
 
   // ── Polling ───────────────────────────────────────────────────────────────
 
@@ -71,7 +73,7 @@ const UploadManager = ({ onUploadSuccess }) => {
       }
 
       try {
-        const { data } = await pollIngestionStatus(jobId);
+        const { data } = await pollIngestionStatus(jobId, token);
         const progress = typeof data.progress === 'number' ? data.progress : 0;
         setUploadProgress(progress);
         setJobStatus(data.status);
@@ -99,7 +101,7 @@ const UploadManager = ({ onUploadSuccess }) => {
         console.warn('[Polling] Error fetching job status:', err.message);
       }
     }, 2000);
-  }, [onUploadSuccess]);
+  }, [onUploadSuccess, token]);
 
   // Clean up polling on unmount
   useEffect(() => {
@@ -140,7 +142,7 @@ const UploadManager = ({ onUploadSuccess }) => {
     setMessageType('info');
 
     try {
-      const { data } = await uploadFile(file);
+      const { data } = await uploadFile(file, null, null, token);
       const firstJob = data?.jobs?.[0];
       const jobId = firstJob?.jobId;
       const documentId = data?.documentId || firstJob?.documentId;

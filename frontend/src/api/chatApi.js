@@ -1,17 +1,25 @@
 // frontend/src/api/chatApi.js
+// Phase D: Token is now managed in memory (AuthContext) rather than localStorage.
+// Call chatAPI.setToken(token) when the token changes (see ChatContext.js).
 import { API_BASE_URL } from "../apiClient";
 
 class ChatAPI {
   constructor() {
     this.baseURL = `${API_BASE_URL}/chats`;
+    this._token = null;
+  }
+
+  /** Update the in-memory token (called from AuthContext/ChatContext after login). */
+  setToken(token) {
+    this._token = token;
   }
 
   getAuthHeaders() {
-    const token = localStorage.getItem("authToken");
-    return {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    };
+    const headers = { "Content-Type": "application/json" };
+    if (this._token) {
+      headers["Authorization"] = `Bearer ${this._token}`;
+    }
+    return headers;
   }
 
   async fetchChats() {
