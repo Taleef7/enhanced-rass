@@ -1,0 +1,170 @@
+version: '3.8'
+
+# Enhanced RASS — One-Click Demo Configuration
+# Inherits from the root docker-compose.yml and adds pre-seeded demo data.
+# Usage: ./scripts/demo.sh
+#
+# Differences from production docker-compose.yml:
+# - Demo API keys are pre-configured (DEMO_MODE=true)
+# - Seed data is mounted into the embedding-service
+# - Auto-seed on first startup via demo-seeder service
+
+x-environment:
+  &demo-env
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-demo-mode-no-key}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-demo-mode-no-key}
+  DEMO_MODE: "true"
+
+services:
+  # Infrastructure services (same as root docker-compose.yml)
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    container_name: rass_demo_opensearch
+    environment:
+      - discovery.type=single-node
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx1g
+      - bootstrap.memory_lock=false
+      - "DISABLE_SECURITY_PLUGIN=true"
+      - "DISABLE_INSTALL_DEMO_CONFIG=true"
+      - "cluster.routing.allocation.disk.threshold_enabled=false"
+      - "logger.level=WARN"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - demo_opensearch_data:/usr/share/opensearch/data
+    networks:
+      - rass_demo_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: rass_demo_redis
+    volumes:
+      - demo_redis_data:/data
+    networks:
+      - rass_demo_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: rass_demo_postgres
+    environment:
+      POSTGRES_USER: rass_demo
+      POSTGRES_PASSWORD: rass_demo_password
+      POSTGRES_DB: rass_demo_db
+    volumes:
+      - demo_postgres_data:/var/lib/postgresql/data
+    networks:
+      - rass_demo_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rass_demo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  embedding-service:
+    build:
+      context: ../embedding-service
+      dockerfile: Dockerfile
+    container_name: rass_demo_embedding
+    environment:
+      <<: *demo-env
+    volumes:
+      - ../embedding-service/config.yml:/app/config.yml:ro
+      - ./seed_data:/app/seed_data:ro
+    networks:
+      - rass_demo_net
+    depends_on:
+      opensearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  rass-engine-service:
+    build:
+      context: ../rass-engine-service
+      dockerfile: Dockerfile
+    container_name: rass_demo_engine
+    environment:
+      <<: *demo-env
+    volumes:
+      - ../rass-engine-service/config.yml:/app/config.yml:ro
+    networks:
+      - rass_demo_net
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
+  mcp-server:
+    build:
+      context: ../mcp-server
+      dockerfile: Dockerfile
+    container_name: rass_demo_mcp
+    environment:
+      <<: *demo-env
+      DATABASE_URL: "postgresql://rass_demo:rass_demo_password@postgres:5432/rass_demo_db?schema=public"
+    volumes:
+      - ../mcp-server/config.yml:/app/config.yml:ro
+    ports:
+      - "8080:8080"
+    networks:
+      - rass_demo_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: rass_demo_frontend
+    ports:
+      - "3000:3000"
+    networks:
+      - rass_demo_net
+    depends_on:
+      - mcp-server
+
+  # Demo seeder: runs once to seed sample documents and create a demo user
+  demo-seeder:
+    image: node:18-alpine
+    container_name: rass_demo_seeder
+    volumes:
+      - ./seed_data:/seed_data:ro
+      - ./seed.sh:/seed.sh:ro
+    environment:
+      MCP_SERVER_URL: "http://mcp-server:8080"
+      DEMO_USERNAME: "demo"
+      DEMO_PASSWORD: "rass-demo-2025"
+    networks:
+      - rass_demo_net
+    depends_on:
+      - mcp-server
+    command: ["sh", "/seed.sh"]
+    restart: "no"
+
+volumes:
+  demo_opensearch_data:
+  demo_redis_data:
+  demo_postgres_data:
+
+networks:
+  rass_demo_net:
+    driver: bridge

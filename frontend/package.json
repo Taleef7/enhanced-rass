@@ -16,6 +16,8 @@
     "lucide-react": "^0.534.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "react-force-graph-2d": "^1.29.1",
+    "react-joyride": "^2.9.3",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.7.1",
     "react-scripts": "5.0.1",
@@ -28,7 +30,8 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "generate:client": "openapi --input ../mcp-server/openapi.yaml --output src/api/generated --client axios"
   },
   "eslintConfig": {
     "extends": [
@@ -50,6 +53,7 @@
   },
   "proxy": "http://localhost:8080",
   "devDependencies": {
+    "openapi-typescript-codegen": "^0.30.0",
     "prettier": "^3.3.2"
   }
 }

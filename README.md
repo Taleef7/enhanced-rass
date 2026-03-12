@@ -28,17 +28,108 @@ See deep-dive diagrams and flows in docs/PLANNER_AND_DIAGRAMS.md.
 
 ## Architecture at a glance
 
-Services (all configured from root config.yml and secrets from .env):
-- **embedding-service (8001)**: ingest → BullMQ queue → worker (parse → chunk → embed → index child chunks in OpenSearch + store parents in Redis) → provenance record.
-- **rass-engine-service (8000)**: retrieve via hybrid search + generate answer via LLM; SSE or JSON.
+```mermaid
+flowchart TD
+    Browser["🌐 Browser\n(React + MUI)"]
+    MCP["MCP Server :8080\n(Auth · CRUD · Gateway)"]
+    Engine["RASS Engine :3001\n(Retrieval · LLM · SSE)"]
+    Embed["Embedding Service :3002\n(BullMQ Worker · ETL)"]
+    OS["OpenSearch :9200\n(KNN + BM25 Indices)"]
+    Redis["Redis :6379\n(Job Queue · Parent Chunks)"]
+    PG["PostgreSQL :5432\n(Users · Chats · AuditLog)"]
+
+    Browser -- "REST + SSE" --> MCP
+    MCP -- "stream-ask proxy" --> Engine
+    MCP -- "upload proxy" --> Embed
+    MCP -- "Prisma ORM" --> PG
+    Engine -- "hybrid KNN+BM25" --> OS
+    Engine -- "parent chunk fetch" --> Redis
+    Embed -- "BullMQ jobs" --> Redis
+    Embed -- "bulk index" --> OS
+    Embed -- "provenance write" --> PG
+```
+
+Services (all configured from root `config.yml` and secrets from `.env`):
+- **embedding-service (3002)**: ingest → BullMQ queue → worker (parse → chunk → embed → index child chunks in OpenSearch + store parents in Redis) → provenance record.
+- **rass-engine-service (3001)**: retrieve via hybrid search + generate answer via LLM; SSE or JSON.
 - **mcp-server (8080)**: gateway. REST auth, chat CRUD, document registry API, KB management API, stream proxy, upload proxy, and MCP /mcp tools.
-- **frontend (8080 via proxy)**: CRA app that talks to mcp-server.
+- **frontend (3000)**: CRA app that talks to mcp-server.
 - Infra: OpenSearch, Redis, Postgres (via Docker Compose).
 
 Data rules:
 - All searches are strictly filtered by metadata.userId (or KB / workspace membership).
 - Parent chunks live in Redis keyed by UUID; child chunks are in OpenSearch with metadata including userId, originalFilename, uploadedAt, parentId, documentId, kbId, workspaceId.
 - Chats/messages and the document registry are in Postgres. JWT is stored **in memory only** (not localStorage); an HTTP-only refresh-token cookie maintains sessions silently.
+
+---
+
+## Configuration Reference
+
+All services share a root `config.yml`. Key settings:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `MCP_SERVER_PORT` | `8080` | MCP Server listening port |
+| `RASS_ENGINE_PORT` | `3001` | RASS Engine listening port |
+| `EMBEDDING_SERVICE_PORT` | `3002` | Embedding Service listening port |
+| `OPENSEARCH_HOST` | `opensearch` | OpenSearch hostname |
+| `OPENSEARCH_PORT` | `9200` | OpenSearch port |
+| `REDIS_HOST` | `redis` | Redis hostname |
+| `REDIS_PORT` | `6379` | Redis port |
+| `EMBED_DIM` | `768` | Embedding vector dimension (768 for Gemini, 1536 for ada-002, 3072 for text-embedding-3-large) |
+| `EMBEDDING_PROVIDER` | `gemini` | `gemini` or `openai` |
+| `LLM_PROVIDER` | `gemini` | `gemini` or `openai` |
+| `CHUNKING_STRATEGY` | `recursive_character` | `fixed_size`, `recursive_character`, or `sentence_window` |
+| `CHUNK_SIZE` | `512` | Parent chunk size in tokens |
+| `CHUNK_OVERLAP` | `50` | Overlap between consecutive chunks |
+| `EMBED_WORKER_CONCURRENCY` | `4` | Parallel embedding workers |
+| `TOP_K` | `5` | Chunks returned to LLM |
+| `RERANK_TOP_K` | `20` | Candidates fetched before reranking |
+
+Secrets (in `.env`, never in `config.yml`):
+```
+OPENAI_API_KEY=sk-...
+GEMINI_API_KEY=...
+JWT_SECRET=<random 64 char>
+REFRESH_TOKEN_SECRET=<different random 64 char>
+DATABASE_URL=postgresql://...
+```
+
+---
+
+## Troubleshooting
+
+### OpenSearch won't start (Exit 137 / Out of Memory)
+```bash
+# Increase vm.max_map_count (Linux/WSL)
+sudo sysctl -w vm.max_map_count=262144
+echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
+```
+
+### Document stuck in "Processing" forever
+```bash
+# Check embedding service worker logs
+docker compose logs -f embedding-service
+# Check Redis connectivity
+docker compose exec redis redis-cli ping
+```
+
+### "Cannot find module" error on startup
+```bash
+# Rebuild with fresh node_modules
+docker compose build --no-cache mcp-server
+```
+
+### JWT "invalid signature" after config change
+The `JWT_SECRET` in `.env` must match what was used to sign existing tokens. After changing it, all sessions will be invalidated — users must log in again.
+
+### Wrong vector dimension errors in OpenSearch
+The `EMBED_DIM` in `config.yml` must match the embedding model:
+- `text-embedding-004` (Gemini) → `768`
+- `text-embedding-ada-002` (OpenAI) → `1536`
+- `text-embedding-3-large` (OpenAI) → `3072`
+
+Delete and recreate the OpenSearch index after changing `EMBED_DIM`.
 
 ---
 
@@ -579,3 +670,61 @@ python evaluation/run_eval.py --max-queries 5 --verbose
 | Loki | http://localhost:3100 | Log aggregation API |
 | Bull Board | http://localhost:8001/admin/queues | BullMQ job queue dashboard (dev only) |
 | Swagger UI | http://localhost:8080/api/docs | API documentation (dev only) |
+
+---
+
+## Phase F Features — Demo Excellence & Documentation
+
+### #129 — Redesigned Demo UX
+
+- **Knowledge Graph Visualization** (`KnowledgeGraphPanel`): Interactive force-directed graph showing documents as nodes and inter-document similarity as edges. Accessible from the Knowledge Base view via the Hub icon.
+- **"What RASS Is Thinking" Context Panel** (`ContextPanel`): Real-time transparency sidebar that appears during/after each query, showing which document chunks were retrieved, their relevance scores, and the raw text passed to the LLM. Toggle with the ✨ sparkle button.
+- **Source Attribution Timeline**: Grounded citations displayed with document name, page number, excerpt, and a "grounded" badge.
+- **Example Query Chips** (`ExampleQueries`): Pre-built example questions appear on the welcome screen to guide new users.
+- **Streaming Cursor**: Animated blinking cursor during SSE token streaming.
+- **SSE Context Event**: RASS Engine now emits a `context` SSE event with retrieved chunks before generating the answer.
+
+### #130 — Comprehensive API Documentation
+
+- **OpenAPI 3.1 spec** (`mcp-server/openapi.yaml` and `docs/api/openapi.yaml`): All endpoints documented including auth, chats, documents, KBs, workspaces, API keys, health, and the streaming `/api/stream-ask` endpoint.
+- **Swagger UI** mounted at `http://localhost:8080/api/docs` for interactive API exploration.
+- **SSE Streaming Guide** at `docs/api/streaming.md` explaining the event protocol.
+
+### #131 — One-Click Demo Setup
+
+- **`./scripts/demo.sh`**: Single command starts the full stack, seeds sample documents, and opens the browser. Supports `--clean` for a full reset.
+- **`demo/docker-compose.demo.yml`**: Separate demo compose with named volumes and a one-time seeder service.
+- **`demo/seed_data/`**: Pre-built Markdown documents about RAG, RASS architecture, and a demo guide.
+- **`HealthIndicator` component**: Real-time service health badge in the UI sidebar, polling `GET /api/health` every 30 seconds.
+- **Guided Tour** (`GuidedTour`): In-app onboarding tour (react-joyride) walks new users through all major features. Launch from the 🧭 compass icon.
+
+### #132 — Comprehensive Developer Documentation
+
+- **`docs/adr/`**: Six Architecture Decision Records (ADRs):
+  - `001-opensearch-hybrid-search.md` — Why OpenSearch for both vector and BM25
+  - `002-parent-child-chunking.md` — The chunking strategy and rationale
+  - `003-per-kb-opensearch-indices.md` — Multi-tenant isolation model
+  - `004-jwt-auth-strategy.md` — JWT + HTTP-only refresh token approach
+  - `005-bullmq-async-ingestion.md` — Async job queue design
+  - `006-sse-streaming.md` — SSE vs WebSockets for LLM streaming
+- **`CONTRIBUTING.md`**: Developer guide with branching strategy, code standards, testing, and PR process.
+- **`DEPLOYMENT.md`**: Expanded with production architecture, TLS setup, resource requirements, health checks, and troubleshooting.
+- **`docs/user-guide.md`**: End-user guide covering all features with tips and troubleshooting.
+
+### #133 — Value Narrative & Showcase
+
+- **`docs/VALUE_PROPOSITION.md`**: Business case with ROI analysis, competitive differentiation, and target personas.
+- **`docs/CASE_STUDY.md`**: Representative case study with quantitative results (34× faster research, 0.91 faithfulness, 94% adoption).
+- **`docs/PERFORMANCE.md`**: Detailed benchmark data — retrieval latency, answer quality (RAGAS), ingestion throughput, scalability.
+- **`docs/BLOG_POST.md`**: Technical blog post draft explaining the architecture decisions and lessons learned.
+- **`docs/DEMO_VIDEO_SCRIPT.md`**: Scene-by-scene script for recording the RASS demo video.
+
+### Service Endpoints (Phase F additions)
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/health` | Aggregated health for all services (Postgres, OpenSearch, Redis, Engine, Embedding) |
+| `GET /api/knowledge-bases/:kbId/graph` | Knowledge graph data (nodes = docs, edges = similarity) |
+| `GET /api/docs` | Swagger UI (OpenAPI 3.1) |
+| `GET /metrics` | Prometheus metrics scrape endpoint |
+

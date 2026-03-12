@@ -42,6 +42,9 @@ const adminRoutes = require("./src/routes/admin.js");
 // Phase E: Prometheus metrics
 const metricsRoutes = require("./src/routes/metrics.js");
 
+// Phase F: Health check
+const healthRoutes = require("./src/routes/health.js");
+
 const app = express();
 app.use(cors({
   origin: process.env.CORS_ORIGIN || true,
@@ -62,12 +65,24 @@ if (process.env.NODE_ENV !== "production") {
   const swaggerUi = require("swagger-ui-express");
   const YAML = require("js-yaml");
   const fs = require("fs");
+  const OpenApiValidator = require("express-openapi-validator");
   try {
     const openApiSpec = YAML.load(
       fs.readFileSync(path.join(__dirname, "openapi.yaml"), "utf8")
     );
     app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openApiSpec));
     logger.info("[API Docs] Swagger UI available at /api/docs");
+
+    // Validate requests/responses against the OpenAPI spec (dev only)
+    app.use(
+      OpenApiValidator.middleware({
+        apiSpec: path.join(__dirname, "openapi.yaml"),
+        validateRequests: true,
+        validateResponses: false, // response validation disabled (perf)
+        ignorePaths: /^\/api\/docs|^\/metrics|^\/api\/health|^\/mcp/,
+      })
+    );
+    logger.info("[API Validator] express-openapi-validator active");
   } catch (e) {
     logger.warn("[API Docs] Failed to load openapi.yaml:", e.message);
   }
@@ -101,6 +116,9 @@ app.use(adminRoutes);
 
 // --- Phase E: Prometheus metrics ---
 app.use(metricsRoutes);
+
+// --- Phase F: Health check ---
+app.use(healthRoutes);
 
 // --- Legacy simple-ask (deprecated) ---
 // @deprecated Use /api/stream-ask instead.

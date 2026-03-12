@@ -1,14 +1,9 @@
 // In frontend/src/components/WelcomeScreen.js
 import React from "react";
 import { Box, Typography } from "@mui/material";
-// import { useAuth } from '../context/AuthContext';
-// import { useChat } from '../context/ChatContext';
+import ExampleQueries from "./ExampleQueries";
 
 const WelcomeScreen = ({ onSuggestion }) => {
-  // In a future step, we could get the user's name from useAuth()
-  // const { user } = useAuth();
-  // const greeting = user ? `Hello, ${user.username}` : 'Hello There';
-
   return (
     <Box
       sx={{
@@ -38,6 +33,7 @@ const WelcomeScreen = ({ onSuggestion }) => {
       <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
         Ask questions about your documents, brainstorm, or explore insights.
       </Typography>
+      <ExampleQueries onSelect={onSuggestion} />
     </Box>
   );
 };
