@@ -728,3 +728,110 @@ python evaluation/run_eval.py --max-queries 5 --verbose
 | `GET /api/docs` | Swagger UI (OpenAPI 3.1) |
 | `GET /metrics` | Prometheus metrics scrape endpoint |
 
+
+---
+
+## Phase G Features — Advanced Intelligence & Collaboration
+
+### #134 — Adaptive Retrieval with User Feedback Learning
+
+RASS now learns from user interactions to continuously improve retrieval quality.
+
+- **Explicit Feedback (Thumbs Up/Down)**: Every AI response shows thumbs-up and thumbs-down buttons. Feedback is stored in the `RetrievalFeedback` table.
+- **Implicit Feedback (Citation Clicks)**: Clicking a citation card records a "click" signal, tracking which documents users find most useful.
+- **FeedbackBoostStage**: A new retrieval pipeline stage (`rass-engine-service/src/retrieval/FeedbackBoostStage.js`) applies personalized score multipliers — positively-reviewed documents are boosted (×1.5), negatively-reviewed ones are penalised (×0.4).
+- **A/B Testing Framework**: Users are deterministically assigned to group "a" (control — no modification) or group "b" (treatment — feedback boosts applied) via `GET /internal/feedback/ab-group/:userId`.
+- **Feedback API**:
+  - `POST /api/feedback` — Submit explicit thumbs-up/down
+  - `POST /api/feedback/implicit` — Submit citation click events
+  - `GET /api/feedback` — Retrieve feedback history
+
+### #135 — Local Model Support via Ollama
+
+RASS can now run in a fully offline, air-gapped mode using locally hosted models via [Ollama](https://ollama.ai).
+
+- **`OllamaLLMProvider.js`**: Wraps Ollama's OpenAI-compatible chat completions API. Works transparently with the existing streaming and non-streaming generation code.
+- **`OllamaEmbeddingProvider.js`**: Wraps Ollama's OpenAI-compatible embeddings API for local vector generation.
+- **Docker Compose integration**: `ollama` service added with a named `ollama-models` volume. GPU passthrough instructions included (uncomment the `deploy` section).
+- **Model pull script**: `scripts/ollama-pull-models.sh` downloads required LLM and embedding models from Ollama's model registry.
+- **Zero-config switching**: Change two lines in `config.yml` to go fully local:
+  ```yaml
+  EMBEDDING_PROVIDER: ollama
+  LLM_PROVIDER: ollama
+  ```
+
+### #136 — Multi-modal Document Understanding
+
+RASS can now process scanned documents and image files using Optical Character Recognition (OCR).
+
+- **OCR for image files** (`.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.tiff`): `embedding-service/src/ingestion/parser.js` detects image uploads and runs Tesseract.js OCR to extract text before chunking.
+- **Scanned PDF detection and fallback**: If a PDF is loaded but has very little text content (< 50 avg chars/page), RASS automatically re-processes it via OCR — ideal for scanned legacy documents.
+- **Configuration**: Enable with `VISION_ENABLED: true` in `config.yml`. Requires `npm install tesseract.js` in the embedding-service.
+- **Provenance tracking**: The `ocrApplied: true` metadata flag is stored on each chunk for provenance and UI display.
+
+### #137 — Knowledge Graph Extraction & Visualization
+
+RASS can now extract structured entities and relations from your knowledge base documents and visualize them as an interactive force-directed graph.
+
+- **Entity & Relation Prisma models**: `Entity` and `Relation` tables with full indexing by KB, name, and type.
+- **LLM-powered extraction**: `kgExtractionService.js` uses the rass-engine LLM to extract person, organization, drug, disease, concept, and location entities with typed relations.
+- **Incremental extraction**: Already-extracted documents are skipped on re-runs.
+- **Interactive visualization**: `KnowledgeGraph.js` component renders using `react-force-graph-2d` with:
+  - Color-coded nodes by entity type
+  - Directional relation arrows with labels
+  - Node detail panel on click
+  - Entity type filtering
+  - Real-time search
+- **API**:
+  - `GET /api/knowledge-bases/:kbId/graph` — Full graph (nodes + links)
+  - `GET /api/knowledge-bases/:kbId/entities` — Paginated entity list
+  - `GET /api/entities/:entityId` — Single entity with all relations
+  - `POST /api/knowledge-bases/:kbId/graph/extract` — Trigger extraction
+
+### #138 — Real-time Collaborative Annotation & Chat Sharing
+
+Teams can now collaborate on knowledge base quality directly within RASS.
+
+- **Annotation types**: `NOTE`, `FLAG_OUTDATED`, `FLAG_INCORRECT`, `AUTHORITATIVE`, `BOOKMARK`
+- **Annotation UI**: Each citation card in AI responses has an annotation button (comment icon). A dialog allows entering a text note. Annotations are saved and displayed across sessions.
+- **Real-time WebSocket broadcast**: Annotation create/update/delete events are broadcast to all connected WebSocket clients at `ws://host/ws/annotations?token=<JWT>`. The server sends a 30-second heartbeat ping to detect stale connections.
+- **Annotation API**:
+  - `GET /api/annotations?chunkId=...&documentId=...` — Fetch annotations
+  - `POST /api/annotations` — Create annotation
+  - `PATCH /api/annotations/:id` — Update annotation
+  - `DELETE /api/annotations/:id` — Delete annotation
+- **Shareable chat links**: Share any conversation as a read-only public link.
+  - `POST /api/chats/:chatId/share` — Generate share link (with optional expiry)
+  - `DELETE /api/chats/:chatId/share` — Revoke share link
+  - `GET /api/shared/:token` — Public read-only chat view (no auth required)
+  - The `SharedChatView` component renders a clean read-only version of the conversation.
+
+### Service Endpoints (Phase G additions)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `POST /api/feedback` | POST | Submit explicit answer feedback (thumbs up/down) |
+| `POST /api/feedback/implicit` | POST | Submit citation click / implicit feedback |
+| `GET /api/feedback` | GET | Retrieve user's feedback history |
+| `GET /api/knowledge-bases/:kbId/graph` | GET | Knowledge graph (entities + relations) |
+| `GET /api/knowledge-bases/:kbId/entities` | GET | Paginated entity list |
+| `POST /api/knowledge-bases/:kbId/graph/extract` | POST | Trigger LLM knowledge graph extraction |
+| `GET /api/entities/:entityId` | GET | Single entity detail with relations |
+| `GET /api/annotations` | GET | Fetch annotations for a chunk/document |
+| `POST /api/annotations` | POST | Create annotation |
+| `PATCH /api/annotations/:id` | PATCH | Update annotation |
+| `DELETE /api/annotations/:id` | DELETE | Delete annotation |
+| `POST /api/chats/:chatId/share` | POST | Create shareable chat link |
+| `DELETE /api/chats/:chatId/share` | DELETE | Revoke shareable chat link |
+| `GET /api/shared/:token` | GET | Public read-only shared chat view |
+| `ws://host/ws/annotations` | WS | Real-time annotation broadcast |
+
+### Database Models (Phase G additions)
+
+| Model | Purpose |
+|-------|---------|
+| `RetrievalFeedback` | Explicit & implicit feedback signals for adaptive retrieval |
+| `Entity` | Named entities extracted from KB documents |
+| `Relation` | Typed relations between entities |
+| `Annotation` | User annotations on document chunks |
+| `SharedChat` | Expiring share tokens for read-only chat access |

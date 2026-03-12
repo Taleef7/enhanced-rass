@@ -21,7 +21,7 @@ const { connection } = require("../queue/ingestionQueue");
 const { openSearchClient } = require("../clients/opensearchClient");
 const { embeddings, EMBEDDING_MODEL_NAME } = require("../clients/embedder");
 const { getDocstore } = require("../clients/redisClient");
-const { getLoader } = require("../ingestion/parser");
+const { getLoader, isImageFile, extractTextViaOCR, isScannedPdf } = require("../ingestion/parser");
 const { createChunker } = require("../chunking");
 const logger = require("../logger");
 const { withSpan } = require("../tracing");
@@ -34,6 +34,7 @@ const {
   CHILD_CHUNK_OVERLAP,
   OPENSEARCH_INDEX_NAME,
   EMBED_DIM,
+  VISION_ENABLED,
 } = require("../config");
 
 // Internal mcp-server base URL for service-to-service calls (DB updates).
@@ -159,8 +160,30 @@ async function processIngestionJob(job) {
       const rawBytes = await fs.readFile(filePath);
       rawSha256 = crypto.createHash("sha256").update(rawBytes).digest("hex");
 
-      const loader = getLoader(filePath, originalName);
-      docs = await loader.load();
+      // Phase G #136: Image files → direct OCR; standard loader otherwise
+      if (isImageFile(originalName)) {
+        if (!VISION_ENABLED) {
+          throw new Error(`Image files require VISION_ENABLED: true in config.yml`);
+        }
+        const ocrText = await extractTextViaOCR(filePath);
+        const { Document } = require("langchain/document");
+        docs = ocrText.length > 0
+          ? [new Document({ pageContent: ocrText, metadata: { source: originalName, ocrApplied: true } })]
+          : [new Document({ pageContent: "(no text extracted)", metadata: { source: originalName, ocrApplied: true } })];
+      } else {
+        const loader = getLoader(filePath, originalName);
+        docs = await loader.load();
+
+        // Phase G #136: OCR fallback for scanned PDFs
+        if (VISION_ENABLED && originalName.toLowerCase().endsWith(".pdf") && isScannedPdf(docs)) {
+          logger.info("[Worker] Detected scanned PDF — running OCR fallback");
+          const ocrText = await extractTextViaOCR(filePath);
+          if (ocrText.length > 100) {
+            const { Document } = require("langchain/document");
+            docs = [new Document({ pageContent: ocrText, metadata: { source: originalName, ocrApplied: true } })];
+          }
+        }
+      }
 
       docs.forEach((doc) => {
         doc.metadata.userId = userId;

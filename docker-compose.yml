@@ -257,6 +257,29 @@ services:
       - loki
     restart: unless-stopped
 
+
+  # ── Phase G #135: Ollama (local LLM + embedding — fully offline) ──────────────
+  # Set EMBEDDING_PROVIDER: ollama and LLM_PROVIDER: ollama in config.yml to use.
+  # GPU support: uncomment the `deploy` section below if you have NVIDIA drivers.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - rass_network
+    restart: unless-stopped
+    # Uncomment to enable NVIDIA GPU passthrough:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
 networks:
   rass_network:
     name: shared_rass_network
@@ -274,4 +297,6 @@ volumes:
   grafana-data:
     driver: local
   loki-data:
+    driver: local
+  ollama-models:
     driver: local

@@ -44,4 +44,12 @@ module.exports = {
   REDIS_HOST: config.REDIS_HOST,
   REDIS_PORT: config.REDIS_PORT,
   REDIS_DB: config.REDIS_DB,
+  // Phase G #135: Ollama
+  OLLAMA_BASE_URL: config.OLLAMA_BASE_URL,
+  OLLAMA_EMBED_MODEL: config.OLLAMA_EMBED_MODEL,
+  // Phase G #136: Vision
+  VISION_ENABLED: config.VISION_ENABLED,
+  VISION_LLM_PROVIDER: config.VISION_LLM_PROVIDER,
+  VISION_LLM_MODEL: config.VISION_LLM_MODEL,
 };
+
