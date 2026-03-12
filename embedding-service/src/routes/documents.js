@@ -6,11 +6,13 @@ const express = require("express");
 const { getDocstore, redisClient } = require("../clients/redisClient");
 const { RedisDocumentStore } = require("../store/redisDocumentStore");
 
+const logger = require("../logger");
+
 const router = express.Router();
 
 router.post("/get-documents", async (req, res) => {
   const { ids } = req.body;
-  console.log(`[get-documents] Request for ${ids?.length || 0} IDs.`);
+  logger.info(`[get-documents] Request for ${ids?.length || 0} IDs.`);
 
   if (!ids || !Array.isArray(ids)) {
     return res.status(400).json({ error: "Invalid request body." });
@@ -23,12 +25,12 @@ router.post("/get-documents", async (req, res) => {
 
   try {
     const documents = await docstore.mget(ids);
-    console.log(
+    logger.info(
       `[get-documents] Found ${documents.filter((d) => d).length} documents.`
     );
     res.status(200).json({ documents });
   } catch (error) {
-    console.error("[get-documents] Error:", error);
+    logger.error("[get-documents] Error:", error);
     res.status(500).json({ error: "Failed to retrieve documents." });
   }
 });
@@ -51,7 +53,7 @@ router.get("/docstore/stats", async (req, res) => {
       });
     }
   } catch (error) {
-    console.error("[DocStore Stats] Error:", error);
+    logger.error("[DocStore Stats] Error:", error);
     res.status(500).json({ error: "Failed to get docstore stats." });
   }
 });
