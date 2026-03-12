@@ -14,6 +14,7 @@
 const axios = require("axios");
 const { Stage } = require("./Stage");
 const logger = require("../logger");
+const { DEFAULT_POSITIVE_BOOST, DEFAULT_NEGATIVE_PENALTY } = require("../constants/feedbackBoost");
 
 // Internal mcp-server base URL
 const MCP_SERVER_INTERNAL_URL =
@@ -24,9 +25,7 @@ const internalHeaders = INTERNAL_SERVICE_TOKEN
   ? { "x-internal-token": INTERNAL_SERVICE_TOKEN }
   : {};
 
-// Multipliers applied to relevance scores
-const POSITIVE_BOOST = 1.5;
-const NEGATIVE_PENALTY = 0.4;
+// Multipliers applied to relevance scores (configurable via config, defaults from shared constants)
 
 class FeedbackBoostStage extends Stage {
   constructor(config) {
@@ -34,6 +33,9 @@ class FeedbackBoostStage extends Stage {
     this.config = config || {};
     // Allow disabling via config
     this.enabled = config.FEEDBACK_BOOST_ENABLED !== false;
+    // Allow tuning boost multipliers via config without code changes
+    this.positiveBoost = config.FEEDBACK_POSITIVE_BOOST ?? DEFAULT_POSITIVE_BOOST;
+    this.negativePenalty = config.FEEDBACK_NEGATIVE_PENALTY ?? DEFAULT_NEGATIVE_PENALTY;
   }
 
   async run(context) {

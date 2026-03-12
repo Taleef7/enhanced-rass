@@ -14,6 +14,13 @@ const logger = require("../logger");
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif", ".webp"]);
 
 /**
+ * Minimum average characters per page for a PDF to be considered digitally searchable.
+ * Pages with fewer characters on average are treated as a scanned document requiring OCR.
+ * Tuned to catch PDFs where each page has only a page number or sparse embedded text.
+ */
+const SCANNED_PDF_CHAR_THRESHOLD = 50;
+
+/**
  * Returns the appropriate LangChain document loader for the given file path.
  * Supports PDF, DOCX, and plain text (default).
  *
@@ -83,8 +90,8 @@ function isScannedPdf(docs) {
   const totalText = docs.reduce((acc, d) => acc + (d.pageContent || "").trim().length, 0);
   const totalPages = docs.length || 1;
   const avgCharsPerPage = totalText / totalPages;
-  // If the average page has fewer than 50 characters, it's likely a scanned PDF
-  return avgCharsPerPage < 50;
+  // If the average page has fewer than SCANNED_PDF_CHAR_THRESHOLD characters, it's likely scanned
+  return avgCharsPerPage < SCANNED_PDF_CHAR_THRESHOLD;
 }
 
 module.exports = { getLoader, isImageFile, extractTextViaOCR, isScannedPdf };
