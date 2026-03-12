@@ -23,118 +23,133 @@ The response `Content-Type` is `text/event-stream`. Each event is a single line 
 
 ---
 
+## Wire Format
+
+All events use an **OpenAI-compatible delta envelope**:
+
+```json
+{
+  "id": "<uuid>",
+  "object": "chat.completion.chunk",
+  "created": 1710000000,
+  "model": "gpt-4o-mini",
+  "choices": [
+    {
+      "delta": { ... }
+    }
+  ]
+}
+```
+
+The `delta` object is the discriminated payload. Two variants exist:
+
+| `delta` shape | Purpose |
+|---|---|
+| `{ "content": "<string>" }` | Incremental answer token |
+| `{ "custom_meta": { "type": "<event-type>", ... } }` | Structured metadata event |
+
+The stream ends with a literal `[DONE]` sentinel (no JSON wrapper):
+
+```
+data: [DONE]
+```
+
+---
+
 ## Event Types
 
-All events carry a JSON payload in the `data:` field. The `type` field discriminates between event kinds.
-
-### `token` — Incremental answer text
+### Token events — incremental answer text
 
 Emitted for each token (word or word-fragment) as the LLM generates the answer. Concatenate all `content` values in order to reconstruct the full answer.
 
 ```
-data: {"type":"token","content":"Metformin is contraindicated in"}
+data: {"id":"a1b2...","object":"chat.completion.chunk","created":1710000000,"model":"gpt-4o-mini","choices":[{"delta":{"content":"Metformin is contraindicated in"}}]}
 
-data: {"type":"token","content":" patients with eGFR < 30 mL/min/1.73m²"}
+data: {"id":"c3d4...","object":"chat.completion.chunk","created":1710000000,"model":"gpt-4o-mini","choices":[{"delta":{"content":" patients with eGFR < 30 mL/min/1.73m²"}}]}
 ```
 
-**Payload:**
+**Relevant delta fields:**
 | Field | Type | Description |
 |-------|------|-------------|
-| `type` | `"token"` | Event discriminator |
 | `content` | `string` | One or more characters of the answer |
 
 ---
 
-### `citations` — Structured source citations
+### `context` metadata event — retrieved chunks (transparency panel)
 
-Emitted once after the final `token` event, containing all sources used to generate the answer. Each citation includes document metadata, a text excerpt, and a grounding flag.
-
-```
-data: {"type":"citations","citations":[{"index":1,"documentName":"metformin-guidelines.pdf","pageNumber":12,"excerpt":"Metformin is absolutely contraindicated when eGFR < 30...","relevanceScore":0.924,"grounded":true}]}
-```
-
-**Citation object fields:**
-| Field | Type | Description |
-|-------|------|-------------|
-| `index` | `integer` | 1-based citation number as referenced in the answer (e.g. `[1]`) |
-| `documentName` | `string` | Original filename of the source document |
-| `documentId` | `string (uuid)` | Document registry ID (use to link to provenance) |
-| `pageNumber` | `integer \| null` | Page number within the document (PDF only) |
-| `excerpt` | `string` | The specific text excerpt retrieved and used |
-| `relevanceScore` | `float` | Hybrid retrieval score (0–1, higher = more relevant) |
-| `rerankScore` | `float \| null` | Cross-encoder rerank score (present when reranking is enabled) |
-| `grounded` | `boolean` | `true` if the citation can be verified in the retrieved context |
-
----
-
-### `context` — Retrieved chunks (transparency panel)
-
-Emitted before the first `token` event, containing the raw retrieved chunks. This powers the "What RASS is thinking" transparency panel in the UI.
+Emitted **before** the first token event, containing the raw retrieved chunks. This powers the "What RASS is thinking" transparency panel in the UI.
 
 ```
-data: {"type":"context","chunks":[{"text":"Metformin lowers blood glucose by...","score":0.87,"documentName":"metformin-guide.pdf"}]}
+data: {"id":"e5f6...","object":"chat.completion.chunk","created":1710000000,"model":"gpt-4o-mini","choices":[{"delta":{"custom_meta":{"type":"context","chunks":[{"text":"Metformin lowers blood glucose by...","score":0.87,"documentName":"metformin-guide.pdf"}]}}}]}
 ```
 
-**Payload:**
+**`custom_meta` payload:**
 | Field | Type | Description |
 |-------|------|-------------|
 | `type` | `"context"` | Event discriminator |
 | `chunks` | `array` | Array of retrieved chunk objects |
-| `chunks[].text` | `string` | The chunk text passed to the LLM |
-| `chunks[].score` | `float` | Retrieval score |
-| `chunks[].documentName` | `string` | Source document name |
+| `chunks[].text` | `string` | The chunk text passed to the LLM (first 300 chars) |
+| `chunks[].score` | `float` | Retrieval score (rerank score if available, else hybrid score) |
+| `chunks[].documentName` | `string` | Source document filename |
 
 ---
 
-### `done` — Stream complete
+### `citations` metadata event — structured source citations
 
-Emitted as the final event. The connection closes immediately after this event.
-
-```
-data: {"type":"done"}
-```
-
----
-
-### `error` — Stream-level error
-
-Emitted if an error occurs during retrieval or generation. The connection closes after this event.
+Emitted **once** after the final token event, containing all sources used to generate the answer.
 
 ```
-data: {"type":"error","message":"Failed to connect to LLM provider."}
+data: {"id":"g7h8...","object":"chat.completion.chunk","created":1710000000,"model":"gpt-4o-mini","choices":[{"delta":{"custom_meta":{"type":"citations","citations":[{"index":1,"documentName":"metformin-guidelines.pdf","pageNumber":12,"excerpt":"Metformin is absolutely contraindicated when eGFR < 30...","relevanceScore":0.924,"grounded":true}]}}}]}
 ```
 
-**Payload:**
+**`custom_meta` payload:**
 | Field | Type | Description |
 |-------|------|-------------|
-| `type` | `"error"` | Event discriminator |
-| `message` | `string` | Human-readable error description |
+| `type` | `"citations"` | Event discriminator |
+| `citations` | `array` | Array of citation objects |
+| `citations[].index` | `integer` | 1-based citation number |
+| `citations[].documentName` | `string` | Original filename of the source document |
+| `citations[].documentId` | `string (uuid)` | Document registry ID |
+| `citations[].pageNumber` | `integer \| null` | Page number within the document (PDF only) |
+| `citations[].excerpt` | `string` | The specific text excerpt retrieved and used |
+| `citations[].relevanceScore` | `float` | Hybrid retrieval score (0–1, higher = more relevant) |
+| `citations[].grounded` | `boolean` | `true` if the citation can be verified in the answer |
+
+---
+
+### `[DONE]` — stream complete
+
+Emitted as a literal string (not JSON) as the final event. The connection closes immediately after.
+
+```
+data: [DONE]
+```
 
 ---
 
 ## Complete Event Sequence
 
-A typical successful stream has this event order:
+A typical successful stream has this order:
 
 ```
-data: {"type":"context","chunks":[...]}          ← retrieved chunks (optional)
+data: {"choices":[{"delta":{"custom_meta":{"type":"context","chunks":[...]}}}]}     ← retrieved chunks
 
-data: {"type":"token","content":"Metformin"}
-data: {"type":"token","content":" is contra"}
-data: {"type":"token","content":"indicated in"}
+data: {"choices":[{"delta":{"content":"Metformin"}}]}
+data: {"choices":[{"delta":{"content":" is contra"}}]}
+data: {"choices":[{"delta":{"content":"indicated in"}}]}
 ...
-data: {"type":"token","content":"."}
+data: {"choices":[{"delta":{"content":"."}}]}
 
-data: {"type":"citations","citations":[...]}     ← source citations
+data: {"choices":[{"delta":{"custom_meta":{"type":"citations","citations":[...]}}}]}  ← source citations
 
-data: {"type":"done"}                            ← stream closed
+data: [DONE]                                                                          ← stream closed
 ```
 
 ---
 
 ## Client Implementation
 
-### JavaScript (EventSource / fetch)
+### JavaScript (fetch + ReadableStream)
 
 The frontend uses `fetch` with `ReadableStream` to consume SSE:
 
@@ -158,29 +173,28 @@ while (true) {
   if (done) break;
 
   buffer += decoder.decode(value, { stream: true });
-  const lines = buffer.split('\n');
-  buffer = lines.pop(); // Keep incomplete line in buffer
+  const lines = buffer.split('\n\n');
+  buffer = lines.pop(); // Keep incomplete event in buffer
 
   for (const line of lines) {
     if (!line.startsWith('data: ')) continue;
-    const payload = JSON.parse(line.slice(6));
+    const dataContent = line.substring(6).trim();
+    if (dataContent === '[DONE]') break;
 
-    switch (payload.type) {
-      case 'token':
-        appendToAnswer(payload.content);
-        break;
-      case 'citations':
-        setCitations(payload.citations);
-        break;
-      case 'context':
-        setRetrievedChunks(payload.chunks);
-        break;
-      case 'done':
-        setIsStreaming(false);
-        break;
-      case 'error':
-        setError(payload.message);
-        break;
+    const parsed = JSON.parse(dataContent);
+    const delta = parsed.choices?.[0]?.delta;
+    if (!delta) continue;
+
+    if (delta.content) {
+      // Incremental answer token
+      appendToAnswer(delta.content);
+    } else if (delta.custom_meta) {
+      const meta = delta.custom_meta;
+      if (meta.type === 'citations') {
+        setCitations(meta.citations);
+      } else if (meta.type === 'context') {
+        setRetrievedChunks(meta.chunks);  // "What RASS is thinking" panel
+      }
     }
   }
 }
@@ -197,18 +211,19 @@ To cancel a running stream, call `abortController.abort()`. The server detects t
 | Scenario | Behaviour |
 |----------|-----------|
 | No documents ingested | Returns `citations: []` and an answer explaining no context was found |
-| LLM provider timeout | Emits `{"type":"error","message":"LLM timeout"}` |
+| LLM provider timeout | The LLM error is swallowed; a fallback message is appended to the token stream |
 | Client disconnects | Server aborts generation immediately |
 | Invalid JWT | HTTP 401 before stream starts |
 
 ---
 
-## OpenAI-Compatible Stream
+## OpenAI-Compatible Chat Completions Stream
 
-`POST /api/chat/completions` returns SSE in OpenAI delta format for drop-in compatibility with OpenAI client libraries:
+`POST /api/chat/completions` returns SSE in standard OpenAI delta format for drop-in compatibility with OpenAI client libraries:
 
 ```
 data: {"id":"chatcmpl-...","choices":[{"delta":{"content":"Metformin"},"finish_reason":null}]}
 data: {"id":"chatcmpl-...","choices":[{"delta":{},"finish_reason":"stop"}]}
 data: [DONE]
 ```
+

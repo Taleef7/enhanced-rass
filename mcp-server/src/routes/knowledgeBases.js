@@ -289,7 +289,7 @@ router.post("/api/knowledge-bases/:id/members", apiLimiter, authMiddleware, asyn
 router.get("/api/knowledge-bases/:kbId/graph", apiLimiter, authMiddleware, async (req, res) => {
   const { kbId } = req.params;
   const userId = req.userId;
-  const threshold = parseFloat(req.query.threshold) || 0.7;
+  const threshold = parseFloat(req.query.threshold) || 0.3;
 
   try {
     // Verify KB access
@@ -331,71 +331,84 @@ router.get("/api/knowledge-bases/:kbId/graph", apiLimiter, authMiddleware, async
     // Build a representative embedding vector per document by fetching one chunk's
     // embedding vector from OpenSearch, then use that vector as a KNN probe to count
     // how many of a candidate document's chunks fall in the top-N neighbourhood.
-    // weight = overlapping_chunks / K  →  real embedding-based structural similarity.
+    // weight = average( overlapping_chunks_i→j, overlapping_chunks_j→i ) / K
+    // Averaging both directions gives a symmetric, robust similarity measure.
     const K = 20; // neighbourhood size
     const docVectors = {};
 
-    // Step 1: Fetch one chunk embedding per document
-    for (const docId of docIds) {
-      try {
-        const sample = await axios.post(
-          `${osUrl}/${kb.openSearchIndex}/_search`,
-          {
-            size: 1,
-            _source: ["embedding"],
-            query: { term: { documentId: docId } },
-          },
-          { headers: { "Content-Type": "application/json" }, timeout: 5000 }
-        );
-        const hit = sample.data?.hits?.hits?.[0];
-        if (hit?._source?.embedding) {
-          docVectors[docId] = hit._source.embedding;
+    // Step 1: Fetch one chunk embedding per document — all in parallel.
+    await Promise.all(
+      docIds.map(async (docId) => {
+        try {
+          const sample = await axios.post(
+            `${osUrl}/${kb.openSearchIndex}/_search`,
+            {
+              size: 1,
+              _source: ["embedding"],
+              query: { term: { documentId: docId } },
+            },
+            { headers: { "Content-Type": "application/json" }, timeout: 5000 }
+          );
+          const hit = sample.data?.hits?.hits?.[0];
+          if (hit?._source?.embedding) {
+            docVectors[docId] = hit._source.embedding;
+          }
+        } catch (_err) {
+          // If we can't fetch the vector, skip this doc in similarity computation
         }
-      } catch (_err) {
-        // If we can't fetch the vector, skip this doc in similarity computation
-      }
-    }
+      })
+    );
 
-    // Step 2: For each document pair (i,j) where we have vectors, use doc i's
-    // centroid chunk to KNN-search the index and count how many hits belong to doc j.
-    for (let i = 0; i < docIds.length; i++) {
-      const vecI = docVectors[docIds[i]];
-      if (!vecI) continue;
+    // Step 2: Run one KNN probe per document that has a vector — all in parallel.
+    // For each probe document i, record how many of the K nearest neighbours
+    // belong to each other document j.  We store the raw counts in a symmetric
+    // accumulator so we can average both directions i→j and j→i.
+    //
+    // knnCounts[i][j]  = number of doc j's chunks that appeared in doc i's KNN result
+    const knnCounts = {};
+    const docsWithVectors = docIds.filter((id) => docVectors[id]);
 
-      try {
-        const knnRes = await axios.post(
-          `${osUrl}/${kb.openSearchIndex}/_search`,
-          {
-            size: K,
-            _source: ["documentId"],
-            query: {
-              knn: {
-                embedding: { vector: vecI, k: K },
+    await Promise.all(
+      docsWithVectors.map(async (docId) => {
+        try {
+          const knnRes = await axios.post(
+            `${osUrl}/${kb.openSearchIndex}/_search`,
+            {
+              size: K,
+              _source: ["documentId"],
+              query: {
+                knn: {
+                  embedding: { vector: docVectors[docId], k: K },
+                },
               },
             },
-          },
-          { headers: { "Content-Type": "application/json" }, timeout: 5000 }
-        );
+            { headers: { "Content-Type": "application/json" }, timeout: 5000 }
+          );
 
-        const hits = knnRes.data?.hits?.hits || [];
-        // Count how many hits belong to each other document
-        const hitsPerDoc = {};
-        for (const hit of hits) {
-          const dId = hit._source?.documentId;
-          if (dId && dId !== docIds[i]) {
-            hitsPerDoc[dId] = (hitsPerDoc[dId] || 0) + 1;
+          const hits = knnRes.data?.hits?.hits || [];
+          const hitsPerDoc = {};
+          for (const hit of hits) {
+            const dId = hit._source?.documentId;
+            if (dId && dId !== docId) {
+              hitsPerDoc[dId] = (hitsPerDoc[dId] || 0) + 1;
+            }
           }
+          knnCounts[docId] = hitsPerDoc;
+        } catch (_err) {
+          knnCounts[docId] = {};
         }
+      })
+    );
 
-        for (let j = i + 1; j < docIds.length; j++) {
-          const count = hitsPerDoc[docIds[j]] || 0;
-          const weight = parseFloat((count / K).toFixed(3));
-          if (weight >= threshold) {
-            edges.push({ source: docIds[i], target: docIds[j], weight });
-          }
+    // Step 3: Build symmetric edges — average the weight from both probe directions.
+    for (let i = 0; i < docIds.length; i++) {
+      for (let j = i + 1; j < docIds.length; j++) {
+        const countIJ = (knnCounts[docIds[i]] || {})[docIds[j]] || 0;
+        const countJI = (knnCounts[docIds[j]] || {})[docIds[i]] || 0;
+        const weight = parseFloat((((countIJ + countJI) / 2) / K).toFixed(3));
+        if (weight >= threshold) {
+          edges.push({ source: docIds[i], target: docIds[j], weight });
         }
-      } catch (_err) {
-        // Skip this source doc if the KNN query fails
       }
     }
 

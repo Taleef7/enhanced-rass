@@ -65,7 +65,7 @@ if (process.env.NODE_ENV !== "production") {
   const swaggerUi = require("swagger-ui-express");
   const YAML = require("js-yaml");
   const fs = require("fs");
-  const { OpenApiValidator } = require("express-openapi-validator");
+  const OpenApiValidator = require("express-openapi-validator");
   try {
     const openApiSpec = YAML.load(
       fs.readFileSync(path.join(__dirname, "openapi.yaml"), "utf8")
@@ -75,12 +75,12 @@ if (process.env.NODE_ENV !== "production") {
 
     // Validate requests/responses against the OpenAPI spec (dev only)
     app.use(
-      new OpenApiValidator({
+      OpenApiValidator.middleware({
         apiSpec: path.join(__dirname, "openapi.yaml"),
         validateRequests: true,
         validateResponses: false, // response validation disabled (perf)
-        ignorePaths: /^\/api\/docs|^\/metrics|^\/health|^\/mcp/,
-      }).middleware()
+        ignorePaths: /^\/api\/docs|^\/metrics|^\/api\/health|^\/mcp/,
+      })
     );
     logger.info("[API Validator] express-openapi-validator active");
   } catch (e) {

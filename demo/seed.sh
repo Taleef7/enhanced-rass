@@ -52,10 +52,10 @@ echo "[demo-seeder] Uploading seed documents..."
 for f in /seed_data/*.txt /seed_data/*.md /seed_data/*.pdf; do
   [ -f "$f" ] || continue
   echo "[demo-seeder]   Uploading: $f"
-  wget -q -O- \
-    --header="Authorization: Bearer $TOKEN" \
-    --post-file="$f" \
-    "$MCP/api/embed-upload?kbId=$KB_ID" > /dev/null 2>&1 || \
+  curl -s -S \
+    -H "Authorization: Bearer $TOKEN" \
+    -F "file=@$f" \
+    "$MCP/api/embed-upload?kbId=$KB_ID" > /dev/null || \
     echo "[demo-seeder]   Warning: upload may have failed for $f (continuing)"
 done
 
