@@ -47,7 +47,7 @@ router.post("/api/stream-ask", authMiddleware, validateBody(StreamAskBodySchema)
       response.data.destroy();
     });
   } catch (e) {
-    req.log.error({ err: e.message }, "[Stream Proxy] Error calling RASS engine stream.");
+    req.log.error({ err: e }, "[Stream Proxy] Error calling RASS engine stream.");
     llmApiErrorsTotal.inc({ provider: "rass-engine" });
     if (!res.headersSent) {
       res

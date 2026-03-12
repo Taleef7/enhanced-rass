@@ -96,7 +96,7 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
 
     await streamAnswer(res, query, source_documents);
   } catch (e) {
-    req.log.error({ err: e.message }, "[API /stream-ask] Endpoint error.");
+    req.log.error({ err: e }, "[API /stream-ask] Endpoint error.");
     if (!res.headersSent) {
       res.status(500).json({ error: e.message || "Error processing request." });
     } else {
