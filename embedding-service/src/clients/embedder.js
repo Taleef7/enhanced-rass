@@ -4,6 +4,7 @@
 
 const { OpenAIEmbeddings } = require("@langchain/openai");
 const { GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
+const logger = require("../logger");
 const {
   EMBEDDING_PROVIDER,
   OPENAI_EMBED_MODEL_NAME,
@@ -23,7 +24,7 @@ if (EMBEDDING_PROVIDER === "gemini") {
     modelName: GEMINI_EMBED_MODEL_NAME,
     taskType: "RETRIEVAL_DOCUMENT",
   });
-  console.log(
+  logger.info(
     `[Init] Embedding Provider: Gemini, Model: ${GEMINI_EMBED_MODEL_NAME}`
   );
 } else {
@@ -33,7 +34,7 @@ if (EMBEDDING_PROVIDER === "gemini") {
     apiKey: OPENAI_API_KEY,
     model: OPENAI_EMBED_MODEL_NAME,
   });
-  console.log(
+  logger.info(
     `[Init] Embedding Provider: OpenAI, Model: ${OPENAI_EMBED_MODEL_NAME}`
   );
 }

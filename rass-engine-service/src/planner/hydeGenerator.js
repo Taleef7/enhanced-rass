@@ -4,6 +4,7 @@
 
 const { llmClient } = require("../clients/llmClient");
 const { LLM_PROVIDER, OPENAI_MODEL_NAME, GEMINI_MODEL_NAME } = require("../config");
+const logger = require("../logger");
 
 /**
  * Generates a hypothetical document in response to a user's query.
@@ -13,7 +14,7 @@ const { LLM_PROVIDER, OPENAI_MODEL_NAME, GEMINI_MODEL_NAME } = require("../confi
  * @returns {Promise<string>} The generated hypothetical document text.
  */
 async function generateHypotheticalDocument(query, maxTokens = 300) {
-  console.log(`[HyDE] Generating hypothetical document for query: "${query}" (maxTokens=${maxTokens})`);
+  logger.info(`[HyDE] Generating hypothetical document for query: "${query}" (maxTokens=${maxTokens})`);
 
   const prompt = `Based on the context of a user's documents, write a short, hypothetical passage that perfectly answers the following user question.
 The passage should sound like it was extracted directly from one of the user's documents. Do not use general knowledge.
@@ -31,7 +32,7 @@ Hypothetical Passage:`;
         max_tokens: maxTokens,
       });
       const hypotheticalDoc = completion.choices[0].message.content;
-      console.log(
+      logger.info(
         `[HyDE] Generated document (OpenAI): "${hypotheticalDoc.substring(0, 100)}..."`
       );
       return hypotheticalDoc;
@@ -42,7 +43,7 @@ Hypothetical Passage:`;
       });
       const response = await result.response;
       const hypotheticalDoc = response.text();
-      console.log(
+      logger.info(
         `[HyDE] Generated document (Gemini): "${hypotheticalDoc.substring(0, 100)}..."`
       );
       return hypotheticalDoc;
@@ -52,8 +53,8 @@ Hypothetical Passage:`;
       );
     }
   } catch (error) {
-    console.error("[HyDE] Error generating hypothetical document:", error.message);
-    console.warn("[HyDE] Falling back to using the original query for search.");
+    logger.error("[HyDE] Error generating hypothetical document:", error.message);
+    logger.warn("[HyDE] Falling back to using the original query for search.");
     return query;
   }
 }

@@ -10,6 +10,7 @@ const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const { prisma } = require('./prisma');
 const { writeAuditLog } = require('./services/auditService');
+const logger = require("./logger");
 
 const router = Router();
 
@@ -36,7 +37,7 @@ if (!JWT_SECRET) {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('JWT_SECRET must be set in production environments.');
   } else {
-    console.warn('Warning: JWT_SECRET is not set. Using an insecure default value for development.');
+    logger.warn('Warning: JWT_SECRET is not set. Using an insecure default value for development.');
     JWT_SECRET = 'insecure-default-secret-for-dev';
   }
 }
@@ -112,7 +113,7 @@ router.post('/register', authLimiter, async (req, res) => {
     if (error.code === 'P2002') {
       return res.status(409).json({ error: 'Username already exists.' });
     }
-    console.error('Registration error:', error);
+    logger.error('Registration error:', error);
     res.status(500).json({ error: 'An error occurred during registration.' });
   }
 });
@@ -163,7 +164,7 @@ router.post('/login', authLimiter, async (req, res) => {
 
     res.json({ message: 'Login successful!', token });
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login error:', error);
     res.status(500).json({ error: 'An error occurred during login.' });
   }
 });
@@ -239,7 +240,7 @@ router.post('/refresh', refreshLimiter, async (req, res) => {
 
     res.json({ token: newToken });
   } catch (error) {
-    console.error('Token refresh error:', error);
+    logger.error('Token refresh error:', error);
     res.status(500).json({ error: 'An error occurred during token refresh.' });
   }
 });

@@ -5,6 +5,7 @@
 "use strict";
 
 const { Stage } = require("./Stage");
+const logger = require("../logger");
 
 class TopKSelectStage extends Stage {
   constructor() {
@@ -23,7 +24,7 @@ class TopKSelectStage extends Stage {
     const topK = context.topK || 5;
     context.selectedDocs = source.slice(0, topK);
 
-    console.log(
+    logger.info(
       `[TopKSelectStage] Selected ${context.selectedDocs.length} documents (topK=${topK}).`
     );
     return context;

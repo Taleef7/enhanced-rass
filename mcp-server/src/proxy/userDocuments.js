@@ -5,13 +5,14 @@ const express = require("express");
 const axios = require("axios");
 const authMiddleware = require("../authMiddleware");
 const { OPENSEARCH_HOST, OPENSEARCH_PORT, OPENSEARCH_INDEX_NAME } = require("../config");
+const logger = require("../logger");
 
 const router = express.Router();
 
 router.get("/api/user-documents", authMiddleware, async (req, res) => {
   const userId = req.userId;
 
-  console.log(`[User Documents] Fetching documents for user: ${userId}`);
+  logger.info(`[User Documents] Fetching documents for user: ${userId}`);
 
   try {
     const userFilter = {
@@ -45,7 +46,7 @@ router.get("/api/user-documents", authMiddleware, async (req, res) => {
     );
 
     const hits = response.data?.hits?.hits || [];
-    console.log(
+    logger.info(
       `[User Documents] OpenSearch returned total: ${
         response.data?.hits?.total?.value ?? hits.length
       }, windowed: ${hits.length}`
@@ -77,12 +78,12 @@ router.get("/api/user-documents", authMiddleware, async (req, res) => {
     }
 
     const documents = Array.from(groups.values());
-    console.log(
+    logger.info(
       `[User Documents] Found ${documents.length} documents for user ${userId}`
     );
     res.json({ documents });
   } catch (error) {
-    console.error("[User Documents] Error fetching documents:", error);
+    logger.error("[User Documents] Error fetching documents:", error);
     res.status(500).json({
       error: "Failed to fetch user documents",
       details: error.message,

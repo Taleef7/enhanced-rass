@@ -5,6 +5,7 @@
 "use strict";
 
 const { Stage } = require("./Stage");
+const logger = require("../logger");
 
 class DeduplicateStage extends Stage {
   constructor() {
@@ -32,7 +33,7 @@ class DeduplicateStage extends Stage {
       }
     }
 
-    console.log(
+    logger.info(
       `[DeduplicateStage] Reduced ${parentDocs.length} docs → ${deduped.length} unique docs.`
     );
     context.dedupedDocs = deduped;

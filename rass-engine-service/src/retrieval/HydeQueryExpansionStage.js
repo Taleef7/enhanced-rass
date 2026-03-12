@@ -8,6 +8,7 @@
 
 const { Stage } = require("./Stage");
 const { generateHypotheticalDocument } = require("../planner/hydeGenerator");
+const logger = require("../logger");
 
 class HydeQueryExpansionStage extends Stage {
   /**
@@ -22,7 +23,7 @@ class HydeQueryExpansionStage extends Stage {
     const hydeEnabled = this.config.HYDE_ENABLED === true || this.config.HYDE_ENABLED === "true";
 
     if (!hydeEnabled) {
-      console.log("[HydeQueryExpansionStage] HYDE_ENABLED=false — skipping.");
+      logger.info("[HydeQueryExpansionStage] HYDE_ENABLED=false — skipping.");
       return context;
     }
 
@@ -33,7 +34,7 @@ class HydeQueryExpansionStage extends Stage {
         ? Number(rawMaxTokens)
         : 200;
 
-    console.log(
+    logger.info(
       `[HydeQueryExpansionStage] Generating hypothetical document for: "${context.originalQuery}" (maxTokens=${hydeMaxTokens})`
     );
 
@@ -41,7 +42,7 @@ class HydeQueryExpansionStage extends Stage {
     try {
       hypotheticalDoc = await generateHypotheticalDocument(context.originalQuery, hydeMaxTokens);
     } catch (err) {
-      console.warn(
+      logger.warn(
         `[HydeQueryExpansionStage] HyDE generation failed: ${err.message}. Falling back to original query.`
       );
     }
@@ -49,11 +50,11 @@ class HydeQueryExpansionStage extends Stage {
     if (hypotheticalDoc && hypotheticalDoc !== context.originalQuery) {
       // Concatenate original query + hypothetical document for richer embedding signal
       context.query = `${context.originalQuery}\n\n${hypotheticalDoc}`;
-      console.log(
+      logger.info(
         `[HydeQueryExpansionStage] Expanded query length: ${context.query.length} chars.`
       );
     } else {
-      console.log("[HydeQueryExpansionStage] No expansion applied; using original query.");
+      logger.info("[HydeQueryExpansionStage] No expansion applied; using original query.");
     }
 
     return context;

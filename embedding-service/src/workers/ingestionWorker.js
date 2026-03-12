@@ -23,6 +23,7 @@ const { embeddings, EMBEDDING_MODEL_NAME } = require("../clients/embedder");
 const { getDocstore } = require("../clients/redisClient");
 const { getLoader } = require("../ingestion/parser");
 const { createChunker } = require("../chunking");
+const logger = require("../logger");
 const {
   CHUNKING_STRATEGY,
   PARENT_CHUNK_SIZE,
@@ -57,7 +58,7 @@ async function updateDocumentStatus(documentId, status, extra = {}) {
     );
   } catch (err) {
     // Non-fatal — log but don't fail the job
-    console.warn(
+    logger.warn(
       `[Worker] Could not update document status (${documentId} → ${status}): ${err.message}`
     );
   }
@@ -71,7 +72,7 @@ async function persistProvenance(provenanceData) {
       { timeout: 10000, headers: internalHeaders }
     );
   } catch (err) {
-    console.warn(`[Worker] Could not persist provenance: ${err.message}`);
+    logger.warn(`[Worker] Could not persist provenance: ${err.message}`);
   }
 }
 
@@ -115,7 +116,7 @@ async function ensureKBIndexExists(indexName, embedDim) {
         },
       },
     });
-    console.log(`[Worker] Created OpenSearch index: ${indexName}`);
+    logger.info(`[Worker] Created OpenSearch index: ${indexName}`);
   }
 }
 
@@ -138,7 +139,7 @@ async function processIngestionJob(job) {
   const jobId = job.id;
   const stagesMs = {};
 
-  console.log(`[Worker] Starting job ${jobId}: ${originalName} (doc: ${documentId})`);
+  logger.info(`[Worker] Starting job ${jobId}: ${originalName} (doc: ${documentId})`);
   await job.updateProgress(0);
 
   // Update document status → PROCESSING
@@ -167,7 +168,7 @@ async function processIngestionJob(job) {
     });
 
     stagesMs.parse = Math.round(performance.now() - t0);
-    console.log(
+    logger.info(
       `[Worker] Parse stage: ${docs.length} pages in ${stagesMs.parse}ms`
     );
   } catch (err) {
@@ -233,7 +234,7 @@ async function processIngestionJob(job) {
     }
 
     stagesMs.chunk = Math.round(performance.now() - t1);
-    console.log(
+    logger.info(
       `[Worker] Chunk stage: ${parentChunks.length} parents, ${childChunks.length} children in ${stagesMs.chunk}ms`
     );
   } catch (err) {
@@ -249,13 +250,13 @@ async function processIngestionJob(job) {
   const t2 = performance.now();
   try {
     if (childChunks.length > 0) {
-      console.log(
+      logger.info(
         `[Worker] Indexing ${childChunks.length} child chunks in batches of ${BATCH_SIZE}`
       );
       for (let i = 0; i < childChunks.length; i += BATCH_SIZE) {
         const batch = childChunks.slice(i, i + BATCH_SIZE);
         const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-        console.log(`  → Bulk batch #${batchNum}: ${batch.length} docs`);
+        logger.info(`  → Bulk batch #${batchNum}: ${batch.length} docs`);
         await OpenSearchVectorStore.fromDocuments(batch, embeddings, {
           client: openSearchClient,
           indexName,
@@ -263,7 +264,7 @@ async function processIngestionJob(job) {
       }
     }
     stagesMs.embedAndIndex = Math.round(performance.now() - t2);
-    console.log(
+    logger.info(
       `[Worker] Embed+Index stage: ${stagesMs.embedAndIndex}ms`
     );
   } catch (err) {
@@ -322,7 +323,7 @@ async function processIngestionJob(job) {
 
   await job.updateProgress(100);
 
-  console.log(
+  logger.info(
     `[Worker] Job ${jobId} complete: ${originalName} → ${parentChunks.length} parents, ${childChunks.length} children`
   );
 
@@ -343,22 +344,22 @@ function createIngestionWorker() {
   });
 
   worker.on("completed", (job, result) => {
-    console.log(`[Worker] Job ${job.id} completed:`, result?.originalName);
+    logger.info(`[Worker] Job ${job.id} completed:`, result?.originalName);
   });
 
   worker.on("failed", (job, err) => {
-    console.error(`[Worker] Job ${job?.id} failed: ${err.message}`);
+    logger.error(`[Worker] Job ${job?.id} failed: ${err.message}`);
   });
 
   worker.on("progress", (job, progress) => {
-    console.log(`[Worker] Job ${job.id} progress: ${progress}%`);
+    logger.info(`[Worker] Job ${job.id} progress: ${progress}%`);
   });
 
   worker.on("error", (err) => {
-    console.error("[Worker] Worker error:", err.message);
+    logger.error("[Worker] Worker error:", err.message);
   });
 
-  console.log("[Worker] Ingestion worker started (concurrency: 2)");
+  logger.info("[Worker] Ingestion worker started (concurrency: 2)");
   return worker;
 }
 

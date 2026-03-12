@@ -6,6 +6,7 @@
 "use strict";
 
 const { prisma } = require("../prisma");
+const logger = require("../logger");
 
 /**
  * Write an audit log entry.
@@ -63,7 +64,7 @@ async function writeAuditLog({
     });
   } catch (err) {
     // Audit failures must never crash the main request path.
-    console.error("[AuditLog] Failed to write audit entry:", err.message);
+    logger.error("[AuditLog] Failed to write audit entry:", err.message);
   }
 }
 

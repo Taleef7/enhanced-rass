@@ -6,6 +6,8 @@
 const express = require("express");
 const cors = require("cors");
 
+const logger = require("./src/logger");
+const { correlationIdMiddleware } = require("./src/middleware/correlationId");
 const { EMBEDDING_SERVICE_PORT } = require("./src/config");
 const { initializeDocstore } = require("./src/clients/redisClient");
 const { ensureIndexExists } = require("./src/clients/opensearchClient");
@@ -21,6 +23,7 @@ const ingestStatusRoutes = require("./src/routes/ingestStatus");
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(correlationIdMiddleware);
 
 app.use(uploadRoutes);
 app.use(documentRoutes);
@@ -44,9 +47,9 @@ if (process.env.NODE_ENV !== "production") {
     });
 
     app.use("/admin/queues", serverAdapter.getRouter());
-    console.log("[Init] Bull Board available at /admin/queues");
+    logger.info("[Init] Bull Board available at /admin/queues");
   } catch (e) {
-    console.warn("[Init] Bull Board not available:", e.message);
+    logger.warn("[Init] Bull Board not available:", e.message);
   }
 }
 
@@ -59,11 +62,11 @@ async function startServer() {
     createIngestionWorker();
 
     app.listen(EMBEDDING_SERVICE_PORT, () => {
-      console.log(`Embedding Service running on port ${EMBEDDING_SERVICE_PORT}`);
-      console.log("[Init] Embedding Service fully initialized and ready");
+      logger.info(`Embedding Service running on port ${EMBEDDING_SERVICE_PORT}`);
+      logger.info("[Init] Embedding Service fully initialized and ready");
     });
   } catch (err) {
-    console.error("[Fatal] Service initialization failed:", err);
+    logger.error("[Fatal] Service initialization failed:", err);
     process.exit(1);
   }
 }

@@ -3,6 +3,7 @@
 
 const { llmClient } = require("../clients/llmClient");
 const { LLM_PROVIDER, OPENAI_MODEL_NAME } = require("../config");
+const logger = require("../logger");
 
 /**
  * Builds the generation prompt from context documents and a user query.
@@ -57,9 +58,9 @@ async function generateAnswer(query, sourceDocuments) {
       answer = result.response.text();
     }
   } catch (e) {
-    console.error("[Generation] Error calling LLM:", e);
+    logger.error("[Generation] Error calling LLM:", e);
   }
-  console.log(`[Generation] Final answer generated.`);
+  logger.info(`[Generation] Final answer generated.`);
   return answer;
 }
 

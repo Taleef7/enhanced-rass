@@ -15,6 +15,7 @@ const { EMBEDDING_SERVICE_BASE_URL } = require("../config");
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 const { prisma } = require("../prisma");
+const logger = require("../logger");
 
 const router = express.Router();
 
@@ -31,7 +32,7 @@ router.post(
     const kbId = req.body.kbId || null;
     const chunkingStrategy = req.body.chunkingStrategy || null;
 
-    console.log(`[Upload Proxy] Received file: ${req.file.originalname} from user: ${userId}`);
+    logger.info(`[Upload Proxy] Received file: ${req.file.originalname} from user: ${userId}`);
 
     // If kbId is provided, resolve the KB's OpenSearch index and validate membership.
     let targetIndex = null;
@@ -67,7 +68,7 @@ router.post(
         },
       });
     } catch (dbErr) {
-      console.error("[Upload Proxy] Failed to create document registry entry:", dbErr.message);
+      logger.error("[Upload Proxy] Failed to create document registry entry:", dbErr.message);
       return res.status(500).json({ error: "Failed to register document." });
     }
 
@@ -96,7 +97,7 @@ router.post(
         await prisma.document.update({
           where: { id: doc.id },
           data: { ingestionJobId: String(firstJob.jobId) },
-        }).catch((err) => console.warn('[Upload Proxy] Could not update ingestionJobId:', err.message));
+        }).catch((err) => logger.warn('[Upload Proxy] Could not update ingestionJobId:', err.message));
       }
 
       await writeAuditLog({
@@ -107,7 +108,7 @@ router.post(
         metadata: { originalFilename: req.file.originalname, jobId: firstJob?.jobId },
       });
 
-      console.log("[Upload Proxy] File forwarded to embedding-service successfully.");
+      logger.info("[Upload Proxy] File forwarded to embedding-service successfully.");
 
       // Return 202 with combined document + job info
       res.status(202).json({
@@ -115,7 +116,7 @@ router.post(
         ...response.data,
       });
     } catch (e) {
-      console.error("[Upload Proxy] Error forwarding file to embedding-service:", e.message);
+      logger.error("[Upload Proxy] Error forwarding file to embedding-service:", e.message);
 
       // Rollback document status to FAILED
       await prisma.document.update({

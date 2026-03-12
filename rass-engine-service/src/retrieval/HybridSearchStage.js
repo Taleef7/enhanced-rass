@@ -7,6 +7,7 @@
 const { Stage } = require("./Stage");
 const { DEFAULT_K_OPENSEARCH_HITS, OPENSEARCH_INDEX_NAME } = require("../config");
 const { osClient } = require("../clients/opensearchClient");
+const logger = require("../logger");
 
 /**
  * Builds a hybrid KNN + keyword OpenSearch query.
@@ -88,7 +89,7 @@ class HybridSearchStage extends Stage {
     const k = DEFAULT_K_OPENSEARCH_HITS;
 
     if (!queryEmbedding) {
-      console.warn("[HybridSearchStage] No queryEmbedding found; returning empty candidates.");
+      logger.warn("[HybridSearchStage] No queryEmbedding found; returning empty candidates.");
       context.candidateChunks = [];
       return context;
     }
@@ -98,10 +99,10 @@ class HybridSearchStage extends Stage {
     try {
       const results = await osClient.search({ index: OPENSEARCH_INDEX_NAME, body: searchBody });
       const hits = results.body.hits.hits || [];
-      console.log(`[HybridSearchStage] Found ${hits.length} candidate chunks (status: ${results.statusCode}).`);
+      logger.info(`[HybridSearchStage] Found ${hits.length} candidate chunks (status: ${results.statusCode}).`);
       context.candidateChunks = hits;
     } catch (error) {
-      console.warn(`[HybridSearchStage] Search failed: ${error.message}`);
+      logger.warn(`[HybridSearchStage] Search failed: ${error.message}`);
       context.candidateChunks = [];
     }
 

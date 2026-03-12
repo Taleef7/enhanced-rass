@@ -10,6 +10,7 @@ const { OPENSEARCH_INDEX_NAME, DEFAULT_TOP_K } = require("../config");
 const { validateBody } = require("../middleware/validate");
 const { AskBodySchema } = require("../schemas/askSchema");
 const { RetrievalHitSchema } = require("../schemas/retrievalSchemas");
+const logger = require("../logger");
 
 const router = express.Router();
 
@@ -21,14 +22,14 @@ router.post("/ask", validateBody(AskBodySchema), async (req, res) => {
   try {
     const { query, top_k } = req.validatedBody;
 
-    console.log("---------------------------------");
-    console.log(`[API /ask] Received query: "${query}", top_k: ${top_k}`);
-    console.log("---------------------------------");
+    logger.info("---------------------------------");
+    logger.info(`[API /ask] Received query: "${query}", top_k: ${top_k}`);
+    logger.info("---------------------------------");
 
     const top_k_for_generation =
       typeof top_k === "number" ? top_k : DEFAULT_TOP_K;
 
-    console.log("[Retrieval] Performing initial broad search...");
+    logger.info("[Retrieval] Performing initial broad search...");
     const initialHits = await simpleSearch({
       term: query,
       embed: embedText,
@@ -47,7 +48,7 @@ router.post("/ask", validateBody(AskBodySchema), async (req, res) => {
     const validHits = initialHits.filter((hit) => {
       const result = RetrievalHitSchema.safeParse(hit);
       if (!result.success) {
-        console.warn(
+        logger.warn(
           `[API /ask] Excluding invalid hit (id=${hit._id}):`,
           result.error.issues
         );
@@ -64,14 +65,14 @@ router.post("/ask", validateBody(AskBodySchema), async (req, res) => {
       .filter((doc) => doc.text?.trim())
       .slice(0, top_k_for_generation);
 
-    console.log(
+    logger.info(
       `[Generation] Generating with ${source_documents.length} documents...`
     );
 
     const answer = await generateAnswer(query, source_documents);
     return res.json({ answer, source_documents });
   } catch (e) {
-    console.error("[API /ask] Endpoint error:", e);
+    logger.error("[API /ask] Endpoint error:", e);
     return res
       .status(500)
       .json({ error: e.message || "Error processing request." });

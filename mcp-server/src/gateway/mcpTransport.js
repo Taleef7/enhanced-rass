@@ -6,6 +6,7 @@ const {
   StreamableHTTPServerTransport,
 } = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
 const { server } = require("./mcpTools");
+const logger = require("../logger");
 
 const router = express.Router();
 
@@ -21,7 +22,7 @@ router.post("/mcp", async (req, res) => {
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   } catch (e) {
-    console.error("[MCP Server] Error handling request:", e);
+    logger.error("[MCP Server] Error handling request:", e);
     if (!res.headersSent) {
       res.status(500).send("Internal Server Error");
     }

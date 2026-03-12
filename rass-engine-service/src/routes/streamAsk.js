@@ -12,6 +12,7 @@ const { StreamAskBodySchema } = require("../schemas/askSchema");
 const { RetrievalHitSchema } = require("../schemas/retrievalSchemas");
 const { createPipeline } = require("../retrieval/createPipeline");
 const { createContext } = require("../retrieval/context");
+const logger = require("../logger");
 
 const router = express.Router();
 
@@ -29,15 +30,15 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
 
     // Register close handler early so we detect client disconnects during retrieval or generation.
     res.on("close", () => {
-      console.log("[API /stream-ask] Client closed connection.");
+      logger.info("[API /stream-ask] Client closed connection.");
     });
 
-    console.log("---------------------------------");
-    console.log(
+    logger.info("---------------------------------");
+    logger.info(
       `[API /stream-ask] Received query: "${query}", top_k: ${top_k}`
     );
-    if (userId) console.log(`[API /stream-ask] Request from user: ${userId}`);
-    console.log("---------------------------------");
+    if (userId) logger.info(`[API /stream-ask] Request from user: ${userId}`);
+    logger.info("---------------------------------");
 
     const topK = typeof top_k === "number" ? top_k : DEFAULT_TOP_K;
 
@@ -50,7 +51,7 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
     const selectedDocs = result.selectedDocs || [];
 
     if (selectedDocs.length === 0) {
-      console.warn("[stream-ask] No documents found after pipeline.");
+      logger.warn("[stream-ask] No documents found after pipeline.");
       writeSSE(res, {
         choices: [
           { delta: { content: "I could not find any relevant information." } },
@@ -68,7 +69,7 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
     const validHits = selectedDocs.filter((hit) => {
       const r = RetrievalHitSchema.safeParse(hit);
       if (!r.success) {
-        console.warn(
+        logger.warn(
           `[API /stream-ask] Excluding invalid hit (id=${hit._id}):`,
           r.error.issues
         );
@@ -87,13 +88,13 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
 
     if (res.writableEnded || res.destroyed) return;
 
-    console.log(
+    logger.info(
       `[Generation] Streaming with ${source_documents.length} documents...`
     );
 
     await streamAnswer(res, query, source_documents);
   } catch (e) {
-    console.error("[API /stream-ask] Endpoint error:", e);
+    logger.error("[API /stream-ask] Endpoint error:", e);
     if (!res.headersSent) {
       res.status(500).json({ error: e.message || "Error processing request." });
     } else {

@@ -6,6 +6,7 @@
 
 const { Stage } = require("./Stage");
 const { embedText } = require("../clients/embedder");
+const logger = require("../logger");
 
 class EmbedQueryStage extends Stage {
   constructor() {
@@ -13,9 +14,9 @@ class EmbedQueryStage extends Stage {
   }
 
   async run(context) {
-    console.log(`[EmbedQueryStage] Embedding query: "${context.query.substring(0, 80)}..."`);
+    logger.info(`[EmbedQueryStage] Embedding query: "${context.query.substring(0, 80)}..."`);
     context.queryEmbedding = await embedText(context.query);
-    console.log(`[EmbedQueryStage] Embedding vector length: ${context.queryEmbedding?.length}`);
+    logger.info(`[EmbedQueryStage] Embedding vector length: ${context.queryEmbedding?.length}`);
     return context;
   }
 }

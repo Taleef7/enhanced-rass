@@ -9,6 +9,7 @@ const FormData = require("form-data");
 const fs = require("fs");
 const path = require("path");
 const { RASS_ENGINE_BASE_URL, EMBEDDING_SERVICE_BASE_URL } = require("../config");
+const logger = require("../logger");
 
 const server = new McpServer({
   name: "RASS-MCP-Server",
@@ -27,7 +28,7 @@ server.tool(
       .describe("Optional. The maximum number of document chunks to return."),
   },
   async (tool_args) => {
-    console.log(`[MCP Tool 'queryRASS'] Executing with args:`, tool_args);
+    logger.info(`[MCP Tool 'queryRASS'] Executing with args:`, tool_args);
     const rassEngineUrl = `${RASS_ENGINE_BASE_URL}/ask`;
     const response = await axios.post(rassEngineUrl, tool_args);
     return {
@@ -47,7 +48,7 @@ server.tool(
       ),
   },
   async ({ source_uri }) => {
-    console.log(
+    logger.info(
       `[MCP Tool 'addDocumentToRASS'] Executing with uri:`,
       source_uri
     );

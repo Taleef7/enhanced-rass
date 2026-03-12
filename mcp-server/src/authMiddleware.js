@@ -5,10 +5,11 @@
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const { prisma } = require("./prisma");
+const logger = require("./logger");
 
 let JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
-  console.warn(
+  logger.warn(
     "Warning: JWT_SECRET is not set. Using an insecure default value for development."
   );
   JWT_SECRET = "insecure-default-secret-for-dev";
@@ -67,7 +68,7 @@ const authMiddleware = async (req, res, next) => {
       req.authMethod = "api_key";
       return next();
     } catch (error) {
-      console.error("[AUTH] API key verification error:", error.message);
+      logger.error("[AUTH] API key verification error:", error.message);
       return res.status(500).json({ error: "Internal server error during API key validation." });
     }
   }
@@ -86,7 +87,7 @@ const authMiddleware = async (req, res, next) => {
     req.authMethod = "jwt";
     next();
   } catch (error) {
-    console.log("[AUTH] JWT verification failed:", error.message);
+    logger.info("[AUTH] JWT verification failed:", error.message);
     return res.status(401).json({ error: "Unauthorized: Invalid token." });
   }
 };

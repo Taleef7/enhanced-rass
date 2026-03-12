@@ -4,6 +4,7 @@
 const Redis = require("ioredis");
 const { InMemoryStore } = require("langchain/storage/in_memory");
 const { RedisDocumentStore } = require("../store/redisDocumentStore");
+const logger = require("../logger");
 const {
   REDIS_HOST,
   REDIS_PORT,
@@ -24,15 +25,15 @@ const redisClient = new Redis({
 });
 
 redisClient.on("connect", () => {
-  console.log("[Redis] Connected successfully");
+  logger.info("[Redis] Connected successfully");
 });
 
 redisClient.on("error", (err) => {
-  console.error("[Redis] Connection error:", err);
+  logger.error("[Redis] Connection error:", err);
 });
 
 redisClient.on("ready", () => {
-  console.log("[Redis] Ready to accept commands");
+  logger.info("[Redis] Ready to accept commands");
 });
 
 // Module-level docstore reference shared across routes
@@ -48,27 +49,27 @@ function setDocstore(store) {
 
 // Graceful shutdown handlers
 process.on("SIGTERM", async () => {
-  console.log("[Shutdown] SIGTERM received, shutting down gracefully...");
+  logger.info("[Shutdown] SIGTERM received, shutting down gracefully...");
   try {
     if (redisClient.status === "ready") {
       await redisClient.quit();
-      console.log("[Shutdown] Redis connection closed.");
+      logger.info("[Shutdown] Redis connection closed.");
     }
   } catch (error) {
-    console.error("[Shutdown] Error closing Redis connection:", error);
+    logger.error("[Shutdown] Error closing Redis connection:", error);
   }
   process.exit(0);
 });
 
 process.on("SIGINT", async () => {
-  console.log("[Shutdown] SIGINT received, shutting down gracefully...");
+  logger.info("[Shutdown] SIGINT received, shutting down gracefully...");
   try {
     if (redisClient.status === "ready") {
       await redisClient.quit();
-      console.log("[Shutdown] Redis connection closed.");
+      logger.info("[Shutdown] Redis connection closed.");
     }
   } catch (error) {
-    console.error("[Shutdown] Error closing Redis connection:", error);
+    logger.error("[Shutdown] Error closing Redis connection:", error);
   }
   process.exit(0);
 });
@@ -76,7 +77,7 @@ process.on("SIGINT", async () => {
 async function initializeDocstore() {
   try {
     if (redisClient.status !== "ready") {
-      console.log("[Init] Waiting for Redis connection...");
+      logger.info("[Init] Waiting for Redis connection...");
 
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
@@ -103,15 +104,15 @@ async function initializeDocstore() {
     await redisClient.ping();
 
     docstore = new RedisDocumentStore(redisClient);
-    console.log("[Init] Redis-backed document store initialized successfully");
+    logger.info("[Init] Redis-backed document store initialized successfully");
     return docstore;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Init] Failed to initialize Redis docstore, falling back to InMemoryStore:",
       error
     );
     docstore = new InMemoryStore();
-    console.log("[Init] Using InMemoryStore as fallback");
+    logger.info("[Init] Using InMemoryStore as fallback");
     return docstore;
   }
 }

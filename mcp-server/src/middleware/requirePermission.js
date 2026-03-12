@@ -17,6 +17,7 @@
 const { prisma } = require("../prisma");
 const { ROLE_PERMISSIONS } = require("../permissions");
 const { writeAuditLog } = require("../services/auditService");
+const logger = require("../logger");
 
 /**
  * Returns Express middleware that checks the caller has the given permission
@@ -50,7 +51,7 @@ function requirePermission(permission) {
         workspaceId = doc?.workspaceId || null;
       } catch (err) {
         // DB error during workspace resolution — fail closed to prevent unauthorized access
-        console.error("[requirePermission] Error during document workspace lookup:", err.message);
+        logger.error("[requirePermission] Error during document workspace lookup:", err.message);
         return res.status(500).json({ error: "Internal server error during workspace resolution." });
       }
     }
@@ -102,7 +103,7 @@ function requirePermission(permission) {
       req.workspaceId = workspaceId;
       next();
     } catch (err) {
-      console.error("[requirePermission] Error:", err.message);
+      logger.error("[requirePermission] Error:", err.message);
       res.status(500).json({ error: "Internal server error during permission check." });
     }
   };

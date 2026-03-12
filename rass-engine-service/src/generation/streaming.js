@@ -10,6 +10,7 @@ const {
 } = require("../config");
 const { buildGenerationPrompt } = require("./generator");
 const { CitationSchema } = require("../schemas/retrievalSchemas");
+const logger = require("../logger");
 
 /**
  * Writes a single Server-Sent Event chunk in OpenAI-compatible format.
@@ -104,7 +105,7 @@ function buildStructuredCitations(sourceDocuments, llmAnswer) {
 
     const parsed = CitationSchema.safeParse(raw);
     if (!parsed.success) {
-      console.warn("[Generation] Excluding invalid citation:", parsed.error.issues);
+      logger.warn("[Generation] Excluding invalid citation:", parsed.error.issues);
       return acc;
     }
     acc.push(parsed.data);
@@ -171,7 +172,7 @@ async function streamAnswer(res, query, sourceDocuments) {
       ],
     });
   } catch (e) {
-    console.error("[Generation] Error during LLM stream:", e);
+    logger.error("[Generation] Error during LLM stream:", e);
     writeSSE(res, {
       choices: [
         {
@@ -184,7 +185,7 @@ async function streamAnswer(res, query, sourceDocuments) {
   } finally {
     writeSSE(res, "[DONE]");
     res.end();
-    console.log("[Generation] Stream finished.");
+    logger.info("[Generation] Stream finished.");
   }
 }
 

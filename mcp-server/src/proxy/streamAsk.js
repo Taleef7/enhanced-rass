@@ -7,6 +7,7 @@ const authMiddleware = require("../authMiddleware");
 const { RASS_ENGINE_BASE_URL } = require("../config");
 const { validateBody } = require("../middleware/validate");
 const { StreamAskBodySchema } = require("../schemas/streamAskSchema");
+const logger = require("../logger");
 
 const router = express.Router();
 
@@ -14,7 +15,7 @@ router.post("/api/stream-ask", authMiddleware, validateBody(StreamAskBodySchema)
   const { query, documents } = req.validatedBody;
   const userId = req.userId;
 
-  console.log(`[Stream Proxy] Query from user: ${userId}`);
+  logger.info(`[Stream Proxy] Query from user: ${userId}`);
 
   try {
     const rassEngineStreamUrl = `${RASS_ENGINE_BASE_URL}/stream-ask`;
@@ -33,11 +34,11 @@ router.post("/api/stream-ask", authMiddleware, validateBody(StreamAskBodySchema)
     response.data.pipe(res);
 
     req.on("close", () => {
-      console.log("[Stream Proxy] Client closed connection.");
+      logger.info("[Stream Proxy] Client closed connection.");
       response.data.destroy();
     });
   } catch (e) {
-    console.error(
+    logger.error(
       "[Stream Proxy] Error calling RASS engine stream:",
       e.message
     );

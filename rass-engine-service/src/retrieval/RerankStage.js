@@ -8,6 +8,7 @@
 
 const { Stage } = require("./Stage");
 const { NoopRerankProvider } = require("./reranking/NoopRerankProvider");
+const logger = require("../logger");
 
 class RerankStage extends Stage {
   /**
@@ -24,17 +25,17 @@ class RerankStage extends Stage {
 
     if (providerName === "cohere") {
       const { CohereRerankProvider } = require("./reranking/CohereRerankProvider");
-      console.log("[RerankStage] Using CohereRerankProvider.");
+      logger.info("[RerankStage] Using CohereRerankProvider.");
       return new CohereRerankProvider(this.config);
     }
 
     if (providerName === "local") {
       const { LocalCrossEncoderProvider } = require("./reranking/LocalCrossEncoderProvider");
-      console.log("[RerankStage] Using LocalCrossEncoderProvider.");
+      logger.info("[RerankStage] Using LocalCrossEncoderProvider.");
       return new LocalCrossEncoderProvider(this.config);
     }
 
-    console.log("[RerankStage] RERANK_PROVIDER=none — using NoopRerankProvider.");
+    logger.info("[RerankStage] RERANK_PROVIDER=none — using NoopRerankProvider.");
     return new NoopRerankProvider();
   }
 
@@ -42,7 +43,7 @@ class RerankStage extends Stage {
     const { dedupedDocs, originalQuery } = context;
 
     if (!dedupedDocs || dedupedDocs.length === 0) {
-      console.warn("[RerankStage] No deduplicated docs to rerank; skipping.");
+      logger.warn("[RerankStage] No deduplicated docs to rerank; skipping.");
       context.rankedChunks = [];
       return context;
     }
@@ -54,7 +55,7 @@ class RerankStage extends Stage {
 
     context.rankedChunks = await this.provider.rerank(originalQuery, dedupedDocs, rerankTopN);
 
-    console.log(
+    logger.info(
       `[RerankStage] Reranking complete: ${dedupedDocs.length} → ${context.rankedChunks.length} docs.`
     );
     return context;

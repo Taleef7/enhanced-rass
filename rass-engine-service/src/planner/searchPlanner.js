@@ -9,6 +9,7 @@ const { DEFAULT_K_OPENSEARCH_HITS } = require("../config");
 const { llmClient } = require("../clients/llmClient");
 const { LLM_PROVIDER, OPENAI_MODEL_NAME, GEMINI_MODEL_NAME } = require("../config");
 const { SearchPlanSchema } = require("../schemas/plannerSchemas");
+const logger = require("../logger");
 
 /**
  * Generates a refined set of search terms from the LLM given an initial context.
@@ -19,7 +20,7 @@ const { SearchPlanSchema } = require("../schemas/plannerSchemas");
  * @returns {Promise<Array<{step_id: string, search_term: string, knn_k: number}>>}
  */
 async function createRefinedSearchPlan(originalQuery, initialContext) {
-  console.log(
+  logger.info(
     `[Refined Plan] Creating context-aware search plan for: "${originalQuery}"`
   );
 
@@ -54,7 +55,7 @@ Generate a JSON array of specific search terms now. Your entire response must be
     // Validate the LLM output against SearchPlanSchema
     const planResult = SearchPlanSchema.safeParse(rawTerms);
     if (!planResult.success) {
-      console.warn(
+      logger.warn(
         `[Refined Plan] LLM output failed schema validation: ${JSON.stringify(planResult.error.issues)}. Falling back to original query.`
       );
       return [
@@ -72,10 +73,10 @@ Generate a JSON array of specific search terms now. Your entire response must be
       knn_k: DEFAULT_K_OPENSEARCH_HITS,
     }));
 
-    console.log(`[Refined Plan] Created ${plan.length} new search steps.`);
+    logger.info(`[Refined Plan] Created ${plan.length} new search steps.`);
     return plan;
   } catch (error) {
-    console.warn(
+    logger.warn(
       `[Refined Plan] Could not create refined plan, falling back to original query.`
     );
     return [

@@ -2,6 +2,7 @@
 // OpenSearch client setup and index initialization.
 
 const { Client: OSClient } = require("@opensearch-project/opensearch");
+const logger = require("../logger");
 const {
   OPENSEARCH_HOST,
   OPENSEARCH_PORT,
@@ -18,7 +19,7 @@ async function ensureIndexExists() {
     index: OPENSEARCH_INDEX_NAME,
   });
   if (!exists.body) {
-    console.log(
+    logger.info(
       `[OpenSearch] Index "${OPENSEARCH_INDEX_NAME}" not found. Creating with dimension: ${EMBED_DIM}...`
     );
     await openSearchClient.indices.create({
@@ -44,7 +45,7 @@ async function ensureIndexExists() {
         },
       },
     });
-    console.log(`[OpenSearch] Index "${OPENSEARCH_INDEX_NAME}" created.`);
+    logger.info(`[OpenSearch] Index "${OPENSEARCH_INDEX_NAME}" created.`);
   }
 }
 

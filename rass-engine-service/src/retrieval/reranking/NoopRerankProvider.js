@@ -5,11 +5,12 @@
 "use strict";
 
 const { RerankProvider } = require("./RerankProvider");
+const logger = require("../../logger");
 
 class NoopRerankProvider extends RerankProvider {
   async rerank(query, documents, topN) {
     const result = topN ? documents.slice(0, topN) : documents;
-    console.debug(
+    logger.debug(
       `[NoopRerankProvider] Passing through ${result.length} documents unchanged.`
     );
     return result;
