@@ -32,7 +32,7 @@ router.get(
     try {
       // Verify access — user must own or be a member of the KB
       const kb = await prisma.knowledgeBase.findFirst({
-        where: { id: kbId, OR: [{ userId }, { members: { some: { userId } } }] },
+        where: { id: kbId, OR: [{ ownerId: userId }, { members: { some: { userId } } }] },
       });
       if (!kb) return res.status(404).json({ error: "Knowledge base not found." });
 
@@ -97,7 +97,7 @@ router.get(
 
     try {
       const kb = await prisma.knowledgeBase.findFirst({
-        where: { id: kbId, OR: [{ userId }, { members: { some: { userId } } }] },
+        where: { id: kbId, OR: [{ ownerId: userId }, { members: { some: { userId } } }] },
       });
       if (!kb) return res.status(404).json({ error: "Knowledge base not found." });
 
@@ -151,7 +151,7 @@ router.post(
 
     try {
       const kb = await prisma.knowledgeBase.findFirst({
-        where: { id: kbId, userId },
+        where: { id: kbId, ownerId: userId },
       });
       if (!kb) return res.status(404).json({ error: "Knowledge base not found." });
 

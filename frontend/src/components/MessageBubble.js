@@ -51,7 +51,7 @@ function isStructuredCitation(citation) {
 /**
  * Renders a single structured citation card.
  */
-function StructuredCitationCard({ citation }) {
+function StructuredCitationCard({ citation, onCitationClick, onAnnotate }) {
   const [expanded, setExpanded] = useState(false);
   const score =
     typeof citation.relevanceScore === "number"
@@ -68,7 +68,9 @@ function StructuredCitationCard({ citation }) {
         borderColor: isGrounded
           ? "rgba(255,255,255,0.1)"
           : "warning.dark",
+        cursor: onCitationClick ? "pointer" : "default",
       }}
+      onClick={() => onCitationClick && onCitationClick(citation)}
     >
       <CardContent sx={{ py: 1.5, px: 2, "&:last-child": { pb: 1.5 } }}>
         <Box
@@ -111,6 +113,17 @@ function StructuredCitationCard({ citation }) {
                 sx={{ fontSize: "0.65rem", height: 18 }}
                 variant="outlined"
               />
+            )}
+            {onAnnotate && (
+              <Tooltip title="Add annotation">
+                <IconButton
+                  size="small"
+                  onClick={(e) => { e.stopPropagation(); onAnnotate(citation); }}
+                  sx={{ p: 0.25 }}
+                >
+                  <CommentIcon sx={{ fontSize: 14 }} />
+                </IconButton>
+              </Tooltip>
             )}
           </Box>
         </Box>
@@ -458,6 +471,11 @@ const MessageBubble = ({ message, index }) => {
                             <StructuredCitationCard
                               key={i}
                               citation={citation}
+                              onCitationClick={handleCitationClick}
+                              onAnnotate={(c) => {
+                                setAnnotationCitation(c);
+                                setAnnotationOpen(true);
+                              }}
                             />
                           ))}
                           {message.sources.length > 10 && (

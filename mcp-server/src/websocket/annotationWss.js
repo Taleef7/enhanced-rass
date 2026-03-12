@@ -50,30 +50,64 @@ function attachAnnotationWss(httpServer) {
 
   wss.on("connection", (ws, req) => {
     ws.isAlive = true;
+    ws.subscribedWorkspaces = new Set(); // workspace IDs the client explicitly subscribed to
 
-    // Extract JWT from query string for authentication
+    // Extract JWT from query string and reject unauthenticated connections
     const urlParams = new URLSearchParams((req.url || "").split("?")[1] || "");
     const token = urlParams.get("token");
 
-    let userId = null;
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || "change_this_secret");
-        userId = decoded.userId || decoded.sub || null;
-      } catch {
-        logger.warn("[WS] Invalid token — connection allowed but unauthenticated");
-      }
+    if (!token) {
+      logger.warn("[WS] Connection rejected — no token provided");
+      ws.close(1008, "Authentication required");
+      return;
     }
 
-    logger.info(`[WS] Annotation client connected (userId=${userId || "anonymous"})`);
+    let userId = null;
+    try {
+      const decoded = jwt.verify(
+        token,
+        process.env.JWT_SECRET || "insecure-default-secret-for-dev"
+      );
+      userId = decoded.userId || decoded.sub || null;
+    } catch {
+      logger.warn("[WS] Connection rejected — invalid or expired token");
+      ws.close(1008, "Invalid token");
+      return;
+    }
+
+    if (!userId) {
+      logger.warn("[WS] Connection rejected — token has no userId claim");
+      ws.close(1008, "Invalid token payload");
+      return;
+    }
+
+    ws.userId = userId;
+    logger.info(`[WS] Annotation client connected (userId=${userId})`);
 
     ws.on("pong", () => { ws.isAlive = true; });
 
     // Acknowledge connection
     ws.send(JSON.stringify({ event: "connected", data: { userId } }));
 
+    // Clients send { action: "subscribe", workspaceId: "..." } to join a workspace channel
+    ws.on("message", (raw) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        if (msg.action === "subscribe" && typeof msg.workspaceId === "string") {
+          ws.subscribedWorkspaces.add(msg.workspaceId);
+          ws.send(JSON.stringify({ event: "subscribed", data: { workspaceId: msg.workspaceId } }));
+          logger.debug(`[WS] User ${userId} subscribed to workspace ${msg.workspaceId}`);
+        } else if (msg.action === "unsubscribe" && typeof msg.workspaceId === "string") {
+          ws.subscribedWorkspaces.delete(msg.workspaceId);
+          logger.debug(`[WS] User ${userId} unsubscribed from workspace ${msg.workspaceId}`);
+        }
+      } catch {
+        // Ignore unparseable messages
+      }
+    });
+
     ws.on("close", () => {
-      logger.debug(`[WS] Annotation client disconnected (userId=${userId || "anonymous"})`);
+      logger.debug(`[WS] Annotation client disconnected (userId=${userId})`);
     });
 
     ws.on("error", (err) => {

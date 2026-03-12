@@ -85,7 +85,7 @@ async function extractKnowledgeGraph(kbId, userId) {
   // Fetch all documents in this KB
   const documents = await prisma.document.findMany({
     where: { kbId, status: "READY" },
-    select: { id: true, name: true },
+    select: { id: true, originalFilename: true },
   });
 
   if (documents.length === 0) {
@@ -113,9 +113,11 @@ async function extractKnowledgeGraph(kbId, userId) {
       continue;
     }
 
-    // For extraction, we use the document name as a representative text for now.
-    // In a full implementation, this would fetch the actual chunk text from OpenSearch.
-    const extractionText = `Document: ${doc.name}\n\n(Document summary extraction)`;
+    // Use the document's stored chunks for extraction. We fetch the provenance
+    // text to ground entity extraction in the actual ingested content.
+    const extractionText = provenance.chunkText
+      ? `${doc.originalFilename}\n\n${provenance.chunkText}`
+      : `Document: ${doc.originalFilename}`;
     const { entities, relations } = await extractFromText(extractionText);
 
     if (entities.length === 0) {

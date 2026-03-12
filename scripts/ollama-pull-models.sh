@@ -49,8 +49,14 @@ pull_model() {
     -H "Content-Type: application/json" \
     -d "{\"name\": \"${model}\"}" \
     | while IFS= read -r line; do
-        # Each line is a JSON object with a "status" field; print progress dots
-        status=$(echo "${line}" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('status',''))" 2>/dev/null || true)
+        # Extract status field from streaming JSON — try jq, then python3, then raw
+        if command -v jq >/dev/null 2>&1; then
+          status=$(echo "${line}" | jq -r '.status // empty' 2>/dev/null || true)
+        elif command -v python3 >/dev/null 2>&1; then
+          status=$(echo "${line}" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('status',''))" 2>/dev/null || true)
+        else
+          status="${line}"
+        fi
         [ -n "${status}" ] && echo "  → ${status}"
       done
   log "Model ${model} ready."

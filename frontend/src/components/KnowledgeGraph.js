@@ -29,7 +29,6 @@ import {
   Search as SearchIcon,
   Refresh as RefreshIcon,
   CenterFocusStrong as CenterIcon,
-  Share as ShareIcon,
 } from "@mui/icons-material";
 
 // Node color by entity type
@@ -209,7 +208,7 @@ function KnowledgeGraph({ kbId, height = 600 }) {
             </IconButton>
           </Tooltip>
           <Tooltip title="Refresh data">
-            <IconButton size="small" onClick={fetchGraph}><ShareIcon /></IconButton>
+            <IconButton size="small" onClick={fetchGraph}><RefreshIcon /></IconButton>
           </Tooltip>
         </Box>
       </Box>

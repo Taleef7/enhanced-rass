@@ -46,17 +46,19 @@ router.get("/api/annotations", apiLimiter, authMiddleware, async (req, res) => {
   }
 
   try {
+    // Always show the user's own annotations.
+    // Only surface other users' AUTHORITATIVE annotations when the caller
+    // explicitly provides a workspaceId (avoids leaking cross-tenant data).
     const where = {
-      // Show: user's own annotations + AUTHORITATIVE annotations from any user in the same workspace
-      OR: [
-        { userId },
-        { annotationType: "AUTHORITATIVE", workspaceId: workspaceId || null },
-      ],
+      OR: [{ userId }],
     };
+    if (workspaceId) {
+      where.OR.push({ annotationType: "AUTHORITATIVE", workspaceId });
+      where.workspaceId = workspaceId;
+    }
 
     if (chunkId) where.chunkId = chunkId;
     if (documentId) where.documentId = documentId;
-    if (workspaceId) where.workspaceId = workspaceId;
 
     const annotations = await prisma.annotation.findMany({
       where,
@@ -161,11 +163,12 @@ router.delete("/api/annotations/:id", apiLimiter, authMiddleware, async (req, re
 // ── WebSocket broadcast ───────────────────────────────────────────────────────
 
 /**
- * Broadcasts an annotation event to all subscribed WebSocket clients.
- * The WebSocket server is attached to the Express app in index.js.
+ * Broadcasts an annotation event to relevant WebSocket clients.
+ * Only sends to authenticated clients who have subscribed to the annotation's
+ * workspace (or to the annotation owner when no workspace is set).
  *
  * @param {'create'|'update'|'delete'} event
- * @param {object} payload
+ * @param {object} payload  - Must include workspaceId and userId fields.
  */
 function broadcastAnnotation(event, payload) {
   try {
@@ -173,9 +176,16 @@ function broadcastAnnotation(event, payload) {
     const wss = getAnnotationWss();
     if (!wss) return;
 
+    const { workspaceId, userId: annotationOwnerId } = payload;
     const message = JSON.stringify({ event: `annotation:${event}`, data: payload });
+
     wss.clients.forEach((client) => {
-      if (client.readyState === 1 /* OPEN */) {
+      if (client.readyState !== 1 /* OPEN */ || !client.userId) return;
+
+      const isOwner = client.userId === annotationOwnerId;
+      const isSubscribed = workspaceId && client.subscribedWorkspaces?.has(workspaceId);
+
+      if (isOwner || isSubscribed) {
         client.send(message);
       }
     });

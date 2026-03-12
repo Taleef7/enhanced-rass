@@ -5,16 +5,18 @@
 // feedback from the same user are boosted; those with prior negative feedback
 // are penalised. Users in group A receive no modification (control group).
 //
-// The stage operates on context.dedupedDocs (the output of DeduplicateStage).
+// The stage operates on context.rankedChunks (post-rerank) or context.dedupedDocs
+// as a fallback — whichever TopKSelectStage will consume first.
 // It queries the mcp-server's internal /internal/feedback/boosts endpoint to
 // retrieve per-document boost multipliers for the current user.
+// Multiplier values are tunable via POSITIVE_FEEDBACK_BOOST / NEGATIVE_FEEDBACK_PENALTY
+// env vars on the mcp-server.
 
 "use strict";
 
 const axios = require("axios");
 const { Stage } = require("./Stage");
 const logger = require("../logger");
-const { DEFAULT_POSITIVE_BOOST, DEFAULT_NEGATIVE_PENALTY } = require("../constants/feedbackBoost");
 
 // Internal mcp-server base URL
 const MCP_SERVER_INTERNAL_URL =
@@ -25,7 +27,9 @@ const internalHeaders = INTERNAL_SERVICE_TOKEN
   ? { "x-internal-token": INTERNAL_SERVICE_TOKEN }
   : {};
 
-// Multipliers applied to relevance scores (configurable via config, defaults from shared constants)
+// Multipliers applied to relevance scores — the mcp-server /internal/feedback/boosts endpoint
+// returns the final multiplier value (tunable via POSITIVE_FEEDBACK_BOOST /
+// NEGATIVE_FEEDBACK_PENALTY env vars there).
 
 class FeedbackBoostStage extends Stage {
   constructor(config) {
@@ -33,9 +37,6 @@ class FeedbackBoostStage extends Stage {
     this.config = config || {};
     // Allow disabling via config
     this.enabled = config.FEEDBACK_BOOST_ENABLED !== false;
-    // Allow tuning boost multipliers via config without code changes
-    this.positiveBoost = config.FEEDBACK_POSITIVE_BOOST ?? DEFAULT_POSITIVE_BOOST;
-    this.negativePenalty = config.FEEDBACK_NEGATIVE_PENALTY ?? DEFAULT_NEGATIVE_PENALTY;
   }
 
   async run(context) {
@@ -44,10 +45,14 @@ class FeedbackBoostStage extends Stage {
       return context;
     }
 
-    const { userId, dedupedDocs } = context;
+    const { userId } = context;
+
+    // Prefer rankedChunks (post-rerank) over dedupedDocs; TopKSelectStage reads rankedChunks first.
+    const docsKey = context.rankedChunks?.length > 0 ? "rankedChunks" : "dedupedDocs";
+    const docs = context[docsKey];
 
     // No user context or no documents — nothing to boost
-    if (!userId || !dedupedDocs || dedupedDocs.length === 0) {
+    if (!userId || !docs || docs.length === 0) {
       return context;
     }
 
@@ -92,17 +97,19 @@ class FeedbackBoostStage extends Stage {
       return context;
     }
 
-    // Apply multipliers to dedupedDocs scores
-    const boosted = dedupedDocs.map((doc) => {
+    // Apply multipliers to the active doc list.
+    // Docs in the pipeline are OpenSearch hits: { _id, _score, _source: { metadata, text, ... } }
+    const boosted = docs.map((doc) => {
+      const meta = doc._source?.metadata || {};
       const docId =
-        doc.metadata?.documentId ||
-        doc.metadata?.source ||
-        doc.metadata?.originalFilename;
+        meta.documentId ||
+        meta.source ||
+        meta.originalFilename;
 
-      const chunkId = doc.id || doc._id;
+      const chunkId = doc._id;
 
       // Check document-level boost first, then chunk-level
-      let multiplier = boostMap[docId] || boostMap[chunkId] || 1.0;
+      const multiplier = boostMap[docId] || boostMap[chunkId] || 1.0;
 
       if (multiplier !== 1.0) {
         logger.info(
@@ -112,17 +119,17 @@ class FeedbackBoostStage extends Stage {
 
       return {
         ...doc,
-        score: (doc.score || 0) * multiplier,
+        _score: (doc._score || 0) * multiplier,
         _feedbackBoosted: multiplier !== 1.0,
       };
     });
 
     // Re-sort by adjusted score descending
-    boosted.sort((a, b) => (b.score || 0) - (a.score || 0));
+    boosted.sort((a, b) => (b._score || 0) - (a._score || 0));
 
-    context.dedupedDocs = boosted;
+    context[docsKey] = boosted;
     logger.info(
-      `[FeedbackBoostStage] Applied feedback boosts to ${boosted.filter((d) => d._feedbackBoosted).length} of ${boosted.length} documents.`
+      `[FeedbackBoostStage] Applied feedback boosts to ${boosted.filter((d) => d._feedbackBoosted).length} of ${boosted.length} documents (${docsKey}).`
     );
 
     return context;

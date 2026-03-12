@@ -160,8 +160,8 @@ router.get("/internal/feedback/ab-group/:userId", (req, res) => {
  */
 router.get("/internal/feedback/boosts/:userId", async (req, res) => {
   const { userId } = req.params;
-  const POSITIVE_BOOST = 1.5;
-  const NEGATIVE_PENALTY = 0.4;
+  const POSITIVE_BOOST = Number(process.env.POSITIVE_FEEDBACK_BOOST) || 1.5;
+  const NEGATIVE_PENALTY = Number(process.env.NEGATIVE_FEEDBACK_PENALTY) || 0.4;
   const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
   try {
