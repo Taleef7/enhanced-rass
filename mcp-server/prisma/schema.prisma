@@ -110,6 +110,8 @@ model User {
   wsMemberships    WorkspaceMember[]
   apiKeys          ApiKey[]
   refreshTokens    RefreshToken[]
+  annotations      Annotation[]
+  sharedChats      SharedChat[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 }
@@ -127,14 +129,15 @@ model RefreshToken {
 }
 
 model Chat {
-  id        String   @id @default(cuid())
-  title     String
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages  Message[]
-  documents ChatDocument[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String        @id @default(cuid())
+  title       String
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    Message[]
+  documents   ChatDocument[]
+  sharedChats SharedChat[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   @@map("chats")
 }
@@ -265,4 +268,100 @@ model KBMember {
   User   User          @relation(fields: [userId], references: [id])
 
   @@unique([kbId, userId])
+}
+
+// ─── Phase G: Adaptive Retrieval Feedback ────────────────────────────────────
+
+model RetrievalFeedback {
+  id            String   @id @default(cuid())
+  userId        String
+  chatMessageId String?
+  citationId    String?
+  feedbackType  String   // positive | negative | click | scroll
+  chunkId       String?  // OpenSearch document ID
+  documentId    String?
+  documentName  String?
+  query         String?  @db.Text
+  abGroup       String?  // a | b — A/B test group
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([documentId])
+}
+
+// ─── Phase G: Knowledge Graph ─────────────────────────────────────────────────
+
+model Entity {
+  id          String     @id @default(cuid())
+  name        String
+  type        String     // person | organization | drug | disease | concept | other
+  description String?    @db.Text
+  kbId        String
+  documentId  String?
+  chunkId     String?
+  createdAt   DateTime   @default(now())
+  subjectOf   Relation[] @relation("SubjectRelation")
+  objectOf    Relation[] @relation("ObjectRelation")
+
+  @@index([kbId])
+  @@index([name, kbId])
+}
+
+model Relation {
+  id        String   @id @default(cuid())
+  subjectId String
+  predicate String
+  objectId  String
+  kbId      String
+  chunkId   String?
+  createdAt DateTime @default(now())
+  Subject   Entity   @relation("SubjectRelation", fields: [subjectId], references: [id], onDelete: Cascade)
+  Object    Entity   @relation("ObjectRelation", fields: [objectId], references: [id], onDelete: Cascade)
+
+  @@index([kbId])
+  @@index([subjectId])
+  @@index([objectId])
+}
+
+// ─── Phase G: Collaborative Annotations ──────────────────────────────────────
+
+enum AnnotationType {
+  NOTE
+  FLAG_OUTDATED
+  FLAG_INCORRECT
+  AUTHORITATIVE
+  BOOKMARK
+}
+
+model Annotation {
+  id             String         @id @default(cuid())
+  chunkId        String
+  documentId     String
+  userId         String
+  workspaceId    String?
+  annotationType AnnotationType
+  content        String?        @db.Text
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  User           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([chunkId])
+  @@index([documentId])
+  @@index([userId])
+  @@index([workspaceId])
+}
+
+// ─── Phase G: Chat Sharing ────────────────────────────────────────────────────
+
+model SharedChat {
+  id        String   @id @default(cuid())
+  chatId    String
+  userId    String
+  token     String   @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime?
+  Chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  User      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([chatId])
 }

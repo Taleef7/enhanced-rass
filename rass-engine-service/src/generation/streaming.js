@@ -7,6 +7,7 @@ const {
   LLM_PROVIDER,
   OPENAI_MODEL_NAME,
   GEMINI_MODEL_NAME,
+  OLLAMA_LLM_MODEL,
 } = require("../config");
 const { buildGenerationPrompt } = require("./generator");
 const { CitationSchema } = require("../schemas/retrievalSchemas");
@@ -28,7 +29,11 @@ function writeSSE(res, data) {
           object: "chat.completion.chunk",
           created: Math.floor(Date.now() / 1000),
           model:
-            LLM_PROVIDER === "openai" ? OPENAI_MODEL_NAME : GEMINI_MODEL_NAME,
+            LLM_PROVIDER === "openai"
+              ? OPENAI_MODEL_NAME
+              : LLM_PROVIDER === "ollama"
+              ? (OLLAMA_LLM_MODEL || "llama3.2")
+              : GEMINI_MODEL_NAME,
           ...data,
         });
   res.write(`data: ${chunk}\n\n`);
@@ -146,9 +151,11 @@ async function streamAnswer(res, query, sourceDocuments) {
   });
 
   try {
-    if (LLM_PROVIDER === "openai") {
+    if (LLM_PROVIDER === "openai" || LLM_PROVIDER === "ollama") {
+      // Both OpenAI and Ollama use the OpenAI-compatible streaming API
+      const model = LLM_PROVIDER === "ollama" ? (OLLAMA_LLM_MODEL || "llama3.2") : OPENAI_MODEL_NAME;
       const completionStream = await llmClient.chat.completions.create({
-        model: OPENAI_MODEL_NAME,
+        model,
         messages: [{ role: "user", content: generationPrompt }],
         temperature: 0.3,
         max_tokens: 500,

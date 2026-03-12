@@ -56,4 +56,12 @@ module.exports = {
   // Phase C: HyDE
   HYDE_ENABLED: config.HYDE_ENABLED,
   HYDE_MAX_TOKENS: config.HYDE_MAX_TOKENS,
+  // Phase G #135: Ollama local model support
+  OLLAMA_BASE_URL: config.OLLAMA_BASE_URL,
+  OLLAMA_LLM_MODEL: config.OLLAMA_LLM_MODEL,
+  OLLAMA_EMBED_MODEL: config.OLLAMA_EMBED_MODEL,
+  // Phase G #134: Adaptive retrieval feedback
+  FEEDBACK_BOOST_ENABLED: config.FEEDBACK_BOOST_ENABLED,
+  // Phase G #136: Vision/multi-modal
+  VISION_ENABLED: config.VISION_ENABLED,
 };

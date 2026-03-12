@@ -6,7 +6,7 @@
 
 const { z } = require("zod");
 
-const ALLOWED_PROVIDERS = ["openai", "gemini"];
+const ALLOWED_PROVIDERS = ["openai", "gemini", "ollama"];
 const providerEnum = z.enum(ALLOWED_PROVIDERS, {
   errorMap: () => ({
     message: `Must be one of: ${ALLOWED_PROVIDERS.join(", ")}`,
@@ -70,6 +70,17 @@ const ConfigSchema = z
     // Phase C: HyDE
     HYDE_ENABLED: z.boolean().optional().default(false),
     HYDE_MAX_TOKENS: z.number().int().positive().optional().default(200),
+
+    // Phase G #135: Ollama local model support
+    OLLAMA_BASE_URL: z.string().url().optional().default("http://ollama:11434"),
+    OLLAMA_LLM_MODEL: z.string().min(1).optional().default("llama3.2"),
+    OLLAMA_EMBED_MODEL: z.string().min(1).optional().default("nomic-embed-text"),
+
+    // Phase G #134: Adaptive retrieval
+    FEEDBACK_BOOST_ENABLED: z.boolean().optional().default(true),
+
+    // Phase G #136: Multi-modal / vision
+    VISION_ENABLED: z.boolean().optional().default(false),
 
     // RAG parameters
     EMBED_DIM: z

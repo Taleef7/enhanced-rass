@@ -2,7 +2,7 @@
 // Non-streaming LLM answer generation from assembled context.
 
 const { llmClient } = require("../clients/llmClient");
-const { LLM_PROVIDER, OPENAI_MODEL_NAME } = require("../config");
+const { LLM_PROVIDER, OPENAI_MODEL_NAME, OLLAMA_LLM_MODEL } = require("../config");
 const logger = require("../logger");
 
 /**
@@ -33,6 +33,14 @@ Answer:
 }
 
 /**
+ * Returns the model name for OpenAI-compatible providers (openai or ollama).
+ */
+function getOpenAICompatibleModel() {
+  if (LLM_PROVIDER === "ollama") return OLLAMA_LLM_MODEL || "llama3.2";
+  return OPENAI_MODEL_NAME;
+}
+
+/**
  * Generates a non-streaming answer from the LLM given source documents and a query.
  *
  * @param {string} query - The user's question.
@@ -45,9 +53,10 @@ async function generateAnswer(query, sourceDocuments) {
 
   let answer = "Sorry, I was unable to generate an answer.";
   try {
-    if (LLM_PROVIDER === "openai") {
+    if (LLM_PROVIDER === "openai" || LLM_PROVIDER === "ollama") {
+      // Both OpenAI and Ollama use the OpenAI-compatible SDK
       const completion = await llmClient.chat.completions.create({
-        model: OPENAI_MODEL_NAME,
+        model: getOpenAICompatibleModel(),
         messages: [{ role: "user", content: generationPrompt }],
         temperature: 0.3,
         max_tokens: 500,

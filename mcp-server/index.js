@@ -44,6 +44,11 @@ const metricsRoutes = require("./src/routes/metrics.js");
 
 // Phase F: Health check
 const healthRoutes = require("./src/routes/health.js");
+// Phase G: Adaptive retrieval feedback, annotations, knowledge graph, sharing
+const feedbackRoutes = require("./src/routes/feedback.js");
+const annotationRoutes = require("./src/routes/annotations.js");
+const knowledgeGraphRoutes = require("./src/routes/knowledgeGraph.js");
+const chatShareRoutes = require("./src/routes/chatShare.js");
 
 const app = express();
 app.use(cors({
@@ -120,6 +125,12 @@ app.use(metricsRoutes);
 // --- Phase F: Health check ---
 app.use(healthRoutes);
 
+// --- Phase G: Stretch goal routes ---
+app.use(feedbackRoutes);
+app.use(annotationRoutes);
+app.use(knowledgeGraphRoutes);
+app.use(chatShareRoutes);
+
 // --- Legacy simple-ask (deprecated) ---
 // @deprecated Use /api/stream-ask instead.
 const axios = require("axios");
@@ -153,8 +164,17 @@ app.get("/", (req, res) => {
   res.status(200).send("RASS MCP Server is running.");
 });
 
-app.listen(MCP_SERVER_PORT, () => {
+const http = require("http");
+const { attachAnnotationWss } = require("./src/websocket/annotationWss");
+
+const httpServer = http.createServer(app);
+
+// --- Phase G #138: Attach annotation WebSocket server ---
+attachAnnotationWss(httpServer);
+
+httpServer.listen(MCP_SERVER_PORT, () => {
   logger.info(`MCP Server listening on http://localhost:${MCP_SERVER_PORT}`);
+  logger.info(`[WS] Annotation WebSocket available at ws://localhost:${MCP_SERVER_PORT}/ws/annotations`);
 });
 
 // --- Phase D: Schedule nightly retention sweep ---

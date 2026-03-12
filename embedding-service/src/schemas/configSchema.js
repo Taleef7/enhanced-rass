@@ -6,7 +6,7 @@
 
 const { z } = require("zod");
 
-const ALLOWED_PROVIDERS = ["openai", "gemini"];
+const ALLOWED_PROVIDERS = ["openai", "gemini", "ollama"];
 const providerEnum = z.enum(ALLOWED_PROVIDERS, {
   errorMap: () => ({
     message: `Must be one of: ${ALLOWED_PROVIDERS.join(", ")}`,
@@ -74,6 +74,15 @@ const ConfigSchema = z
       .number()
       .int()
       .min(0, "CHILD_CHUNK_OVERLAP must be >= 0"),
+
+    // Phase G #135: Ollama local model support
+    OLLAMA_BASE_URL: z.string().url().optional().default("http://ollama:11434"),
+    OLLAMA_EMBED_MODEL: z.string().min(1).optional().default("nomic-embed-text"),
+
+    // Phase G #136: Multi-modal / vision
+    VISION_ENABLED: z.boolean().optional().default(false),
+    VISION_LLM_PROVIDER: z.enum(["openai", "gemini", "ollama"]).optional().default("openai"),
+    VISION_LLM_MODEL: z.string().optional().default("gpt-4o-mini"),
   })
   .superRefine((data, ctx) => {
     if (data.PARENT_CHUNK_OVERLAP >= data.PARENT_CHUNK_SIZE) {

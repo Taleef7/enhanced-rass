@@ -97,3 +97,24 @@ HYDE_MAX_TOKENS: 200
 search:
   # type: integer — maximum number of source documents passed to the LLM for generation
   DEFAULT_TOP_K: 50
+
+# ─── Phase G: Adaptive Retrieval Feedback (Issue #134) ───────────────────────
+# type: boolean — Enable personalized feedback-based score boosting in retrieval
+FEEDBACK_BOOST_ENABLED: true
+
+# ─── Phase G: Ollama Local Model Support (Issue #135) ────────────────────────
+# To use Ollama instead of OpenAI or Gemini:
+#   1. Set EMBEDDING_PROVIDER: ollama and/or LLM_PROVIDER: ollama
+#   2. Ensure the Ollama container is running (docker compose up ollama)
+#   3. Run: bash scripts/ollama-pull-models.sh to pull the required models
+#
+# type: string — Ollama server base URL
+OLLAMA_BASE_URL: "http://ollama:11434"
+# type: string — Ollama model for LLM generation (e.g. llama3.2, mistral, gemma2)
+OLLAMA_LLM_MODEL: "llama3.2"
+# type: string — Ollama model for embeddings (e.g. nomic-embed-text, mxbai-embed-large)
+OLLAMA_EMBED_MODEL: "nomic-embed-text"
+
+# ─── Phase G: Multi-modal Document Understanding (Issue #136) ─────────────────
+# type: boolean — Enable OCR for scanned PDFs and image files (requires tesseract.js)
+VISION_ENABLED: false

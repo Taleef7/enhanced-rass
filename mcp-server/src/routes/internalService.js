@@ -138,4 +138,64 @@ router.post("/internal/audit", async (req, res) => {
   res.status(201).json({ ok: true });
 });
 
+// ── Phase G: Internal feedback endpoints for rass-engine ─────────────────────
+
+/**
+ * GET /internal/feedback/ab-group/:userId
+ * Returns the A/B group for a given user (deterministic hash).
+ */
+router.get("/internal/feedback/ab-group/:userId", (req, res) => {
+  const { userId } = req.params;
+  const sum = userId.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  const abGroup = sum % 2 === 0 ? "a" : "b";
+  res.json({ userId, abGroup });
+});
+
+/**
+ * GET /internal/feedback/boosts/:userId
+ * Returns a boost multiplier map keyed by documentId / chunkId.
+ * Positive feedback → POSITIVE_BOOST (1.5x)
+ * Negative feedback → NEGATIVE_PENALTY (0.4x)
+ * Aggregated over the last 90 days.
+ */
+router.get("/internal/feedback/boosts/:userId", async (req, res) => {
+  const { userId } = req.params;
+  const POSITIVE_BOOST = 1.5;
+  const NEGATIVE_PENALTY = 0.4;
+  const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
+  try {
+    const records = await prisma.retrievalFeedback.findMany({
+      where: {
+        userId,
+        feedbackType: { in: ["positive", "negative"] },
+        createdAt: { gte: cutoff },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const tally = {};
+    for (const r of records) {
+      const key = r.documentId || r.chunkId;
+      if (!key) continue;
+      if (!tally[key]) tally[key] = { positive: 0, negative: 0 };
+      tally[key][r.feedbackType]++;
+    }
+
+    const boosts = {};
+    for (const [key, counts] of Object.entries(tally)) {
+      if (counts.positive > counts.negative) {
+        boosts[key] = POSITIVE_BOOST;
+      } else if (counts.negative > counts.positive) {
+        boosts[key] = NEGATIVE_PENALTY;
+      }
+    }
+
+    res.json({ userId, boosts });
+  } catch (err) {
+    logger.error("[Internal/Feedback] Failed to compute boosts:", err.message);
+    res.status(500).json({ error: "Failed to compute feedback boosts." });
+  }
+});
+
 module.exports = router;

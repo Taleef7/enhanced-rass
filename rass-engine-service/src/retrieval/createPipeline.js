@@ -11,6 +11,7 @@ const { HybridSearchStage } = require("./HybridSearchStage");
 const { ParentFetchStage } = require("./ParentFetchStage");
 const { DeduplicateStage } = require("./DeduplicateStage");
 const { RerankStage } = require("./RerankStage");
+const { FeedbackBoostStage } = require("./FeedbackBoostStage");
 const { TopKSelectStage } = require("./TopKSelectStage");
 
 /**
@@ -23,7 +24,8 @@ const { TopKSelectStage } = require("./TopKSelectStage");
  *   4. ParentFetchStage         — fetch parent documents from embedding service
  *   5. DeduplicateStage         — remove duplicate parent documents
  *   6. RerankStage              — cross-encoder reranking (no-op if disabled)
- *   7. TopKSelectStage          — select top-K documents for generation
+ *   7. FeedbackBoostStage       — personalized score boost based on user feedback (Phase G)
+ *   8. TopKSelectStage          — select top-K documents for generation
  *
  * @param {object} config - Service config object (from src/config.js).
  * @returns {Pipeline} The configured retrieval pipeline.
@@ -36,6 +38,7 @@ function createPipeline(config) {
     new ParentFetchStage(),
     new DeduplicateStage(),
     new RerankStage(config),
+    new FeedbackBoostStage(config),
     new TopKSelectStage(),
   ]);
 }

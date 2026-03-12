@@ -11,6 +11,13 @@ import {
   Typography,
   Card,
   CardContent,
+  Snackbar,
+  Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
 } from "@mui/material";
 import {
   Check as CheckIcon,
@@ -20,6 +27,11 @@ import {
   WarningAmber as WarningIcon,
   CheckCircle as CheckCircleIcon,
   Article as ArticleIcon,
+  ThumbUp as ThumbUpIcon,
+  ThumbDown as ThumbDownIcon,
+  ThumbUpOutlined as ThumbUpOutlinedIcon,
+  ThumbDownOutlined as ThumbDownOutlinedIcon,
+  Comment as CommentIcon,
 } from "@mui/icons-material";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
@@ -146,6 +158,14 @@ function StructuredCitationCard({ citation }) {
 const MessageBubble = ({ message, index }) => {
   const [copied, setCopied] = useState(false);
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
+  // Phase G #134: Adaptive retrieval feedback
+  const [feedbackSent, setFeedbackSent] = useState(null); // 'positive' | 'negative' | null
+  const [feedbackSnackbar, setFeedbackSnackbar] = useState(false);
+  // Phase G #138: Annotation dialog
+  const [annotationOpen, setAnnotationOpen] = useState(false);
+  const [annotationCitation, setAnnotationCitation] = useState(null);
+  const [annotationText, setAnnotationText] = useState("");
+  const [annotationSnackbar, setAnnotationSnackbar] = useState(false);
   const { user } = useAuth();
   const isUser = message.sender === "user";
 
@@ -158,6 +178,81 @@ const MessageBubble = ({ message, index }) => {
     await navigator.clipboard.writeText(message.text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleFeedback = async (signal) => {
+    if (feedbackSent || !user) return; // Only once per message
+    setFeedbackSent(signal);
+    setFeedbackSnackbar(true);
+    try {
+      const token = localStorage.getItem("accessToken");
+      await fetch("/api/feedback", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          chatMessageId: message.id,
+          type: "answer",
+          signal,
+          query: message.query || undefined,
+        }),
+      });
+    } catch (err) {
+      console.warn("[Feedback] Failed to submit feedback:", err);
+    }
+  };
+
+  const handleCitationClick = async (citation) => {
+    // Phase G #134: Track citation clicks as implicit feedback
+    if (!user) return;
+    try {
+      const token = localStorage.getItem("accessToken");
+      await fetch("/api/feedback/implicit", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          chatMessageId: message.id,
+          feedbackType: "click",
+          chunkId: citation.chunkId || undefined,
+          documentId: citation.documentId || undefined,
+          documentName: citation.documentName || undefined,
+          query: message.query || undefined,
+        }),
+      });
+    } catch (err) {
+      // Non-fatal
+    }
+  };
+
+  const handleAnnotationSubmit = async () => {
+    if (!annotationCitation || !user) return;
+    try {
+      const token = localStorage.getItem("accessToken");
+      await fetch("/api/annotations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          chunkId: annotationCitation.chunkId || annotationCitation.index?.toString() || "unknown",
+          documentId: annotationCitation.documentId || annotationCitation.documentName || "unknown",
+          annotationType: "NOTE",
+          content: annotationText,
+        }),
+      });
+      setAnnotationSnackbar(true);
+    } catch (err) {
+      console.warn("[Annotation] Failed to submit annotation:", err);
+    }
+    setAnnotationOpen(false);
+    setAnnotationText("");
+    setAnnotationCitation(null);
   };
 
   const sources = message.sources || [];
@@ -409,9 +504,91 @@ const MessageBubble = ({ message, index }) => {
                   </Collapse>
                 </Box>
               )}
+
+              {/* Phase G #134: Answer-level feedback buttons */}
+              {!isUser && (
+                <Box sx={{ mt: 2, display: "flex", gap: 1, alignItems: "center" }}>
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    Was this helpful?
+                  </Typography>
+                  <Tooltip title="Helpful">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleFeedback("positive")}
+                      disabled={!!feedbackSent}
+                      sx={{ color: feedbackSent === "positive" ? "success.main" : "text.secondary" }}
+                    >
+                      {feedbackSent === "positive" ? <ThumbUpIcon sx={{ fontSize: 16 }} /> : <ThumbUpOutlinedIcon sx={{ fontSize: 16 }} />}
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Not helpful">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleFeedback("negative")}
+                      disabled={!!feedbackSent}
+                      sx={{ color: feedbackSent === "negative" ? "error.main" : "text.secondary" }}
+                    >
+                      {feedbackSent === "negative" ? <ThumbDownIcon sx={{ fontSize: 16 }} /> : <ThumbDownOutlinedIcon sx={{ fontSize: 16 }} />}
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              )}
             </Box>
           )}
         </Box>
+
+        {/* Phase G #138: Annotation dialog */}
+        <Dialog open={annotationOpen} onClose={() => setAnnotationOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Add Annotation</DialogTitle>
+          <DialogContent>
+            {annotationCitation && (
+              <Typography variant="caption" sx={{ display: "block", mb: 2, color: "text.secondary" }}>
+                Annotating: [{annotationCitation.index}] {annotationCitation.documentName}
+              </Typography>
+            )}
+            <TextField
+              autoFocus
+              multiline
+              rows={4}
+              fullWidth
+              label="Annotation note"
+              value={annotationText}
+              onChange={(e) => setAnnotationText(e.target.value)}
+              placeholder="Add your note, correction, or flag..."
+              variant="outlined"
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => { setAnnotationOpen(false); setAnnotationText(""); }}>Cancel</Button>
+            <Button onClick={handleAnnotationSubmit} variant="contained" disabled={!annotationText.trim()}>
+              Save Annotation
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Feedback success snackbar */}
+        <Snackbar
+          open={feedbackSnackbar}
+          autoHideDuration={3000}
+          onClose={() => setFeedbackSnackbar(false)}
+          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        >
+          <Alert severity="success" onClose={() => setFeedbackSnackbar(false)} sx={{ width: "100%" }}>
+            Thanks for your feedback!
+          </Alert>
+        </Snackbar>
+
+        {/* Annotation success snackbar */}
+        <Snackbar
+          open={annotationSnackbar}
+          autoHideDuration={3000}
+          onClose={() => setAnnotationSnackbar(false)}
+          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        >
+          <Alert severity="success" onClose={() => setAnnotationSnackbar(false)} sx={{ width: "100%" }}>
+            Annotation saved!
+          </Alert>
+        </Snackbar>
 
         {isUser && (
           <Avatar
