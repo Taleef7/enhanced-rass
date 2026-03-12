@@ -13,6 +13,11 @@ const { OPENSEARCH_HOST, OPENSEARCH_PORT } = require("../config");
 const REDIS_SERVICE_URL =
   process.env.EMBEDDING_SERVICE_URL || "http://embedding-service:8001";
 
+/** Convert days to milliseconds for retention cutoff calculations. */
+function daysToMs(days) {
+  return days * 24 * 60 * 60 * 1000;
+}
+
 /**
  * Purge a single document from all storage systems.
  *
@@ -168,7 +173,7 @@ async function runRetentionSweep() {
   const allSummaries = [];
 
   for (const ws of workspaces) {
-    const cutoff = new Date(Date.now() - ws.retentionDays * 24 * 60 * 60 * 1000);
+    const cutoff = new Date(Date.now() - daysToMs(ws.retentionDays));
 
     const expiredDocs = await prisma.document.findMany({
       where: {

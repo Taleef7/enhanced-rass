@@ -41,8 +41,10 @@ function requirePermission(permission) {
     // If still not found but we have a documentId, look up the doc's workspace
     if (!workspaceId && req.params.id) {
       try {
+        // Note: we do NOT filter by userId here — workspace members should be able to
+        // access any document within their workspace, regardless of who uploaded it.
         const doc = await prisma.document.findFirst({
-          where: { id: req.params.id, userId },
+          where: { id: req.params.id },
           select: { workspaceId: true },
         });
         workspaceId = doc?.workspaceId || null;

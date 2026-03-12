@@ -10,6 +10,10 @@ const AuthContext = createContext(null);
 
 const API_BASE = "http://localhost:8080/api";
 
+// Named constants for refresh scheduling
+const REFRESH_BUFFER_MS = 60 * 1000;  // Refresh 1 minute before JWT expiry
+const MIN_REFRESH_DELAY_MS = 5000;    // Minimum delay to avoid tight loops
+
 // Helper function to decode JWT token (no verification — server already did that)
 const decodeToken = (token) => {
   try {
@@ -46,7 +50,7 @@ export const AuthProvider = ({ children }) => {
     const decoded = decodeToken(jwtToken);
     if (!decoded?.exp) return;
     const msUntilExpiry = decoded.exp * 1000 - Date.now();
-    const refreshIn = Math.max(msUntilExpiry - 60 * 1000, 5000); // at least 5 s from now
+    const refreshIn = Math.max(msUntilExpiry - REFRESH_BUFFER_MS, MIN_REFRESH_DELAY_MS);
     refreshTimerRef.current = setTimeout(() => silentRefresh(), refreshIn);
   };
 

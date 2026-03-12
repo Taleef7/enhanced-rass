@@ -10,7 +10,13 @@ A production-grade, multi-service Retrieval Augmented Generation (RAG/RASS) syst
 - **ETL provenance** records for every ingested document (SHA-256, stage timings, chunking config, embedding model)
 - **Configurable chunking strategies**: `fixed_size`, `recursive_character`, `sentence_window` — selectable via `config.yml`
 - **Bring-Your-Own Knowledge Base (BYO KB)**: per-user/team knowledge bases with dedicated OpenSearch indices
-- Hybrid retrieval over OpenSearch (KNN + keyword) scoped per-user / per-KB
+- **Multi-tenant workspaces** with per-workspace OpenSearch indices and strict data isolation
+- **RBAC** — Viewer / Editor / Admin roles with permission-checked routes and automatic audit denial logging
+- **Enterprise audit logging** — tamper-evident append-only `AuditLog` with IP, user-agent, resourceType; CSV export for compliance
+- **API key authentication** — machine-to-machine auth; raw key shown once, only hash stored
+- **Refresh token rotation** — short-lived JWTs (15 min) + rotating HTTP-only refresh token cookie (7-day)
+- **Data retention & right-to-erasure** — per-workspace `retentionDays` policy, nightly purge sweep, `DELETE /api/users/:id/data`
+- Hybrid retrieval over OpenSearch (KNN + keyword) scoped per-user / per-KB / per-workspace
 - Redis-backed parent-doc store for fast parent retrieval
 - Postgres + Prisma for auth, chats, and document registry
 - MCP gateway with REST endpoints and OpenAI-compatible stream proxy
@@ -30,9 +36,9 @@ Services (all configured from root config.yml and secrets from .env):
 - Infra: OpenSearch, Redis, Postgres (via Docker Compose).
 
 Data rules:
-- All searches are strictly filtered by metadata.userId (or KB membership).
-- Parent chunks live in Redis keyed by UUID; child chunks are in OpenSearch with metadata including userId, originalFilename, uploadedAt, parentId, documentId, kbId.
-- Chats/messages and the document registry are in Postgres. The frontend token is stored as authToken in localStorage.
+- All searches are strictly filtered by metadata.userId (or KB / workspace membership).
+- Parent chunks live in Redis keyed by UUID; child chunks are in OpenSearch with metadata including userId, originalFilename, uploadedAt, parentId, documentId, kbId, workspaceId.
+- Chats/messages and the document registry are in Postgres. JWT is stored **in memory only** (not localStorage); an HTTP-only refresh-token cookie maintains sessions silently.
 
 ---
 
@@ -216,6 +222,83 @@ python evaluation/compare_runs.py --threshold 0.05
 
 ---
 
+## Phase D Features — Enterprise Readiness
+
+### #119 — Multi-tenant Workspaces with Strict Data Isolation
+- `POST /api/organizations` — create an organization (creator becomes OWNER).
+- `GET  /api/organizations` — list orgs the current user belongs to.
+- `POST /api/organizations/:orgId/workspaces` — create a workspace; **automatically provisions a dedicated OpenSearch index** (`ws_<timestamp>_<random>`).
+- `GET  /api/workspaces/:id/usage` — real-time quota usage (usedMb / quotaMb).
+- `DELETE /api/workspaces/:id` — deletes the OpenSearch index and soft-deletes all workspace documents.
+- Workspace member management: `POST/DELETE/PATCH /api/workspaces/:id/members`.
+- Documents uploaded to a workspace target only its OpenSearch index; cross-workspace data access is impossible at the query level.
+- Quota enforcement: `usedMb` tracked on the `Workspace` model; exceeding quota blocks further uploads.
+- Per-workspace `retentionDays` policy for automatic document expiry.
+
+### #120 — Role-Based Access Control (RBAC) with Fine-Grained Permissions
+- `mcp-server/src/permissions.js` — defines `PERMISSIONS` constants and `ROLE_PERMISSIONS` map for VIEWER / EDITOR / ADMIN roles.
+- `mcp-server/src/middleware/requirePermission.js` — Express middleware that resolves workspace membership from request context and checks if the caller's role includes the required permission.
+- **Permission matrix:**
+
+| Role | document:read | document:create | document:delete | workspace:read | workspace:manage |
+|---|---|---|---|---|---|
+| VIEWER  | ✓ | — | — | ✓ | — |
+| EDITOR  | ✓ | ✓ | — | ✓ | — |
+| ADMIN   | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+- `DELETE /api/documents/:id` is now gated behind `requirePermission(PERMISSIONS.DOCUMENT_DELETE)`.
+- Every permission denial is written to the `AuditLog` with `action: PERMISSION_DENIED`, role, and required permission.
+- Role changes take effect immediately (no JWT re-issue required; roles are looked up live per-request).
+
+### #121 — Data Retention Policies and Secure Document Purge
+- `mcp-server/src/services/PurgeService.js` — `purgeDocument()` removes all traces: OpenSearch child chunks, Redis parent keys (via embedding-service internal API), Postgres metadata (`purgedAt`, `purgedBy` fields).
+- `runRetentionSweep()` — queries all workspaces with `retentionDays` set, purges documents older than the policy cutoff. Scheduled automatically every 24 h on server startup via `setInterval`.
+- `POST /api/admin/retention-sweep` — manually trigger the sweep (org admin only; responds 202, runs async).
+- `purgeUserData()` — purges all documents and chats for a user (GDPR right-to-erasure).
+- `DELETE /api/users/:id/data` — admin-only endpoint; returns a `purgeSummary` listing all deleted resources.
+- All purge operations are recorded in the `AuditLog` with `requestedBy` and `completedAt`.
+
+### #122 — API Key Authentication and Refresh Token Flow
+**API Key Authentication:**
+- `GET  /api/api-keys` — list keys (no raw key shown).
+- `POST /api/api-keys` — create a key; raw value shown **exactly once**, only `bcrypt` hash stored.
+- `DELETE /api/api-keys/:id` — revoke a key.
+- `authMiddleware` accepts `Authorization: ApiKey <raw_key>` in addition to `Bearer <jwt>`.
+- Expired keys are automatically excluded; `lastUsed` timestamp is updated on each use.
+
+**Refresh Token Flow:**
+- JWT lifetime reduced to `15m` (configurable via `JWT_EXPIRES_IN` env var).
+- On login: a 7-day `RefreshToken` is created (hashed with SHA-256) and set as an **HTTP-only `refreshToken` cookie** on `/api/auth/refresh`.
+- `POST /api/auth/refresh` — validates the cookie, marks the token as used (rotation), and issues a fresh JWT + new refresh token.
+- `POST /api/auth/logout` — invalidates the refresh token cookie and writes an audit log entry.
+
+**Frontend security improvement:**
+- JWT moved from `localStorage` to **in-memory React state** (AuthContext).
+- Silent refresh is scheduled 1 minute before JWT expiry using the HTTP-only cookie.
+- On page reload, the app silently calls `/api/auth/refresh` to restore the session without storing sensitive data in `localStorage`.
+
+### #123 — Enterprise-Grade Audit Logging and Compliance Reporting
+**Enhanced AuditLog schema:**
+- New fields: `workspaceId`, `resourceType`, `resourceId`, `ipAddress` (extracted from `X-Forwarded-For` or socket), `userAgent`, `outcome` (enum: `SUCCESS | FAILURE | PARTIAL`).
+- Composite indices on `(userId, timestamp)` and `(workspaceId, timestamp)` for fast filtering.
+- Records are **append-only** — no `UPDATE` or `DELETE` on this table via the service layer.
+
+**Instrumented events:**
+- Auth: `REGISTER`, `LOGIN_SUCCESS`, `LOGIN_FAILED`, `TOKEN_REFRESH_SUCCESS`, `TOKEN_REFRESH_FAILED`, `LOGOUT`
+- Documents: `DOCUMENT_UPLOADED`, `DOCUMENT_DELETED`, `DOCUMENT_PURGED`
+- Knowledge Bases: `KB_CREATED`, `KB_DELETED`
+- Workspaces: `WORKSPACE_CREATED`, `WORKSPACE_DELETED`, `WORKSPACE_SETTINGS_UPDATED`
+- Members: `ORG_MEMBER_ADDED`, `WORKSPACE_MEMBER_ADDED`, `WORKSPACE_MEMBER_REMOVED`, `WORKSPACE_MEMBER_ROLE_CHANGED`
+- Security: `PERMISSION_DENIED`, `API_KEY_CREATED`, `API_KEY_REVOKED`
+- Compliance: `USER_DATA_PURGED`, `RETENTION_SWEEP_TRIGGERED`
+
+**Compliance reporting endpoints (org admin only):**
+- `GET /api/admin/audit-logs` — paginated, filterable (userId, action, workspaceId, outcome, dateFrom, dateTo).
+- `GET /api/admin/audit-logs/export` — CSV export (up to 50,000 rows) with all fields; correct MIME type and `Content-Disposition` header for download.
+- `GET /api/admin/users` — paginated user list with document/chat/API key counts.
+
+---
+
 ## Configuration
 
 - `config.yml` (root, mounted into services):
@@ -223,6 +306,10 @@ python evaluation/compare_runs.py --threshold 0.05
   - **Phase B**: `CHUNKING_STRATEGY` — choose `fixed_size`, `recursive_character`, or `sentence_window`.
   - **Phase C**: `RERANK_PROVIDER`, `RERANK_TOP_N`, `COHERE_RERANK_MODEL`, `HYDE_ENABLED`, `HYDE_MAX_TOKENS`.
 - `.env` (root): `OPENAI_API_KEY`, `GEMINI_API_KEY`, `JWT_SECRET`, `DATABASE_URL`.
+- **Phase D env vars:**
+  - `JWT_EXPIRES_IN` — JWT lifetime (default `15m`).
+  - `CORS_ORIGIN` — allowed CORS origin for the `credentials: true` cookie flow (default: all origins in dev).
+  - `NODE_ENV=production` — enforces secure cookie flag on refresh tokens, rejects missing `JWT_SECRET`.
 - **`INTERNAL_SERVICE_TOKEN`** (env var, **required in production**): shared secret used to authenticate the embedding-service worker's calls to mcp-server `/internal/*` routes. Set a strong random value. If unset, the server logs a prominent warning on every internal request but still allows traffic (for local development convenience only).
 
 Provider pairing tips:
@@ -233,18 +320,34 @@ Provider pairing tips:
 
 ## API map (selected)
 
-- Frontend → mcp-server (all require Bearer unless noted)
+- Frontend → mcp-server (all require Bearer or ApiKey unless noted)
   - `POST /api/auth/register`, `/api/auth/login`
+  - `POST /api/auth/refresh` — rotate refresh token cookie, get new JWT (no auth header required)
+  - `POST /api/auth/logout` — invalidate refresh token
   - `GET /api/chats`, `POST /api/chats`, `PATCH/DELETE /api/chats/:id`
   - `POST /api/embed-upload` → returns 202 with `{ documentId, jobs: [{ jobId }] }`
   - `GET /api/ingest/status/:jobId` → `{ status, progress, result }` (poll every 2 s)
   - `POST /api/stream-ask` → SSE stream with citations
   - `GET /api/documents` → paginated document registry list
-  - `DELETE /api/documents/:id` → soft-delete document (best-effort vector removal; Redis parent chunks are not immediately removed)
+  - `DELETE /api/documents/:id` → soft-delete (RBAC: requires `document:delete` permission in workspace context)
   - `GET /api/documents/:id/provenance` → ETL provenance record
   - `GET /api/knowledge-bases` → list accessible KBs
   - `POST /api/knowledge-bases` → create KB
   - `DELETE /api/knowledge-bases/:id` → delete KB
+  - `GET  /api/organizations` → list orgs for current user
+  - `POST /api/organizations` → create org
+  - `POST /api/organizations/:orgId/workspaces` → create workspace (provisions OpenSearch index)
+  - `GET  /api/workspaces/:id/usage` → quota usage
+  - `DELETE /api/workspaces/:id` → delete workspace + index + docs
+  - `POST/DELETE/PATCH /api/workspaces/:id/members` → member management
+  - `GET  /api/api-keys` → list API keys
+  - `POST /api/api-keys` → create API key (raw shown once)
+  - `DELETE /api/api-keys/:id` → revoke API key
+  - `GET /api/admin/audit-logs` → paginated, filterable audit log (org admin only)
+  - `GET /api/admin/audit-logs/export` → CSV export (org admin only)
+  - `DELETE /api/users/:id/data` → GDPR right-to-erasure (org admin only)
+  - `POST /api/admin/retention-sweep` → manually trigger retention sweep (org admin only)
+  - `GET /api/admin/users` → paginated user list (org admin only)
 - embedding-service (no built-in auth — **must be reachable only from mcp-server/internal network**)
   - `POST /upload` → enqueues async ingestion job, returns `{ jobs: [{ jobId, documentId }] }`
     - **Security**: `userId` is derived from the authenticated mcp-server request, not client-supplied. Never expose port 8001 publicly. The mcp-server validates KB membership before forwarding.
@@ -263,11 +366,19 @@ Provider pairing tips:
 **Existing:** User, Chat, Message, ChatDocument
 
 **Phase B additions:**
-- `Document(id, userId, originalFilename, mimeType, fileSizeBytes, status, chunkCount, openSearchIndex, kbId, ...)`
+- `Document(id, userId, originalFilename, mimeType, fileSizeBytes, status, chunkCount, openSearchIndex, kbId, workspaceId, purgedAt, purgedBy, ...)`
 - `DocumentProvenance(id, documentId, rawFileSha256, chunkingStrategy, embeddingModel, stagesMs, ...)`
-- `AuditLog(id, userId, action, resource, outcome, metadata, createdAt)`
+- `AuditLog(id, timestamp, userId, workspaceId, action, resourceType, resourceId, ipAddress, userAgent, outcome: AuditOutcome, metadata)`
 - `KnowledgeBase(id, name, ownerId, openSearchIndex, embeddingModel, embedDim, ...)`
 - `KBMember(id, kbId, userId, role: OWNER|EDITOR|VIEWER)`
+
+**Phase D additions:**
+- `Organization(id, name, plan: OrgPlan, createdAt)`
+- `OrgMember(id, orgId, userId, role: OrgRole)` — `OWNER | ADMIN | MEMBER`
+- `Workspace(id, orgId, name, openSearchIndex, quotaMb, usedMb, retentionDays, createdAt)`
+- `WorkspaceMember(id, workspaceId, userId, role: WsRole)` — `ADMIN | EDITOR | VIEWER`
+- `ApiKey(id, keyHash, name, userId, lastUsed, expiresAt, createdAt)`
+- `RefreshToken(id, tokenHash, userId, expiresAt, usedAt, createdAt)`
 
 Migrations: `mcp-server/prisma/migrations/`
 
@@ -352,18 +463,26 @@ src/
 ```
 src/
   config.js, authRoutes.js, authMiddleware.js, chatRoutes.js
+  permissions.js                ← Phase D: PERMISSIONS constants + ROLE_PERMISSIONS map
   services/
-    auditService.js               ← Phase B: writes to AuditLog table
+    auditService.js             ← Phase B+D: writes to AuditLog (IP/UA/workspaceId/resourceType)
+    PurgeService.js             ← Phase D: purgeDocument, purgeUserData, runRetentionSweep
+  middleware/
+    requirePermission.js        ← Phase D: RBAC permission-check middleware
+    rateLimits.js, validate.js
   proxy/
-    embedUpload.js                ← creates Document registry entry + forwards to embedding-service
-    ingestStatus.js               ← GET /api/ingest/status/:jobId proxy
+    embedUpload.js              ← creates Document registry entry + forwards to embedding-service
+    ingestStatus.js             ← GET /api/ingest/status/:jobId proxy
     streamAsk.js, chatCompletions.js, userDocuments.js, transcribe.js
   routes/
-    documents.js                  ← Phase B: GET/POST/DELETE /api/documents + provenance
-    knowledgeBases.js             ← Phase B: GET/POST/DELETE /api/knowledge-bases
-    internalService.js            ← Phase B: /internal/* routes (service-to-service)
+    documents.js                ← Phase B+D: GET/POST/DELETE /api/documents + provenance; RBAC on delete
+    knowledgeBases.js           ← Phase B: GET/POST/DELETE /api/knowledge-bases
+    internalService.js          ← Phase B: /internal/* routes (service-to-service)
+    workspaces.js               ← Phase D: org + workspace CRUD, member mgmt, quota, OS index provisioning
+    apiKeys.js                  ← Phase D: API key create/list/revoke
+    admin.js                    ← Phase D: audit log viewer, CSV export, right-to-erasure, retention sweep
   gateway/mcpTools.js, mcpTransport.js
-  schemas/, middleware/, __tests__/
+  schemas/, __tests__/
 ```
 
 Run unit tests:

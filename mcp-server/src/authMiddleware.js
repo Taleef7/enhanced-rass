@@ -30,9 +30,16 @@ const authMiddleware = async (req, res, next) => {
       return res.status(401).json({ error: "Unauthorized: Empty API key." });
     }
 
+    // Validate key format — must start with "rass_" prefix
+    if (!rawKey.startsWith("rass_")) {
+      return res.status(401).json({ error: "Unauthorized: Invalid API key format." });
+    }
+
     try {
-      // Find candidate keys for this user — we must check all non-expired keys
-      // (bcrypt does not support indexed lookup, so we fetch all and compare)
+      // Fetch all non-expired keys for bcrypt comparison.
+      // NOTE: This is O(n) where n = number of active API keys.
+      // For high-scale deployments, consider adding an indexed keyPrefix column to
+      // narrow the search before bcrypt comparison (Phase E optimisation).
       const now = new Date();
       const allKeys = await prisma.apiKey.findMany({
         where: {
