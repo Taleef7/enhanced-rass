@@ -11,7 +11,6 @@ import {
   Typography,
   Card,
   CardContent,
-  Divider,
 } from "@mui/material";
 import {
   Check as CheckIcon,
@@ -40,7 +39,7 @@ function isStructuredCitation(citation) {
 /**
  * Renders a single structured citation card.
  */
-function StructuredCitationCard({ citation, index }) {
+function StructuredCitationCard({ citation }) {
   const [expanded, setExpanded] = useState(false);
   const score =
     typeof citation.relevanceScore === "number"
@@ -364,7 +363,6 @@ const MessageBubble = ({ message, index }) => {
                             <StructuredCitationCard
                               key={i}
                               citation={citation}
-                              index={i}
                             />
                           ))}
                           {message.sources.length > 10 && (

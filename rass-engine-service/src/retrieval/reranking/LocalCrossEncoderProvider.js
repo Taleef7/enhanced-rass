@@ -18,7 +18,7 @@ class LocalCrossEncoderProvider extends RerankProvider {
   constructor(config) {
     super();
     const port = config?.RERANKER_PORT || 8008;
-    this.rerankUrl = process.env.RERANKER_URL || `http://reranker:${port}/rerank`;
+    this.rerankUrl = process.env.RERANKER_URL || `http://localhost:${port}/rerank`;
     this.topN = config?.RERANK_TOP_N || 5;
   }
 

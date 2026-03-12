@@ -53,28 +53,51 @@ function buildStructuredCitations(sourceDocuments, llmAnswer) {
 
     const excerpt = (doc.text || "").substring(0, 200).trim();
 
-    // Grounding check: does the answer text contain any significant words from the excerpt?
+    // Grounding estimate: heuristic check that the cited passage is represented in the answer.
+    // Two-tier test: (1) direct phrase match — any PHRASE_LEN-char substring of the excerpt appears
+    // verbatim in the answer; (2) significant-term match — at least 3 tokens >= MIN_WORD_LEN chars from
+    // the excerpt appear in the answer. This reduces spurious "grounded" flags from trivial
+    // single-word overlaps while remaining useful as a lightweight, dependency-free signal.
     let grounded = false;
     if (llmAnswer && excerpt) {
-      const excerptWords = new Set(
-        excerpt
-          .toLowerCase()
+      const normalizedAnswer = llmAnswer.toLowerCase();
+      const normalizedExcerpt = excerpt.toLowerCase();
+
+      // Tier 1: look for any PHRASE_LEN-character phrase match
+      const PHRASE_LEN = 30;
+      const PHRASE_STEP = 10;
+      const MIN_WORD_LEN = 5;
+      for (let start = 0; start <= normalizedExcerpt.length - PHRASE_LEN; start += PHRASE_STEP) {
+        if (normalizedAnswer.includes(normalizedExcerpt.substring(start, start + PHRASE_LEN))) {
+          grounded = true;
+          break;
+        }
+      }
+
+      // Tier 2 fallback: require at least 3 significant tokens (>= MIN_WORD_LEN chars) from excerpt in answer
+      if (!grounded) {
+        const significantWords = normalizedExcerpt
           .split(/\W+/)
-          .filter((w) => w.length > 5)
-      );
-      const answerText = llmAnswer.toLowerCase();
-      grounded = [...excerptWords].some((word) => answerText.includes(word));
+          .filter((w) => w.length >= MIN_WORD_LEN);
+        const matchCount = significantWords.filter((w) => normalizedAnswer.includes(w)).length;
+        grounded = matchCount >= 3;
+      }
     }
+
+    // Coerce pageNumber to an integer; omit when not a valid positive integer
+    const rawPage = meta.pageNumber ?? meta.page_number;
+    const pageNumber = rawPage !== undefined ? parseInt(rawPage, 10) : undefined;
 
     const raw = {
       index: i + 1,
-      documentId: meta.parentId || meta.docId || uuidv4(),
+      documentId:
+        meta.documentId || meta.parentId || meta.docId || meta.id || uuidv4(),
       documentName:
         meta.originalFilename || meta.source || "Unknown",
       chunkId: meta.chunkId || undefined,
       relevanceScore,
       excerpt,
-      pageNumber: meta.pageNumber || meta.page_number || undefined,
+      pageNumber: Number.isFinite(pageNumber) && pageNumber > 0 ? pageNumber : undefined,
       uploadedAt: meta.uploadedAt || undefined,
       grounded,
     };

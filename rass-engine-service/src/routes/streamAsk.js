@@ -57,7 +57,7 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
         ],
       });
       writeSSE(res, {
-        choices: [{ delta: { custom_meta: { citations: [] } } }],
+        choices: [{ delta: { custom_meta: { type: "citations", citations: [] } } }],
       });
       writeSSE(res, "[DONE]");
       res.end();

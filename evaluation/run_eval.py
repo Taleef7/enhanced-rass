@@ -27,6 +27,7 @@ Aggregates produced:
 import argparse
 import json
 import logging
+import math
 import os
 import re
 import statistics
@@ -50,47 +51,68 @@ log = logging.getLogger(__name__)
 
 def query_rass(base_url: str, query: str, top_k: int = 5, timeout: int = 60) -> dict:
     """
-    Call POST /ask on the RASS engine and return:
-        { "answer": str, "context": str, "source_documents": list, "latency_ms": float }
+    Call POST /stream-ask on the RASS engine, parse the SSE stream, and return:
+        { "answer": str, "context": str, "citations": list, "latency_ms": float }
 
-    Falls back to streaming endpoint if /ask is unavailable.
+    On network failure or a non-200 response, logs the error and returns an error
+    payload with empty context and citations.
     """
     start = time.monotonic()
+    answer_parts = []
+    citations = []
+    context_parts = []
+
     try:
-        resp = requests.post(
-            f"{base_url}/ask",
+        with requests.post(
+            f"{base_url}/stream-ask",
             json={"query": query, "top_k": top_k},
             timeout=timeout,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        latency_ms = (time.monotonic() - start) * 1000
+            stream=True,
+            headers={"Accept": "text/event-stream"},
+        ) as resp:
+            resp.raise_for_status()
+            for raw_line in resp.iter_lines(decode_unicode=True):
+                if not raw_line:
+                    continue
+                if not raw_line.startswith("data: "):
+                    continue
+                data_str = raw_line[6:]
+                if data_str == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data_str)
+                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    if delta.get("content"):
+                        answer_parts.append(delta["content"])
+                    elif delta.get("custom_meta"):
+                        meta = delta["custom_meta"]
+                        if meta.get("type") == "citations" or "citations" in meta:
+                            raw_citations = meta.get("citations", [])
+                            citations = raw_citations
+                            for c in raw_citations:
+                                excerpt = c.get("excerpt", "")
+                                if excerpt:
+                                    context_parts.append(excerpt)
+                except (json.JSONDecodeError, IndexError, KeyError):
+                    pass  # skip malformed chunks
 
-        answer = data.get("answer", "")
-        source_docs = data.get("source_documents", [])
-        context_parts = []
-        for doc in source_docs:
-            if isinstance(doc, dict):
-                text = doc.get("_source", {}).get("text") or doc.get("text", "")
-                if text:
-                    context_parts.append(text)
-        context = "\n\n".join(context_parts)
-
-        return {
-            "answer": answer,
-            "context": context,
-            "source_documents": source_docs,
-            "latency_ms": latency_ms,
-        }
     except requests.exceptions.RequestException as exc:
         latency_ms = (time.monotonic() - start) * 1000
-        log.error(f"RASS request failed for query '{query[:60]}': {exc}")
+        log.error(f"RASS /stream-ask request failed for query '{query[:60]}': {exc}")
         return {
             "answer": f"ERROR: {exc}",
             "context": "",
-            "source_documents": [],
+            "citations": [],
             "latency_ms": latency_ms,
         }
+
+    latency_ms = (time.monotonic() - start) * 1000
+    return {
+        "answer": "".join(answer_parts),
+        "context": "\n\n".join(context_parts),
+        "citations": citations,
+        "latency_ms": latency_ms,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -177,10 +199,16 @@ def try_trulens_eval(query: str, answer: str, context: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def percentile(data: list, pct: float) -> float:
+    """Nearest-rank percentile: ceil(p/100 * N) — correct and consistent with standard definitions."""
     if not data:
         return 0.0
     sorted_data = sorted(data)
-    idx = max(0, int(len(sorted_data) * pct / 100) - 1)
+    n = len(sorted_data)
+    if pct <= 0:
+        return sorted_data[0]
+    if pct >= 100:
+        return sorted_data[-1]
+    idx = max(0, math.ceil(pct / 100.0 * n) - 1)
     return sorted_data[idx]
 
 

@@ -52,12 +52,29 @@ class ParentFetchStage extends Stage {
       const response = await axios.post(`${EMBEDDING_SERVICE_BASE_URL}/get-documents`, {
         ids: uniqueParentIds,
       });
-      const rawDocs = response.data.documents.filter((doc) => doc !== null);
-      console.log(`[ParentFetchStage] Successfully fetched ${rawDocs.length} parent documents.`);
-      context.parentDocs = rawDocs.map((doc) => ({
-        _source: { text: doc.pageContent, metadata: doc.metadata },
-        _score: parentIdMap.get(doc.metadata?.docId)?._score || 0,
-      }));
+      const rawDocs = Array.isArray(response.data.documents) ? response.data.documents : [];
+      const parentDocs = [];
+
+      // mget() preserves input order — match each returned doc to its requested parentId by index.
+      rawDocs.forEach((doc, idx) => {
+        if (!doc) return; // null means the key was not found in the docstore
+        const parentId = uniqueParentIds[idx];
+        const bestChildHit = parentIdMap.get(parentId);
+        const score = bestChildHit?._score || 0;
+
+        // Attach parentId onto metadata so downstream stages/citations can reference it
+        const metadata = { ...(doc.metadata || {}), docId: parentId };
+
+        parentDocs.push({
+          _source: { text: doc.pageContent, metadata },
+          _score: score,
+        });
+      });
+
+      console.log(
+        `[ParentFetchStage] Successfully fetched ${parentDocs.length} parent documents (from ${rawDocs.length} returned).`
+      );
+      context.parentDocs = parentDocs;
     } catch (error) {
       console.warn(`[ParentFetchStage] Failed to fetch parent documents: ${error.message}. Falling back to raw chunks.`);
       context.parentDocs = candidateChunks.map((hit) => ({

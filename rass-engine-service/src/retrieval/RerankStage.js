@@ -39,7 +39,7 @@ class RerankStage extends Stage {
   }
 
   async run(context) {
-    const { dedupedDocs, originalQuery, topK } = context;
+    const { dedupedDocs, originalQuery } = context;
 
     if (!dedupedDocs || dedupedDocs.length === 0) {
       console.warn("[RerankStage] No deduplicated docs to rerank; skipping.");
@@ -47,7 +47,12 @@ class RerankStage extends Stage {
       return context;
     }
 
-    context.rankedChunks = await this.provider.rerank(originalQuery, dedupedDocs, topK);
+    // Use RERANK_TOP_N from config (not the generation topK) so the reranker
+    // returns a larger candidate set that TopKSelectStage can then trim down to topK.
+    const rerankTopN =
+      this.config.RERANK_TOP_N != null ? this.config.RERANK_TOP_N : context.topK;
+
+    context.rankedChunks = await this.provider.rerank(originalQuery, dedupedDocs, rerankTopN);
 
     console.log(
       `[RerankStage] Reranking complete: ${dedupedDocs.length} → ${context.rankedChunks.length} docs.`

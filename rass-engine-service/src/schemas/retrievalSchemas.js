@@ -33,7 +33,7 @@ const RetrievalResultSchema = z.array(RetrievalHitSchema);
 
 /**
  * A single citation assembled for the LLM response.
- * Serialized into SSE events and the non-streaming /ask response.
+ * Serialized into SSE events emitted by the /stream-ask endpoint.
  *
  * Follows the Phase C structured citation spec (Issue #117):
  *   index          — [1], [2], etc. (1-based position in the citations array)
@@ -44,7 +44,7 @@ const RetrievalResultSchema = z.array(RetrievalHitSchema);
  *   excerpt        — up to 200-char snippet from the chunk text
  *   pageNumber     — page number if available in metadata
  *   uploadedAt     — ISO timestamp of when the document was ingested
- *   grounded       — whether the cited text is verifiably present in the retrieved context
+ *   grounded       — heuristic estimate of whether the excerpt is present in the answer
  */
 const CitationSchema = z.object({
   index: z.number().int().positive(),

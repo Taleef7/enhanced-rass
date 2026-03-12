@@ -26,11 +26,20 @@ class HydeQueryExpansionStage extends Stage {
       return context;
     }
 
-    console.log(`[HydeQueryExpansionStage] Generating hypothetical document for: "${context.originalQuery}"`);
+    // Resolve max tokens from config, defaulting to 200 if not set or invalid
+    const rawMaxTokens = this.config.HYDE_MAX_TOKENS;
+    const hydeMaxTokens =
+      Number.isFinite(Number(rawMaxTokens)) && Number(rawMaxTokens) > 0
+        ? Number(rawMaxTokens)
+        : 200;
+
+    console.log(
+      `[HydeQueryExpansionStage] Generating hypothetical document for: "${context.originalQuery}" (maxTokens=${hydeMaxTokens})`
+    );
 
     let hypotheticalDoc = null;
     try {
-      hypotheticalDoc = await generateHypotheticalDocument(context.originalQuery);
+      hypotheticalDoc = await generateHypotheticalDocument(context.originalQuery, hydeMaxTokens);
     } catch (err) {
       console.warn(
         `[HydeQueryExpansionStage] HyDE generation failed: ${err.message}. Falling back to original query.`
