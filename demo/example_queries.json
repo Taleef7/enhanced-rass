@@ -1,0 +1,9 @@
+{
+  "queries": [
+    "What is retrieval-augmented generation and how does it work?",
+    "What are the key components of the RASS system architecture?",
+    "How does parent-child chunking improve answer quality?",
+    "What is hybrid retrieval and why is it better than vector search alone?",
+    "What performance benchmarks has RASS achieved?"
+  ]
+}

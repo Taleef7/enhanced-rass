@@ -324,51 +324,78 @@ router.get("/api/knowledge-bases/:kbId/graph", apiLimiter, authMiddleware, async
       chunkCount: doc.chunkCount || 0,
     }));
 
-    // Fetch centroid embeddings from OpenSearch for each document
     const osUrl = `http://${OPENSEARCH_HOST}:${OPENSEARCH_PORT}`;
     const edges = [];
-
-    // For each pair of documents, compute similarity using avg embedding query
-    // We use OpenSearch's more_like_this or aggregation to get representative vectors
-    // For efficiency, compute similarity scores by querying top similar docs per doc
     const docIds = documents.map((d) => d.id);
 
+    // Build a representative embedding vector per document by fetching one chunk's
+    // embedding vector from OpenSearch, then use that vector as a KNN probe to count
+    // how many of a candidate document's chunks fall in the top-N neighbourhood.
+    // weight = overlapping_chunks / K  →  real embedding-based structural similarity.
+    const K = 20; // neighbourhood size
+    const docVectors = {};
+
+    // Step 1: Fetch one chunk embedding per document
+    for (const docId of docIds) {
+      try {
+        const sample = await axios.post(
+          `${osUrl}/${kb.openSearchIndex}/_search`,
+          {
+            size: 1,
+            _source: ["embedding"],
+            query: { term: { documentId: docId } },
+          },
+          { headers: { "Content-Type": "application/json" }, timeout: 5000 }
+        );
+        const hit = sample.data?.hits?.hits?.[0];
+        if (hit?._source?.embedding) {
+          docVectors[docId] = hit._source.embedding;
+        }
+      } catch (_err) {
+        // If we can't fetch the vector, skip this doc in similarity computation
+      }
+    }
+
+    // Step 2: For each document pair (i,j) where we have vectors, use doc i's
+    // centroid chunk to KNN-search the index and count how many hits belong to doc j.
     for (let i = 0; i < docIds.length; i++) {
-      for (let j = i + 1; j < docIds.length; j++) {
-        // Query: how similar are chunks of doc i to doc j?
-        try {
-          const searchRes = await axios.post(
-            `${osUrl}/${kb.openSearchIndex}/_search`,
-            {
-              size: 0,
-              query: {
-                term: { documentId: docIds[i] },
-              },
-              aggs: {
-                avg_score: {
-                  avg: { field: "_score" },
-                },
+      const vecI = docVectors[docIds[i]];
+      if (!vecI) continue;
+
+      try {
+        const knnRes = await axios.post(
+          `${osUrl}/${kb.openSearchIndex}/_search`,
+          {
+            size: K,
+            _source: ["documentId"],
+            query: {
+              knn: {
+                embedding: { vector: vecI, k: K },
               },
             },
-            { headers: { "Content-Type": "application/json" }, timeout: 5000 }
-          );
+          },
+          { headers: { "Content-Type": "application/json" }, timeout: 5000 }
+        );
 
-          // Use a simpler approach: check if the two docs share similar content
-          // by counting mutual matches using a term frequency approach
-          const docI = documents[i];
-          const docJ = documents[j];
-          // Compute a similarity weight based on chunk count ratio
-          // (placeholder for real cosine similarity which requires embedding fetch)
-          const maxChunks = Math.max(docI.chunkCount || 1, docJ.chunkCount || 1);
-          const minChunks = Math.min(docI.chunkCount || 1, docJ.chunkCount || 1);
-          const weight = parseFloat((minChunks / maxChunks).toFixed(3));
+        const hits = knnRes.data?.hits?.hits || [];
+        // Count how many hits belong to each other document
+        const hitsPerDoc = {};
+        for (const hit of hits) {
+          const dId = hit._source?.documentId;
+          if (dId && dId !== docIds[i]) {
+            hitsPerDoc[dId] = (hitsPerDoc[dId] || 0) + 1;
+          }
+        }
 
-          if (weight >= threshold - 0.3) {
+        for (let j = i + 1; j < docIds.length; j++) {
+          const count = hitsPerDoc[docIds[j]] || 0;
+          const weight = parseFloat((count / K).toFixed(3));
+          if (weight >= threshold) {
             edges.push({ source: docIds[i], target: docIds[j], weight });
           }
-        } catch (_err) {
-          // Skip edge if OpenSearch query fails
         }
+      } catch (_err) {
+        // Skip this source doc if the KNN query fails
       }
     }
 

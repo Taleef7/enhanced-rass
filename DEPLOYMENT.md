@@ -292,3 +292,143 @@ docker compose exec redis redis-cli ping
 
 Edit `config.yml` in the relevant service to change ports, then update `docker-compose.yml` port mappings accordingly.
 
+
+---
+
+## Cloud Deployment Guides
+
+### AWS ECS (Elastic Container Service)
+
+#### 1. Push images to ECR
+
+```bash
+# Authenticate to ECR
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
+
+# Build and push each service
+for svc in mcp-server rass-engine-service embedding-service frontend; do
+  docker build -t rass-$svc ./$svc
+  docker tag rass-$svc:latest <account-id>.dkr.ecr.us-east-1.amazonaws.com/rass-$svc:latest
+  docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/rass-$svc:latest
+done
+```
+
+#### 2. Infrastructure
+
+Use the following managed AWS services instead of Docker containers:
+
+| Component | AWS Service |
+|-----------|------------|
+| OpenSearch | Amazon OpenSearch Service |
+| Redis | Amazon ElastiCache (Redis OSS) |
+| PostgreSQL | Amazon RDS PostgreSQL |
+| Container orchestration | ECS Fargate |
+| Secrets | AWS Secrets Manager |
+| TLS termination | Application Load Balancer (ALB) |
+
+#### 3. Task Definition (mcp-server example)
+
+```json
+{
+  "family": "rass-mcp-server",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "containerDefinitions": [{
+    "name": "mcp-server",
+    "image": "<account-id>.dkr.ecr.us-east-1.amazonaws.com/rass-mcp-server:latest",
+    "portMappings": [{"containerPort": 8080}],
+    "secrets": [
+      {"name": "JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:..."},
+      {"name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:..."}
+    ],
+    "environment": [
+      {"name": "NODE_ENV", "value": "production"},
+      {"name": "OPENSEARCH_HOST", "value": "<opensearch-endpoint>"}
+    ],
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {"awslogs-group": "/ecs/rass", "awslogs-region": "us-east-1"}
+    }
+  }]
+}
+```
+
+#### 4. Apply migrations
+
+```bash
+# Run as a one-off ECS task after each deployment
+aws ecs run-task \
+  --cluster rass \
+  --task-definition rass-migrate \
+  --overrides '{"containerOverrides":[{"name":"mcp-server","command":["npx","prisma","migrate","deploy"]}]}'
+```
+
+---
+
+### GCP Cloud Run
+
+#### 1. Push images to Artifact Registry
+
+```bash
+# Configure docker for GCP
+gcloud auth configure-docker us-central1-docker.pkg.dev
+
+# Build and push
+for svc in mcp-server rass-engine-service embedding-service frontend; do
+  docker build -t us-central1-docker.pkg.dev/<project-id>/rass/rass-$svc:latest ./$svc
+  docker push us-central1-docker.pkg.dev/<project-id>/rass/rass-$svc:latest
+done
+```
+
+#### 2. Deploy mcp-server to Cloud Run
+
+```bash
+gcloud run deploy rass-mcp-server \
+  --image us-central1-docker.pkg.dev/<project-id>/rass/rass-mcp-server:latest \
+  --region us-central1 \
+  --platform managed \
+  --port 8080 \
+  --memory 1Gi \
+  --cpu 1 \
+  --set-env-vars NODE_ENV=production \
+  --set-secrets JWT_SECRET=rass-jwt-secret:latest \
+  --set-secrets DATABASE_URL=rass-db-url:latest \
+  --allow-unauthenticated
+```
+
+#### 3. Managed infrastructure
+
+| Component | GCP Service |
+|-----------|------------|
+| OpenSearch | Elastic Cloud on GCP (or self-managed GCE) |
+| Redis | Memorystore for Redis |
+| PostgreSQL | Cloud SQL for PostgreSQL |
+| Container orchestration | Cloud Run |
+| Secrets | Secret Manager |
+| TLS termination | Cloud Run (automatic) / Cloud Load Balancing |
+
+#### 4. Cloud Run limitations for RASS
+
+- **SSE (streaming)**: Cloud Run supports SSE. Set `--timeout 3600` for long-running streams.
+- **File uploads**: Cloud Run is stateless. Configure a Cloud Storage bucket for uploaded files instead of local filesystem.
+- **BullMQ workers**: Deploy the embedding-service as a separate Cloud Run service with `--min-instances 1` to keep the worker alive.
+
+---
+
+### Production Hardening Checklist
+
+- [ ] All services behind a TLS-terminating reverse proxy (Nginx/ALB/Cloud Load Balancer)
+- [ ] Internal service ports (3001, 3002, 9200, 6379, 5432) not exposed publicly
+- [ ] Secrets in a secrets manager (AWS Secrets Manager / GCP Secret Manager / HashiCorp Vault)
+- [ ] JWT_SECRET and REFRESH_TOKEN_SECRET ≥ 64 random characters
+- [ ] Database connection pool size tuned for expected concurrency
+- [ ] OpenSearch heap = 50% of available RAM (max 32 GB)
+- [ ] Redis `maxmemory-policy allkeys-lru` configured
+- [ ] Health check endpoint monitored (uptime check every 30s)
+- [ ] Log aggregation configured (CloudWatch / GCP Logging / Loki)
+- [ ] Database backups scheduled (daily snapshots, 30-day retention)
+- [ ] Rate limiting verified (100 req/15 min default)
+- [ ] CORS origins explicitly configured (no `*` in production)

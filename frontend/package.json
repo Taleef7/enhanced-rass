@@ -30,7 +30,8 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "generate:client": "openapi --input ../mcp-server/openapi.yaml --output src/api/generated --client axios"
   },
   "eslintConfig": {
     "extends": [
@@ -52,6 +53,7 @@
   },
   "proxy": "http://localhost:8080",
   "devDependencies": {
+    "openapi-typescript-codegen": "^0.30.0",
     "prettier": "^3.3.2"
   }
 }

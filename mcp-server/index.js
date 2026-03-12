@@ -65,12 +65,24 @@ if (process.env.NODE_ENV !== "production") {
   const swaggerUi = require("swagger-ui-express");
   const YAML = require("js-yaml");
   const fs = require("fs");
+  const { OpenApiValidator } = require("express-openapi-validator");
   try {
     const openApiSpec = YAML.load(
       fs.readFileSync(path.join(__dirname, "openapi.yaml"), "utf8")
     );
     app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openApiSpec));
     logger.info("[API Docs] Swagger UI available at /api/docs");
+
+    // Validate requests/responses against the OpenAPI spec (dev only)
+    app.use(
+      new OpenApiValidator({
+        apiSpec: path.join(__dirname, "openapi.yaml"),
+        validateRequests: true,
+        validateResponses: false, // response validation disabled (perf)
+        ignorePaths: /^\/api\/docs|^\/metrics|^\/health|^\/mcp/,
+      }).middleware()
+    );
+    logger.info("[API Validator] express-openapi-validator active");
   } catch (e) {
     logger.warn("[API Docs] Failed to load openapi.yaml:", e.message);
   }

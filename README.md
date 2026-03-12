@@ -28,17 +28,108 @@ See deep-dive diagrams and flows in docs/PLANNER_AND_DIAGRAMS.md.
 
 ## Architecture at a glance
 
-Services (all configured from root config.yml and secrets from .env):
-- **embedding-service (8001)**: ingest → BullMQ queue → worker (parse → chunk → embed → index child chunks in OpenSearch + store parents in Redis) → provenance record.
-- **rass-engine-service (8000)**: retrieve via hybrid search + generate answer via LLM; SSE or JSON.
+```mermaid
+flowchart TD
+    Browser["🌐 Browser\n(React + MUI)"]
+    MCP["MCP Server :8080\n(Auth · CRUD · Gateway)"]
+    Engine["RASS Engine :3001\n(Retrieval · LLM · SSE)"]
+    Embed["Embedding Service :3002\n(BullMQ Worker · ETL)"]
+    OS["OpenSearch :9200\n(KNN + BM25 Indices)"]
+    Redis["Redis :6379\n(Job Queue · Parent Chunks)"]
+    PG["PostgreSQL :5432\n(Users · Chats · AuditLog)"]
+
+    Browser -- "REST + SSE" --> MCP
+    MCP -- "stream-ask proxy" --> Engine
+    MCP -- "upload proxy" --> Embed
+    MCP -- "Prisma ORM" --> PG
+    Engine -- "hybrid KNN+BM25" --> OS
+    Engine -- "parent chunk fetch" --> Redis
+    Embed -- "BullMQ jobs" --> Redis
+    Embed -- "bulk index" --> OS
+    Embed -- "provenance write" --> PG
+```
+
+Services (all configured from root `config.yml` and secrets from `.env`):
+- **embedding-service (3002)**: ingest → BullMQ queue → worker (parse → chunk → embed → index child chunks in OpenSearch + store parents in Redis) → provenance record.
+- **rass-engine-service (3001)**: retrieve via hybrid search + generate answer via LLM; SSE or JSON.
 - **mcp-server (8080)**: gateway. REST auth, chat CRUD, document registry API, KB management API, stream proxy, upload proxy, and MCP /mcp tools.
-- **frontend (8080 via proxy)**: CRA app that talks to mcp-server.
+- **frontend (3000)**: CRA app that talks to mcp-server.
 - Infra: OpenSearch, Redis, Postgres (via Docker Compose).
 
 Data rules:
 - All searches are strictly filtered by metadata.userId (or KB / workspace membership).
 - Parent chunks live in Redis keyed by UUID; child chunks are in OpenSearch with metadata including userId, originalFilename, uploadedAt, parentId, documentId, kbId, workspaceId.
 - Chats/messages and the document registry are in Postgres. JWT is stored **in memory only** (not localStorage); an HTTP-only refresh-token cookie maintains sessions silently.
+
+---
+
+## Configuration Reference
+
+All services share a root `config.yml`. Key settings:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `MCP_SERVER_PORT` | `8080` | MCP Server listening port |
+| `RASS_ENGINE_PORT` | `3001` | RASS Engine listening port |
+| `EMBEDDING_SERVICE_PORT` | `3002` | Embedding Service listening port |
+| `OPENSEARCH_HOST` | `opensearch` | OpenSearch hostname |
+| `OPENSEARCH_PORT` | `9200` | OpenSearch port |
+| `REDIS_HOST` | `redis` | Redis hostname |
+| `REDIS_PORT` | `6379` | Redis port |
+| `EMBED_DIM` | `768` | Embedding vector dimension (768 for Gemini, 1536 for ada-002, 3072 for text-embedding-3-large) |
+| `EMBEDDING_PROVIDER` | `gemini` | `gemini` or `openai` |
+| `LLM_PROVIDER` | `gemini` | `gemini` or `openai` |
+| `CHUNKING_STRATEGY` | `recursive_character` | `fixed_size`, `recursive_character`, or `sentence_window` |
+| `CHUNK_SIZE` | `512` | Parent chunk size in tokens |
+| `CHUNK_OVERLAP` | `50` | Overlap between consecutive chunks |
+| `EMBED_WORKER_CONCURRENCY` | `4` | Parallel embedding workers |
+| `TOP_K` | `5` | Chunks returned to LLM |
+| `RERANK_TOP_K` | `20` | Candidates fetched before reranking |
+
+Secrets (in `.env`, never in `config.yml`):
+```
+OPENAI_API_KEY=sk-...
+GEMINI_API_KEY=...
+JWT_SECRET=<random 64 char>
+REFRESH_TOKEN_SECRET=<different random 64 char>
+DATABASE_URL=postgresql://...
+```
+
+---
+
+## Troubleshooting
+
+### OpenSearch won't start (Exit 137 / Out of Memory)
+```bash
+# Increase vm.max_map_count (Linux/WSL)
+sudo sysctl -w vm.max_map_count=262144
+echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
+```
+
+### Document stuck in "Processing" forever
+```bash
+# Check embedding service worker logs
+docker compose logs -f embedding-service
+# Check Redis connectivity
+docker compose exec redis redis-cli ping
+```
+
+### "Cannot find module" error on startup
+```bash
+# Rebuild with fresh node_modules
+docker compose build --no-cache mcp-server
+```
+
+### JWT "invalid signature" after config change
+The `JWT_SECRET` in `.env` must match what was used to sign existing tokens. After changing it, all sessions will be invalidated — users must log in again.
+
+### Wrong vector dimension errors in OpenSearch
+The `EMBED_DIM` in `config.yml` must match the embedding model:
+- `text-embedding-004` (Gemini) → `768`
+- `text-embedding-ada-002` (OpenAI) → `1536`
+- `text-embedding-3-large` (OpenAI) → `3072`
+
+Delete and recreate the OpenSearch index after changing `EMBED_DIM`.
 
 ---
 
