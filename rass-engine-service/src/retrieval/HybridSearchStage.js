@@ -8,6 +8,7 @@ const { Stage } = require("./Stage");
 const { DEFAULT_K_OPENSEARCH_HITS, OPENSEARCH_INDEX_NAME } = require("../config");
 const { osClient } = require("../clients/opensearchClient");
 const logger = require("../logger");
+const { withSpan } = require("../tracing");
 
 /**
  * Builds a hybrid KNN + keyword OpenSearch query.
@@ -96,15 +97,19 @@ class HybridSearchStage extends Stage {
 
     const searchBody = buildHybridQuery(query, queryEmbedding, k, userId, documents);
 
-    try {
-      const results = await osClient.search({ index: OPENSEARCH_INDEX_NAME, body: searchBody });
-      const hits = results.body.hits.hits || [];
-      logger.info(`[HybridSearchStage] Found ${hits.length} candidate chunks (status: ${results.statusCode}).`);
-      context.candidateChunks = hits;
-    } catch (error) {
-      logger.warn(`[HybridSearchStage] Search failed: ${error.message}`);
-      context.candidateChunks = [];
-    }
+    return withSpan("retrieval.hybridSearch", { "search.k": k, "search.hasUserFilter": !!userId }, async () => {
+      try {
+        const results = await osClient.search({ index: OPENSEARCH_INDEX_NAME, body: searchBody });
+        const hits = results.body.hits.hits || [];
+        logger.info(`[HybridSearchStage] Found ${hits.length} candidate chunks (status: ${results.statusCode}).`);
+        context.candidateChunks = hits;
+      } catch (error) {
+        logger.warn(`[HybridSearchStage] Search failed: ${error.message}`);
+        context.candidateChunks = [];
+      }
+      return context;
+    });
+  }
 
     return context;
   }

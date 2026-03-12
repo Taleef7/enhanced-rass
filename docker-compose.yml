@@ -82,11 +82,16 @@ services:
     environment:
       <<: *default-env # Inherit secrets
       # We will add non-secret vars from config.yml here in the next step
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      OTEL_SERVICE_NAME: embedding-service
+      OTEL_ENABLED: "true"
     depends_on:
       opensearch:
         condition: service_healthy
       redis:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     networks:
       - rass_network
     restart: unless-stopped
@@ -103,9 +108,14 @@ services:
     # The 'env_file' is now removed.
     environment:
       <<: *default-env # Inherit secrets
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      OTEL_SERVICE_NAME: rass-engine-service
+      OTEL_ENABLED: "true"
     depends_on:
       opensearch:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     links:
       # <-- ADD THIS SECTION
       - opensearch:opensearch_node # <-- ADD THIS LINE
@@ -141,6 +151,9 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - MCP_DEFAULT_TOP_K=50
       - DATABASE_URL=postgresql://rass_user:rass_password@db:5432/rass_db
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_SERVICE_NAME=mcp-server
+      - OTEL_ENABLED=true
 
   db:
     image: postgres:15
@@ -162,6 +175,88 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Phase E: Distributed Tracing (Jaeger) ────────────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:1.53
+    container_name: jaeger
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC receiver
+      - "4318:4318"    # OTLP HTTP receiver
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - rass_network
+    restart: unless-stopped
+
+  # ── Phase E: Metrics Collection (Prometheus) ──────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.50.1
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    networks:
+      - rass_network
+    restart: unless-stopped
+
+  # ── Phase E: Metrics Dashboard (Grafana) ─────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.3.1
+    container_name: grafana
+    ports:
+      - "3001:3000"  # 3001 on host to avoid conflict with frontend dev server
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    networks:
+      - rass_network
+    depends_on:
+      - prometheus
+      - loki
+    restart: unless-stopped
+
+  # ── Phase E: Log Aggregation (Loki) ──────────────────────────────────────────
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/tmp/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - rass_network
+    restart: unless-stopped
+
+  # ── Phase E: Log Shipper (Promtail) ──────────────────────────────────────────
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: promtail
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./monitoring/promtail.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - rass_network
+    depends_on:
+      - loki
+    restart: unless-stopped
+
 networks:
   rass_network:
     name: shared_rass_network
@@ -173,4 +268,10 @@ volumes:
   redis-data:
     driver: local
   postgres_data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  loki-data:
     driver: local

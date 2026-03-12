@@ -1,6 +1,9 @@
 // mcp-server/index.js
 // Thin orchestrator: loads modules, registers routes and middleware, and starts the server.
 
+// OpenTelemetry must be initialized FIRST (before any other imports)
+require("./src/otel");
+
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
@@ -8,6 +11,7 @@ const path = require("path");
 
 const logger = require("./src/logger");
 const { correlationIdMiddleware } = require("./src/middleware/correlationId");
+const { metricsMiddleware } = require("./src/middleware/metricsMiddleware");
 const { MCP_SERVER_PORT } = require("./src/config");
 
 // Existing extracted routes (unchanged)
@@ -35,6 +39,9 @@ const workspaceRoutes = require("./src/routes/workspaces.js");
 const apiKeyRoutes = require("./src/routes/apiKeys.js");
 const adminRoutes = require("./src/routes/admin.js");
 
+// Phase E: Prometheus metrics
+const metricsRoutes = require("./src/routes/metrics.js");
+
 const app = express();
 app.use(cors({
   origin: process.env.CORS_ORIGIN || true,
@@ -48,6 +55,7 @@ app.use(cors({
 app.use(cookieParser());
 app.use(express.json({ limit: "10mb" }));
 app.use(correlationIdMiddleware);
+app.use(metricsMiddleware("mcp-server"));
 
 // --- Swagger UI (non-production only) ---
 if (process.env.NODE_ENV !== "production") {
@@ -90,6 +98,9 @@ app.use(apiKeyRoutes);
 
 // --- Phase D: Admin / compliance / audit reporting ---
 app.use(adminRoutes);
+
+// --- Phase E: Prometheus metrics ---
+app.use(metricsRoutes);
 
 // --- Legacy simple-ask (deprecated) ---
 // @deprecated Use /api/stream-ask instead.

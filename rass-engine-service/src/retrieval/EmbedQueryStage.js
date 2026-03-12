@@ -7,6 +7,7 @@
 const { Stage } = require("./Stage");
 const { embedText } = require("../clients/embedder");
 const logger = require("../logger");
+const { withSpan } = require("../tracing");
 
 class EmbedQueryStage extends Stage {
   constructor() {
@@ -14,10 +15,12 @@ class EmbedQueryStage extends Stage {
   }
 
   async run(context) {
-    logger.info(`[EmbedQueryStage] Embedding query: "${context.query.substring(0, 80)}..."`);
-    context.queryEmbedding = await embedText(context.query);
-    logger.info(`[EmbedQueryStage] Embedding vector length: ${context.queryEmbedding?.length}`);
-    return context;
+    return withSpan("retrieval.embedQuery", { "query.length": context.query.length }, async () => {
+      logger.info(`[EmbedQueryStage] Embedding query: "${context.query.substring(0, 80)}..."`);
+      context.queryEmbedding = await embedText(context.query);
+      logger.info(`[EmbedQueryStage] Embedding vector length: ${context.queryEmbedding?.length}`);
+      return context;
+    });
   }
 }
 

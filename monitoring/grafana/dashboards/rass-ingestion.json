@@ -1,0 +1,64 @@
+{
+  "id": null,
+  "uid": "rass-ingestion",
+  "title": "RASS — Ingestion Pipeline",
+  "tags": ["rass", "ingestion"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Ingestion Queue Depth",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "rass_ingestion_queue_depth",
+          "legendFormat": "{{queue}} queue depth",
+          "datasource": "Prometheus"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Active Workers",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "rass_ingestion_active_workers",
+          "legendFormat": "Active Workers",
+          "datasource": "Prometheus"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Ingestion Stage Duration (p95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(rass_ingestion_duration_seconds_bucket[5m])) by (le, stage))",
+          "legendFormat": "p95 {{stage}}",
+          "datasource": "Prometheus"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Ingestion Throughput (jobs/min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(rate(rass_requests_total{route=\"/upload\",status=\"202\"}[1m])) * 60",
+          "legendFormat": "uploads/min",
+          "datasource": "Prometheus"
+        }
+      ]
+    }
+  ]
+}

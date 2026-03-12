@@ -24,6 +24,7 @@ const { getDocstore } = require("../clients/redisClient");
 const { getLoader } = require("../ingestion/parser");
 const { createChunker } = require("../chunking");
 const logger = require("../logger");
+const { withSpan } = require("../tracing");
 const {
   CHUNKING_STRATEGY,
   PARENT_CHUNK_SIZE,

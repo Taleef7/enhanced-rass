@@ -1,0 +1,26 @@
+# monitoring/prometheus.yml
+# Prometheus scrape configuration for RASS services.
+# Each Node.js service exposes GET /metrics in Prometheus text format.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "mcp-server"
+    static_configs:
+      - targets: ["mcp-server:8080"]
+    metrics_path: /metrics
+    scheme: http
+
+  - job_name: "rass-engine-service"
+    static_configs:
+      - targets: ["rass-engine-service:8000"]
+    metrics_path: /metrics
+    scheme: http
+
+  - job_name: "embedding-service"
+    static_configs:
+      - targets: ["embedding-service:8001"]
+    metrics_path: /metrics
+    scheme: http

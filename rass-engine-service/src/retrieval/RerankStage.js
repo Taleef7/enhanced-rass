@@ -9,6 +9,7 @@
 const { Stage } = require("./Stage");
 const { NoopRerankProvider } = require("./reranking/NoopRerankProvider");
 const logger = require("../logger");
+const { withSpan } = require("../tracing");
 
 class RerankStage extends Stage {
   /**
@@ -48,17 +49,16 @@ class RerankStage extends Stage {
       return context;
     }
 
-    // Use RERANK_TOP_N from config (not the generation topK) so the reranker
-    // returns a larger candidate set that TopKSelectStage can then trim down to topK.
     const rerankTopN =
       this.config.RERANK_TOP_N != null ? this.config.RERANK_TOP_N : context.topK;
 
-    context.rankedChunks = await this.provider.rerank(originalQuery, dedupedDocs, rerankTopN);
-
-    logger.info(
-      `[RerankStage] Reranking complete: ${dedupedDocs.length} → ${context.rankedChunks.length} docs.`
-    );
-    return context;
+    return withSpan("retrieval.rerank", { "rerank.provider": this.config.RERANK_PROVIDER || "none", "rerank.inputDocs": dedupedDocs.length }, async () => {
+      context.rankedChunks = await this.provider.rerank(originalQuery, dedupedDocs, rerankTopN);
+      logger.info(
+        `[RerankStage] Reranking complete: ${dedupedDocs.length} → ${context.rankedChunks.length} docs.`
+      );
+      return context;
+    });
   }
 }
 

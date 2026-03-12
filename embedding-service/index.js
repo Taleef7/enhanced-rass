@@ -3,11 +3,15 @@
 // registers routes, and binds the server.
 // Dependencies (Redis docstore, OpenSearch index) are ready before any request is served.
 
+// OpenTelemetry must be initialized FIRST (before any other imports)
+require("./src/otel");
+
 const express = require("express");
 const cors = require("cors");
 
 const logger = require("./src/logger");
 const { correlationIdMiddleware } = require("./src/middleware/correlationId");
+const { metricsMiddleware } = require("./src/middleware/metricsMiddleware");
 const { EMBEDDING_SERVICE_PORT } = require("./src/config");
 const { initializeDocstore } = require("./src/clients/redisClient");
 const { ensureIndexExists } = require("./src/clients/opensearchClient");
@@ -18,17 +22,20 @@ const uploadRoutes = require("./src/routes/upload");
 const documentRoutes = require("./src/routes/documents");
 const adminRoutes = require("./src/routes/admin");
 const healthRoutes = require("./src/routes/health");
+const metricsRoutes = require("./src/routes/metrics");
 const ingestStatusRoutes = require("./src/routes/ingestStatus");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(correlationIdMiddleware);
+app.use(metricsMiddleware("embedding-service"));
 
 app.use(uploadRoutes);
 app.use(documentRoutes);
 app.use(adminRoutes);
 app.use(healthRoutes);
+app.use(metricsRoutes);
 app.use(ingestStatusRoutes);
 
 // --- Bull Board (queue dashboard, dev only) ---
