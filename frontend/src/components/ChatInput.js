@@ -16,6 +16,7 @@ import {
   MicOff as MicOffIcon,
 } from "@mui/icons-material";
 import { useChat } from "../context/ChatContext";
+import { useAuth } from "../context/AuthContext";
 import { uploadFile, transcribeAudio } from "../apiClient";
 
 const ChatInput = ({
@@ -39,6 +40,7 @@ const ChatInput = ({
   const fileInputRef = useRef(null);
   // --- 1. THE FIX: Get addMessageToChat from the context ---
   const { activeChat, addDocumentToChat, addMessageToChat } = useChat();
+  const { token } = useAuth();
   const uploadedDocuments = activeChat ? activeChat.documents : [];
 
   const handleKeyPress = (e) => {
@@ -53,7 +55,7 @@ const ChatInput = ({
 
     setIsUploading(true);
     try {
-      await uploadFile(file);
+      await uploadFile(file, null, null, token);
       const newDoc = { name: file.name, size: file.size, type: file.type };
       addDocumentToChat(activeChat.id, newDoc);
       // --- 2. THE FIX: Use the function to add a system message ---
@@ -131,7 +133,7 @@ const ChatInput = ({
           setIsTranscribing(true);
           let text = "";
           try {
-            text = await transcribeAudio(blob);
+            text = await transcribeAudio(blob, token);
           } catch (err) {
             // If unauthorized, surface a friendly message in chat
             if (activeChat) {

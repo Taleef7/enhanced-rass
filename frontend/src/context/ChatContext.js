@@ -19,6 +19,11 @@ export const ChatProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isServerAvailable, setIsServerAvailable] = useState(true);
 
+  // Phase D: Keep chatAPI in sync with the in-memory JWT token
+  useEffect(() => {
+    chatAPI.setToken(token);
+  }, [token]);
+
   // Convert server chat format to local format
   const convertServerChatToLocal = (serverChat) => {
     const messages = (serverChat.messages || []).map((message) => {

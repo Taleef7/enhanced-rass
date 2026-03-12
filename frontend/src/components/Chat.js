@@ -35,7 +35,7 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
   const open = Boolean(anchorEl);
 
   const { activeChat, addMessageToChat, updateLastMessage } = useChat();
-  const { user, logout } = useAuth();
+  const { user, logout, token } = useAuth();
 
   const handleProfileClick = (event) => {
     setAnchorEl(event.currentTarget);
@@ -96,7 +96,8 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
           updateLastMessage(activeChat.id, { sources });
           finalBotSources = sources;
         },
-        abortControllerRef.current.signal
+        abortControllerRef.current.signal,
+        token
       );
 
       // After streaming completes, save the complete bot message to database

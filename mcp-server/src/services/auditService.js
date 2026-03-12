@@ -1,6 +1,7 @@
 // mcp-server/src/services/auditService.js
-// Writes structured audit events to the AuditLog table in Postgres.
-// Called by route handlers and the internal service API.
+// Phase D: Writes structured, tamper-evident audit events to the AuditLog table.
+// AuditLog records are APPEND-ONLY — never updated or deleted via this service.
+// Called by route handlers, middleware, and the internal service API.
 
 "use strict";
 
@@ -10,16 +11,51 @@ const { prisma } = require("../prisma");
  * Write an audit log entry.
  *
  * @param {object} entry
- * @param {string|null}  entry.userId   - ID of the user triggering the action (null for system)
- * @param {string}       entry.action   - e.g. "DOCUMENT_UPLOADED", "DOCUMENT_DELETED", "SEARCH"
- * @param {string|null}  entry.resource - ID of the affected resource (documentId, kbId, …)
- * @param {string}       entry.outcome  - "SUCCESS" | "FAILURE"
- * @param {object|null}  entry.metadata - Arbitrary extra context stored as JSON
+ * @param {string|null}  entry.userId       - ID of the acting user (null = system)
+ * @param {string|null}  entry.workspaceId  - Workspace context (if applicable)
+ * @param {string}       entry.action       - e.g. "DOCUMENT_DELETED", "LOGIN_SUCCESS"
+ * @param {string|null}  entry.resourceType - "Document", "Workspace", "User", etc.
+ * @param {string|null}  entry.resourceId   - ID of the affected resource
+ * @param {string|null}  entry.resource     - Legacy resource field (kept for backward compat)
+ * @param {string}       entry.outcome      - "SUCCESS" | "FAILURE" | "PARTIAL"
+ * @param {object|null}  entry.metadata     - Arbitrary extra context stored as JSON
+ * @param {object|null}  entry.req          - Express request (used to extract IP + UA)
  */
-async function writeAuditLog({ userId = null, action, resource = null, outcome, metadata = null }) {
+async function writeAuditLog({
+  userId = null,
+  workspaceId = null,
+  action,
+  resourceType = null,
+  resourceId = null,
+  resource = null,
+  outcome = "SUCCESS",
+  metadata = null,
+  req = null,
+} = {}) {
   try {
+    const ipAddress = req
+      ? (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || null)
+      : null;
+    const userAgent = req ? (req.headers["user-agent"] || null) : null;
+
+    // Normalise outcome to the enum values expected by Prisma
+    const normalised = ["SUCCESS", "FAILURE", "PARTIAL"].includes(outcome)
+      ? outcome
+      : "SUCCESS";
+
     await prisma.auditLog.create({
-      data: { userId, action, resource, outcome, metadata },
+      data: {
+        userId,
+        workspaceId,
+        action,
+        resourceType,
+        resourceId: resourceId || resource,
+        resource: resource || resourceId,
+        ipAddress,
+        userAgent,
+        outcome: normalised,
+        metadata,
+      },
     });
   } catch (err) {
     // Audit failures must never crash the main request path.
@@ -28,3 +64,4 @@ async function writeAuditLog({ userId = null, action, resource = null, outcome, 
 }
 
 module.exports = { writeAuditLog };
+
