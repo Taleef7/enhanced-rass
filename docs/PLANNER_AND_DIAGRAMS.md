@@ -1,289 +1,283 @@
-# Agentic Planner Documentation
+# RASS Architecture and Runtime Flows
 
-## Overview
+This document describes the current architecture in code. The older "agentic planner" writeup is no longer the correct mental model for the active system.
 
-The Agentic Planner is a key component of the RASS (Retrieval Augmented Semantic Search) engine that intelligently generates search strategies for user queries. It uses Large Language Models (LLMs) to decompose and expand queries into multiple search terms, improving retrieval coverage and relevance.
+## Current System Shape
 
-## Architecture
+RASS is composed of four main application pieces:
 
-### Component Location
+- `frontend`: React client for auth, chat, uploads, and document management
+- `mcp-server`: API gateway and application control plane
+- `rass-engine-service`: retrieval and answer generation
+- `embedding-service`: asynchronous ingestion and indexing
 
-- **File**: `rass-engine-service/agenticPlanner.js`
-- **Integration**: Called by the `/ask` endpoint in `index.js`
+Supporting infrastructure:
 
-### Key Features
+- OpenSearch
+- Redis
+- Postgres
+- Jaeger
+- Prometheus
+- Grafana
+- Loki
+- Promtail
+- Optional Ollama
 
-- Dynamic search plan generation using LLMs (OpenAI or Gemini)
-- Query decomposition and expansion
-- History-aware planning to avoid repetitive strategies
-- Configurable LLM backend
+## Architecture Diagram
 
----
+```mermaid
+flowchart TD
+    Browser["Frontend / Browser"]
+    MCP["mcp-server"]
+    Engine["rass-engine-service"]
+    Embed["embedding-service"]
+    OS["OpenSearch"]
+    Redis["Redis"]
+    PG["Postgres"]
 
-## Microservices Overview
+    Browser -->|REST + SSE| MCP
+    MCP -->|upload proxy| Embed
+    MCP -->|stream proxy| Engine
+    MCP -->|Prisma| PG
+    Engine -->|hybrid search| OS
+    Engine -->|parent fetch| Embed
+    Embed -->|BullMQ jobs| Redis
+    Embed -->|parent chunks| Redis
+    Embed -->|child chunks| OS
+```
 
-| Service             | Description                                                            | Tech Stack       | Key Endpoints/Ports |
-| ------------------- | ---------------------------------------------------------------------- | ---------------- | ------------------- |
-| rass-engine-service | Orchestrates the RAG pipeline, agentic planning, and answer generation | Node.js, Express | `/ask` (8000)       |
-| embedding-service   | Handles text embedding and chunking, interfaces with OpenSearch        | Node.js          | `/upload` (8001)    |
-| opensearch_node     | Vector database for semantic search                                    | OpenSearch       | 9200/9300           |
-| mcp-server          | MCP protocol server for client integration                             | Node.js          | `/mcp` (8080)       |
+## Responsibilities by Service
 
----
+### `mcp-server`
 
-## MCP Server & Tools
+- Auth and session lifecycle
+- Chat CRUD and message persistence
+- Document registry and provenance APIs
+- Knowledge base and workspace management
+- API keys, audit routes, and admin workflows
+- MCP JSON-RPC transport
+- Upload proxy to `embedding-service`
+- Streaming query proxy to `rass-engine-service`
 
-### What is the MCP Server?
+### `rass-engine-service`
 
-The **MCP (Model Context Protocol) Server** acts as the main integration point between external clients (such as test clients, UI, or other systems) and the RASS engine. It exposes a standardized API for document ingestion, querying, and evaluation, making it easy to connect RASS to other platforms or automation scripts.
+- Non-streaming `POST /ask`
+- Streaming `POST /stream-ask`
+- Retrieval pipeline orchestration
+- LLM answer generation
+- SSE context and citation events
 
-- **Location:** `mcp-server/`
-- **Tech Stack:** Node.js, Express
-- **Key Endpoint:** `/mcp` (port 8080)
+### `embedding-service`
 
-### MCP Tools and Their Purpose
+- Upload intake
+- BullMQ queueing
+- Parse/chunk/embed/index worker
+- Redis-backed parent document storage
+- Provenance callbacks into `mcp-server`
 
-The MCP server exposes several "tools" (API endpoints) that orchestrate the RASS pipeline:
+### `frontend`
 
-| Tool Name           | Purpose                                                                                                                                                                                      |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `addDocumentToRASS` | Uploads and indexes a new document into the RASS system. Handles chunking and embedding.                                                                                                     |
-| `queryRASS`         | Submits a user query to the RASS engine and returns the generated answer and sources.                                                                                                        |
+- Login, logout, silent refresh
+- Chat creation and selection
+- File upload and ingestion progress polling
+- Live token streaming
+- Context/citation display
+- Document management UI
 
+## Current Retrieval Pipeline
 
-#### Tool Workflow Example
+The active retrieval path is assembled in `rass-engine-service/src/retrieval/createPipeline.js`.
 
-1. **addDocumentToRASS**:
+```mermaid
+flowchart LR
+    Q["Query"] --> H["HyDE Query Expansion"]
+    H --> E["Embed Query"]
+    E --> S["Hybrid Search"]
+    S --> P["Parent Fetch"]
+    P --> D["Deduplicate"]
+    D --> R["Rerank"]
+    R --> F["Feedback Boost"]
+    F --> T["Top-K Select"]
+    T --> G["Generation"]
+```
 
-- Client uploads a document (e.g., PDF, Markdown).
-- MCP server calls the embedding service to chunk and embed the document.
-- Chunks are indexed in OpenSearch for retrieval.
+Stages:
 
-1. **queryRASS**:
+1. `HydeQueryExpansionStage`
+2. `EmbedQueryStage`
+3. `HybridSearchStage`
+4. `ParentFetchStage`
+5. `DeduplicateStage`
+6. `RerankStage`
+7. `FeedbackBoostStage`
+8. `TopKSelectStage`
 
-- Client submits a question.
-- MCP server forwards the query to the RASS engine (`/ask` endpoint).
-- RASS engine runs the agentic planner, retrieves results via hybrid search, and generates an answer.
-- MCP server returns the answer and supporting documents to the client.
+Important caveat: the retrieval pipeline currently searches the configured default OpenSearch index. Per-KB and per-workspace index provisioning exists in the control plane, but the active retrieval stage does not yet switch indices dynamically.
 
+## Data Model
 
-### Why MCP?
+### Durable application data in Postgres
 
-- **Standardization:** Provides a unified interface for all RASS operations.
-- **Automation:** Enables batch testing, evaluation, and integration with CI/CD or external platforms.
-- **Extensibility:** New tools can be added to support additional workflows or integrations.
+- `User`
+- `Chat`
+- `Message`
+- `ChatDocument`
+- `Document`
+- `DocumentProvenance`
+- `KnowledgeBase`
+- `KBMember`
+- `Organization`
+- `OrgMember`
+- `Workspace`
+- `WorkspaceMember`
+- `ApiKey`
+- `RefreshToken`
+- `AuditLog`
+- `RetrievalFeedback`
+- `Entity`
+- `Relation`
+- `Annotation`
+- `SharedChat`
 
----
+### Search and queue data
 
-## System Interaction Diagram
+- OpenSearch stores searchable child chunks
+- Redis stores BullMQ state and parent chunks
+
+## Request Flows
+
+### 1. Login and session restoration
 
 ```mermaid
 sequenceDiagram
     participant User
+    participant Frontend
     participant MCP
-    participant RASS
-    participant Planner
-    participant Embed
-    participant OpenSearch
+    participant DB
 
-    %% Document Ingestion Workflow
-    User->>MCP: addDocumentToRASS (upload document)
-    MCP->>Embed: /upload (semantic chunking & embedding)
-    Note right of Embed: Semantic Chunking
-    Embed->>OpenSearch: Index chunks
-    OpenSearch-->>Embed: Indexing confirmation
-    Embed-->>MCP: Embedding & indexing complete
-    MCP-->>User: Success response
+    User->>Frontend: Submit username/password
+    Frontend->>MCP: POST /api/auth/login
+    MCP->>DB: Validate user, store refresh token
+    MCP-->>Frontend: JWT + refreshToken cookie
+    Frontend->>Frontend: Store JWT in memory
 
-    %% Query Workflow
-    User->>MCP: queryRASS (ask question)
-    MCP->>RASS: /ask (API call)
-    RASS->>Planner: Agentic planning (generate search plan)
-    Note right of Planner: Agentic Planning
-    Planner-->>RASS: Search plan (steps/terms)
-    RASS->>Embed: /embed (contextual enrichment & embed search terms)
-    Note right of Embed: Contextual Enrichment
-    Embed-->>RASS: Query embeddings
-    RASS->>OpenSearch: Hybrid search (vector + keyword)
-    Note right of OpenSearch: Hybrid Search
-    OpenSearch-->>RASS: Top-k results
-    RASS->>MCP: Answer + sources
-    MCP-->>User: Final answer
+    Frontend->>MCP: POST /api/auth/refresh on reload
+    MCP->>DB: Validate and rotate refresh token
+    MCP-->>Frontend: Fresh JWT + fresh cookie
 ```
 
----
+Notes:
 
-## Key Concepts Explained
+- The frontend does not use localStorage for the active JWT.
+- Refresh tokens are HTTP-only cookies scoped to `/api/auth/refresh`.
+- API clients can also authenticate with `Authorization: ApiKey <raw_key>`.
 
-- **Semantic Chunking:** The process of splitting documents into semantically meaningful chunks before embedding and indexing. Performed by the embedding-service during document ingestion.
-- **Contextual Enrichment:** Enhancing search terms or queries with additional context (e.g., history, synonyms, or LLM-generated expansions) before embedding. Performed by the agentic planner and embedding-service.
-- **Agentic Planning:** The use of an LLM to decompose and expand user queries into a multi-step search plan, improving retrieval coverage and relevance.
-- **Hybrid Search:** Combining vector similarity search (using embeddings) with traditional keyword search in OpenSearch to maximize recall and precision.
-
-These concepts are illustrated in the diagram above at the relevant steps in the workflow.
-
----
-
-## Agentic Planner Workflow
-
-The Agentic Planner takes a user query and, using an LLM, generates a multi-step search plan. Each step may include:
-
-- Query decomposition (breaking down complex questions)
-- Expansion (adding synonyms, related terms, or context)
-- Contextual enrichment (adding background, history, or clarifying information)
-- Iterative refinement (using previous results to improve the plan)
-- Step-by-step execution (each search step can trigger further planning)
-
-### Detailed Workflow Diagram
+### 2. Upload and ingestion
 
 ```mermaid
-flowchart TD
-    A[User Query] --> B[Agentic Planner]
-    B --> C[Decompose Query]
-    C --> D[Expand Terms & Contextual Enrichment]
-    D --> E[Generate Multi-Step Search Plan]
-    E --> F[Iterative Step Execution]
-    F --> G[Aggregate Search Results]
-  G --> H[LLM Answer Generation]
-  H --> I[Return Answer + Sources]
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant MCP
+    participant DB
+    participant Embed
+    participant Redis
+    participant OS
 
-    
+    User->>Frontend: Upload file
+    Frontend->>MCP: POST /api/embed-upload
+    MCP->>DB: Create Document row (QUEUED)
+    MCP->>Embed: Forward multipart upload
+    Embed->>Redis: Enqueue BullMQ job
+    Embed-->>MCP: 202 Accepted + jobId
+    MCP-->>Frontend: documentId + jobId
+    Frontend->>MCP: Poll /api/ingest/status/:jobId
+    Embed->>OS: Index child chunks
+    Embed->>Redis: Store parent chunks
+    Embed->>MCP: Internal status/provenance callback
+    MCP->>DB: Mark Document READY or FAILED
 ```
 
----
+### 3. Query and answer streaming
 
-### Step-by-Step Explanation
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant MCP
+    participant Engine
+    participant OS
+    participant Embed
 
-1. **Decompose Query:** The planner breaks down complex or multi-part questions into simpler sub-questions or search intents.
-2. **Expand Terms & Contextual Enrichment:** The planner expands search terms with synonyms, related concepts, or additional context (e.g., time period, location, background info).
-3. **Generate Multi-Step Search Plan:** The planner creates a sequence of search steps, each targeting a specific aspect of the query.
-4. **Iterative Step Execution:** The system executes each search step, optionally refining the plan based on intermediate results.
-5. **Aggregate Search Results:** Results from all steps are combined and deduplicated.
-6. **LLM Answer Generation:** The final answer is generated by the LLM using the aggregated context.
-7. **Return Answer + Sources:** The answer and supporting document sources are returned to the user.
-
-This workflow enables the system to handle complex, multi-faceted queries with high relevance and faithfulness.
-
----
-
-## How It Works
-
-1. **User submits a query** via the MCP client.
-2. **Agentic Planner** (in `agenticPlanner.js`) uses an LLM to break down the query into multiple search terms and steps.
-3. **Search terms** are embedded and sent to OpenSearch for vector retrieval.
-4. **RASS engine** aggregates the retrieved results and generates a final answer using an LLM.
-5. **Answer and sources** are returned to the user.
-
----
-
-## Example: Search Plan Generation
-
-- **Input Query:** "What was the initial object that fell to Earth from Mars in War of The Worlds?"
-- **Generated Plan:**
-  1. Search for "Mars meteorite"
-  2. Search for "Martian object"
-  3. Search for "extraterrestrial rock"
-
----
-
-## Technical Implementation
-
-- **LLM Integration:** Supports OpenAI and Gemini for planning and answer generation.
-- **Prompt Engineering:** Prompts are designed to encourage decomposition and expansion of queries.
-- **Context Enrichment:** Planner can use previous search history to avoid redundant steps.
-- **Hybrid Search:** Combines vector search with keyword search in OpenSearch; no reranking stage by default.
-
----
-
-## Performance & Limitations
-
-- **Document Capacity:** Tested with up to 10,000 chunks per document.
-- **Known Limitations:**
-  - Current answer generation is conservative; may not synthesize answers from partial context.
-  - Answer relevancy is being improved (see evaluation results).
-  - System performance depends on LLM and embedding model quotas.
-  - Context Generation causes high latency since each chunk is processed sequentially and sent to the LLM to generate context causing a bottleneck. Can toggle Context Generation off in `agenticPlanner.js` to speed up the process, but at the cost of potentially less relevant answers.
-
----
-
-## How to Extend
-
-- **Add new microservices** by updating `docker-compose.yml` and ensuring network connectivity.
-- **Swap out models** by changing environment variables and updating service code.
-- **Tune planner prompts** in `agenticPlanner.js` for better decomposition or domain adaptation.
-- **Optional reranking:** If desired, add a reranking stage as a separate microservice and insert it after retrieval; not enabled in the current setup.
-
----
-
-## References
-
-- [OpenAI API](https://platform.openai.com/docs/)
-- [Google Gemini API](https://ai.google.dev/)
-- [Sentence Transformers](https://www.sbert.net/)
-- [OpenSearch Documentation](https://opensearch.org/docs/)
-
----
-
-_For more details, see the README and individual service documentation._
-
----
-
-## Canonical Data Schemas (Phase A 2.3)
-
-All retrieval hits and citations are validated against Zod schemas before they enter the
-generation pipeline or are serialized to API responses.
-
-### CitationSchema
-
-Citations are assembled from OpenSearch retrieval hits and sent in SSE responses (streaming)
-and in the non-streaming `/ask` response body.
-
-```js
-CitationSchema = z.object({
-  id: z.string(),          // parentId or generated UUID
-  source: z.string(),      // document filename or title (originalFilename)
-  score: z.number(),       // relevance score from OpenSearch
-  text: z.string(),        // relevant excerpt passed to the LLM
-  uploadedAt: z.string().optional(),  // ISO 8601 upload timestamp
-});
+    User->>Frontend: Ask a question
+    Frontend->>MCP: POST /api/stream-ask
+    MCP->>Engine: Forward query + userId
+    Engine->>OS: Hybrid search
+    Engine->>Embed: Fetch parent docs
+    Engine-->>MCP: SSE stream
+    MCP-->>Frontend: SSE stream
 ```
 
-See `rass-engine-service/src/schemas/retrievalSchemas.js` for the full schema definitions.
+Event order for successful streams:
 
-### RetrievalHitSchema
+1. `context`
+2. text token deltas
+3. `citations`
+4. `[DONE]`
 
-Raw OpenSearch hits are validated before use in the generation pipeline.
-Invalid hits (e.g., missing `_source.text`) are logged and excluded rather than crashing.
+## Frontend Architecture
 
-```js
-RetrievalHitSchema = z.object({
-  _id: z.string(),
-  _score: z.number(),
-  _source: z.object({
-    text: z.string(),
-    metadata: z.object({
-      userId: z.string(),
-      originalFilename: z.string(),
-      uploadedAt: z.string(),
-      parentId: z.string().optional(),
-    }).passthrough(),  // additional metadata fields are preserved
-  }),
-});
-```
+### Auth
 
-The `.passthrough()` modifier ensures that future metadata fields (reranker scores,
-page numbers, confidence levels) can be added without breaking existing validation.
+- `AuthContext` owns the in-memory JWT
+- Silent refresh happens on app load
+- Logout clears the refresh cookie server-side and legacy local storage client-side
 
-### SSE Citation Event
+### Chat state
 
-In streaming responses, citations are sent as the last SSE event before `[DONE]`:
+- `ChatContext` owns chat list and active chat state
+- The UI persists chats on the server and also contains local fallback behavior
 
-```
-data: {"choices":[{"delta":{"custom_meta":{"citations":[
-  {"id":"parent-001","source":"report.pdf","score":0.87,"text":"...","uploadedAt":"2026-01-01T00:00:00.000Z"}
-]}}}]}
+### Main user-visible surfaces
 
-data: [DONE]
-```
+- Auth page
+- Main chat layout
+- Sidebar with chat management
+- Chat input with upload support
+- Document manager
+- Context panel for retrieved chunks
+- Shared-chat route component
 
-The full citation schema is also referenced in `mcp-server/openapi.yaml` under `components/schemas/Citation`.
+## Observability
+
+### Metrics
+
+- Each backend service exposes `/metrics`
+- Prometheus scrapes the services
+- Grafana dashboards are provisioned from `monitoring/`
+
+### Tracing
+
+- OpenTelemetry initializes before the rest of each backend service
+- Jaeger receives OTLP traces
+
+### Logging
+
+- Structured logging with correlation IDs
+- Loki + Promtail for aggregation
+
+## Known Design Gaps
+
+- Root compose does not include the standard frontend.
+- Shared-chat code is not fully aligned with the current Prisma `Message` shape.
+- The repo contains both a document-similarity graph concept and an entity/relation knowledge graph concept.
+- Some frontend components still carry legacy token assumptions, but the canonical auth path is in-memory JWT plus refresh cookie.
+
+## Canonical Source of Truth
+
+For current behavior, trust runtime code in this order:
+
+1. service entrypoints and route files
+2. Prisma schema and config loaders
+3. compose files and scripts
+4. higher-level documentation

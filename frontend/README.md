@@ -1,8 +1,16 @@
-# Frontend (React)
+# Frontend
 
-Create React App-based UI for Enhanced RASS. Talks only to mcp-server on port 8080.
+React client for the current RASS UI.
 
-## Run (dev)
+## What it does
+
+- Handles login, logout, and silent session restoration
+- Renders the main chat interface
+- Streams assistant responses from `POST /api/stream-ask`
+- Uploads files through `mcp-server`
+- Shows document status, provenance, and deletion UI
+
+## Run in development
 
 ```bash
 cd frontend
@@ -10,21 +18,37 @@ npm install
 npm start
 ```
 
-The CRA dev server proxies API calls to [http://localhost:8080](http://localhost:8080).
+The app runs on `http://localhost:3000`.
 
-## Auth
+## Backend target
 
-- Register and login store a JWT in localStorage under `authToken`.
-- All API calls read that token and send it as Bearer.
+The frontend talks to:
 
-## Key screens
+- `http://localhost:8080/api`
 
-- Welcome screen (minimal): title/subtitle centered
-- Sidebar: search, New Chat, per-chat menu (rename/delete)
-- Chat: streaming responses with citations; upload via paperclip
-- Documents: modal listing your aggregated uploads
+The root backend compose stack must be running separately.
 
-## Troubleshooting
+## Auth model
 
-- If “Your Documents” fails to load, logout/login to refresh the token.
-- For stream issues, ensure mcp-server → rass-engine-service is healthy.
+The canonical auth flow is:
+
+- JWT stored in React memory, not localStorage
+- HTTP-only refresh-token cookie set by `mcp-server`
+- Silent refresh on app load via `POST /api/auth/refresh`
+
+Some components still contain legacy token assumptions. The source of truth is `src/context/AuthContext.js`.
+
+## Main UI modules
+
+- `src/context/AuthContext.js`: JWT state and silent refresh
+- `src/context/ChatContext.js`: chat state and server sync
+- `src/components/Chat.js`: streaming conversation surface
+- `src/components/DocumentManager.js`: document listing, provenance, delete
+- `src/components/UploadManager.js`: upload and ingestion polling
+- `src/components/SharedChatView.js`: public shared-chat route component
+
+## Current caveats
+
+- The root compose stack does not start this frontend automatically.
+- Shared-chat rendering code assumes message fields that do not match the current backend model.
+- Some optional feature components still use legacy token lookup patterns.

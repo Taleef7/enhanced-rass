@@ -1,164 +1,110 @@
 # RASS User Guide
 
-**RASS** (Retrieval-Augmented Semantic Search) is an AI-powered document intelligence platform. It lets you upload documents and have natural-language conversations with their content using hybrid semantic + keyword retrieval and LLM generation.
+This guide describes the user-facing behavior that is present in the current codebase.
 
----
+For full setup, boot, and end-to-end local usage instructions, start with `docs/getting-started.md`.
 
-## Getting Started in 3 Steps
+## What RASS does
 
-### 1. Create an Account
+RASS lets you upload documents, wait for them to be indexed, and ask questions against the indexed content. Answers stream back live and include source citations.
 
-Navigate to the RASS frontend URL and click **Register**. Choose a username and password. You will be logged in automatically.
+## Getting Started
 
-### 2. Upload Your First Document
+### 1. Create an account
 
-Click the **paperclip icon** (📎) in the chat input, or open the **Document Library** (folder icon in the top bar) and click **Upload Document**.
+Open the frontend and register a username and password. After login, the app keeps your session alive using:
 
-Supported formats:
-- **PDF** — text-based PDFs and scanned PDFs (with OCR via pdf-parse)
-- **DOCX** — Microsoft Word documents
-- **TXT** — plain text files
-- **MD** — Markdown files
+- a short-lived JWT held in memory
+- a refresh-token cookie managed by the backend
 
-After uploading, you will see a progress badge on the document:
-- 🔵 **Queued** — waiting to start
-- 🟡 **Processing** — parsing, chunking, and embedding
-- 🟢 **Ready** — indexed and searchable
-- 🔴 **Failed** — error during ingestion (see Document Library for details)
+### 2. Upload a document
 
-### 3. Ask Questions
+Upload from the chat input or the document-management UI.
 
-Once at least one document is **Ready**, type your question in the chat input and press **Enter** or click **Send**.
+Supported formats in the current ingestion pipeline include:
 
-RASS will:
-1. Retrieve the most relevant passages from your documents
-2. Stream a grounded answer back to you
-3. Show source citations below the answer
+- `.pdf`
+- `.txt`
+- `.md`
+- `.docx`
+- common image formats when OCR is enabled
 
----
+Current status values:
 
-## Features
+- `QUEUED`
+- `PROCESSING`
+- `READY`
+- `FAILED`
+- `DELETED`
 
-### Chat Sessions
+### 3. Ask a question
 
-- Create multiple independent chat sessions via **+ New Chat** in the sidebar
-- Each chat session has its own message history
-- Rename or delete chats from the **⋮** menu next to each chat title
+Once documents are `READY`, ask a question in chat. RASS will:
 
-### Document Library
+1. retrieve relevant passages
+2. stream an answer
+3. emit citations at the end of the stream
 
-Open the **Document Library** from the folder icon in the top bar to:
+For the complete local flow, including Docker, frontend startup, observability, demo mode, and Ollama setup, use `docs/getting-started.md`.
 
-- View all uploaded documents with status badges
-- Click a document name to see its **ETL provenance** (chunking strategy, embedding model, processing time)
-- **Delete** a document (removes it from all indices and search results)
+## Main Screens
 
-### Knowledge Bases
+### Chat
 
-Knowledge bases let you organise related documents and share them with teammates.
+- create and switch chats
+- stream assistant responses
+- upload files through the paperclip action
+- inspect retrieved context when available
 
-1. Click **Knowledge Bases** in the left sidebar
-2. Click **+ New Knowledge Base**
-3. Give it a name and optional description
-4. Upload documents directly into the KB
+### Document Manager
 
-When asking questions in a chat that has a KB selected, RASS searches only within that KB. This is useful for domain-specific questions (e.g. "Medical Research KB", "Project Alpha KB").
+- list uploaded documents
+- see document status
+- open ETL provenance for ready documents
+- delete documents
 
-#### Knowledge Graph
+Deletion is a soft-delete plus best-effort search cleanup. It should not be interpreted as an immediate deep purge of every backing store.
 
-Within a Knowledge Base, click the **graph icon** to open the **Knowledge Graph** panel. This shows:
-- **Nodes**: each document in the KB, sized by chunk count
-- **Edges**: similarity relationships between documents
+## Knowledge Bases and Workspaces
 
-Hover over a node to see the document name and chunk count. Use zoom controls or scroll to navigate.
+The backend supports:
 
-#### Sharing Knowledge Bases
+- knowledge bases
+- organizations
+- workspaces
+- role-based access control
 
-As a KB owner, click **Manage Members** to:
-- Add users by username
-- Assign roles: **Owner**, **Editor** (can upload/delete docs), **Viewer** (can only search)
+These platform features exist in the API and data model, but the chat UX is still primarily centered on the personal document/chat flow. Treat knowledge-base and workspace management as backend-first capabilities unless your local frontend build exposes the corresponding screens.
 
-### Workspaces (Enterprise)
+## Context and Citations
 
-Workspaces are team-level document silos within an organisation. Contact your admin to set up an organisation and workspace.
+Streaming answers can include:
 
-### "What RASS Is Thinking" Panel
+- retrieved context chunks before generation
+- structured citations after generation
 
-Click the **✨ sparkle icon** in the top bar during or after a query to open the **Context Panel**. This shows:
-- Which document chunks were retrieved
-- Retrieval scores for each chunk
-- The raw text passed to the LLM
+This is what powers the "What RASS is thinking" style transparency panel in the UI.
 
-This transparency panel helps you understand and verify how RASS arrived at its answer.
+## API Keys
 
-### API Keys
+Programmatic clients can use API keys with:
 
-Generate machine-readable API keys for programmatic access:
-
-1. Click your **avatar** → **Profile** (or navigate to `/settings/api-keys`)
-2. Click **+ New API Key**
-3. Give it a name and optional expiry date
-4. Copy the **raw key** immediately — it is shown only once
-
-Use the API key in requests:
-```
-X-Api-Key: rass_...
+```http
+Authorization: ApiKey rass_...
 ```
 
----
+Older docs that reference `X-Api-Key` are outdated.
 
-## Tips for Better Answers
+## Session Behavior
 
-| Tip | Why it helps |
-|-----|-------------|
-| Upload focused documents | Smaller, domain-specific KBs improve retrieval precision |
-| Be specific in questions | "What are the side effects of metformin?" beats "Tell me about metformin" |
-| Ask follow-up questions | RASS maintains chat context — refer to "the previous answer" |
-| Check citations | Click `[1]` citations to verify grounding before acting on advice |
-| Use Knowledge Bases | Scoping a question to a KB prevents irrelevant results from other documents |
+- Access tokens are short-lived.
+- Refresh is automatic while the refresh-token cookie is valid.
+- If the refresh token expires, you must log in again.
 
----
+## Current Caveats
 
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Enter` | Send message |
-| `Shift+Enter` | New line in message |
-| `Ctrl+/` | Focus chat input |
-
----
-
-## Troubleshooting
-
-### Document stuck in "Processing"
-
-- Wait up to 2 minutes for large PDFs (200+ pages)
-- If still stuck, check the **Document Library** for an error message
-- Re-upload the document if it shows **Failed**
-
-### "I could not find any relevant information"
-
-- Verify the document status is **Ready** (not Queued/Processing)
-- Try rephrasing the question with more specific terms
-- Check that you are searching the correct Knowledge Base
-
-### Slow responses
-
-- Large documents with many chunks can take longer to retrieve
-- Retrieval time is shown in the Context Panel (✨) per chunk score
-- Contact your admin to check RASS Engine metrics (`/metrics`)
-
-### Session expired
-
-- RASS uses short-lived access tokens (15 min). These refresh automatically in the background.
-- If you see a login prompt, your refresh token has expired (7 days). Simply log in again.
-
----
-
-## Privacy and Data
-
-- All documents are stored on your organisation's own infrastructure — RASS does not send documents to external services except the configured LLM provider (OpenAI or Google Gemini) for generation.
-- Embedded vectors are stored in your private OpenSearch cluster.
-- You can delete any document at any time; deletion removes all associated vectors.
-- Request full data erasure via **Settings → Delete My Account** (invokes GDPR right-to-erasure).
+- Shared-chat UI exists in the frontend, but the underlying backend route is not fully aligned with the current message schema.
+- Knowledge graph functionality exists in two forms in the repo:
+  - an older document-similarity graph concept
+  - the newer entity/relation graph APIs
+- Some advanced platform features are better exercised through the API than through the current default frontend flow.

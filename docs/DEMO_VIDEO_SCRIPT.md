@@ -96,7 +96,7 @@
 
 **Screen:**
 1. `curl http://localhost:8080/api/health | jq .` — show green status
-2. Open `http://localhost:3002/admin/queues` — show Bull Board
+2. Open `http://localhost:8001/admin/queues` — show Bull Board
 3. Briefly show `/metrics` Prometheus output
 
 ---

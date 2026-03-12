@@ -1,56 +1,39 @@
-# RASS One-Click Demo
+# RASS Demo
 
-This directory contains everything needed to run a fully pre-seeded RASS demo in under 5 minutes.
+The `demo/` directory contains a separate compose file and sample seed documents for a demo-oriented environment.
 
-## Quick Start
+## What is in the demo folder
+
+- `docker-compose.demo.yml`
+- `seed_data/`
+- `seed.sh`
+
+## Important status note
+
+Treat the demo stack as a secondary path, not the canonical local-development path.
+
+The most reliable way to run RASS today is:
+
+1. start the root backend stack
+2. run the frontend locally with `npm start`
+
+## Intended demo flow
 
 ```bash
-# From the repository root:
 ./scripts/demo.sh
 ```
 
-Then open `http://localhost:3000` and log in with:
-- **Username**: `demo`
-- **Password**: `rass-demo-2025`
+The script is intended to:
 
-## What's Included
+- start the demo compose stack
+- wait for `mcp-server`
+- seed a demo user and demo documents
 
-### Pre-seeded Documents
+## Demo content
 
-The `seed_data/` directory contains sample Markdown documents that are automatically uploaded and indexed when the demo starts:
+The seed documents under `seed_data/` explain RAG and the RASS architecture at a high level. They are demo content, not canonical engineering documentation.
 
-| File | Description |
-|------|-------------|
-| `01-intro-to-rag.md` | Introduction to Retrieval-Augmented Generation |
-| `02-system-architecture.md` | RASS architecture reference |
-| `03-demo-guide.md` | Feature walkthrough and example questions |
+## Caveats
 
-### Demo Knowledge Base
-
-A **"RASS Demo KB"** knowledge base is created automatically containing all seed documents.
-
-### Demo User
-
-A demo account (`demo` / `rass-demo-2025`) is created on first run.
-
-## Architecture
-
-The demo uses a separate Docker Compose configuration (`docker-compose.demo.yml`) that:
-- Uses separate named volumes (`demo_*`) to avoid conflicts with a production install
-- Includes a one-time `demo-seeder` service that registers the demo user and uploads seed documents
-- Runs all services on the same ports as production (3000, 8080)
-
-## Customizing Seed Data
-
-To add your own documents to the demo:
-
-1. Place files in `demo/seed_data/` (supported: `.txt`, `.md`, `.pdf`)
-2. Re-run `./scripts/demo.sh`
-
-## Stopping the Demo
-
-```bash
-docker compose -f demo/docker-compose.demo.yml down -v
-```
-
-The `-v` flag removes all demo volumes for a clean restart.
+- The demo compose file should not be used as the source of truth for service behavior.
+- If you need an accurate picture of the system, use the root compose file plus the current service code and README files.

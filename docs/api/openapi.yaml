@@ -8,7 +8,8 @@ info:
 
     ## Authentication
     Most endpoints require a Bearer JWT token from POST /api/auth/login.
-    Machine-to-machine clients may use an API key via the X-Api-Key header.
+    Machine-to-machine clients may use an API key via the Authorization header
+    with the format `ApiKey <raw_key>`.
 
     ## SSE Streaming
     POST /api/stream-ask returns Server-Sent Events. See docs/api/streaming.md.
@@ -38,7 +39,7 @@ components:
     ApiKeyAuth:
       type: apiKey
       in: header
-      name: X-Api-Key
+      name: Authorization
 
   schemas:
     Error:
@@ -60,14 +61,43 @@ components:
           type: string
           format: date-time
 
-    AuthTokens:
+    RegisteredUserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    LoginResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        token:
+          type: string
+          description: Short-lived JWT. The frontend keeps it in memory.
+      required: [message, token]
+
+    RefreshResponse:
       type: object
       properties:
         token:
           type: string
-          description: Short-lived JWT (15 min). Store in memory only.
-        user:
-          $ref: "#/components/schemas/User"
+      required: [token]
+
+    LogoutResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
 
     Chat:
       type: object
@@ -399,7 +429,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthTokens"
+                $ref: "#/components/schemas/RegisteredUserResponse"
         "400":
           description: Invalid input or duplicate username
           content:
@@ -430,7 +460,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthTokens"
+                $ref: "#/components/schemas/LoginResponse"
         "401":
           description: Invalid credentials
           content:
@@ -451,7 +481,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthTokens"
+                $ref: "#/components/schemas/RefreshResponse"
         "401":
           description: Missing or expired refresh token
 
@@ -464,6 +494,10 @@ paths:
       responses:
         "200":
           description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogoutResponse"
 
   /api/chats:
     post:

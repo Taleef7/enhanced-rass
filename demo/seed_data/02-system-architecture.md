@@ -13,7 +13,7 @@ The API gateway and central coordinator. Responsibilities:
 - API key management for M2M integrations
 - Proxying streaming requests to the RASS Engine
 
-### 2. RASS Engine Service (Port 3001)
+### 2. RASS Engine Service (Port 8000)
 Handles the core RAG pipeline:
 - Query understanding and HyDE expansion
 - Hybrid retrieval (vector KNN + BM25 via OpenSearch)
@@ -21,7 +21,7 @@ Handles the core RAG pipeline:
 - SSE streaming to the client
 - Supports OpenAI and Google Gemini providers
 
-### 3. Embedding Service (Port 3002)
+### 3. Embedding Service (Port 8001)
 Async document processing via BullMQ job queue:
 - File parsing (PDF via pdf-parse, DOCX via mammoth, TXT/MD)
 - Parent-child chunking (configurable: fixed_size, recursive_character, sentence_window)
@@ -66,7 +66,7 @@ Browser → MCP Server → RASS Engine → OpenSearch (KNN + BM25)
 
 - **Authentication**: Short-lived JWT (15 min) + HTTP-only refresh cookie (7 days)
 - **Authorization**: RBAC on knowledge bases (Owner/Editor/Viewer)
-- **Isolation**: Per-KB OpenSearch indices — no cross-tenant data leakage
+- **Isolation intent**: KB and workspace flows provision dedicated OpenSearch indices, although the active retrieval stage still uses the default configured search index
 - **Audit**: All sensitive actions logged to PostgreSQL AuditLog table
 - **Rate limiting**: 100 req/15 min general, 10 req/15 min for deletions
 
