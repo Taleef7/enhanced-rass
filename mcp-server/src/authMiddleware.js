@@ -6,6 +6,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const { prisma } = require("./prisma");
 const logger = require("./logger");
+const { authFailuresTotal } = require("./metrics");
 
 let JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -19,6 +20,7 @@ const authMiddleware = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader) {
+    authFailuresTotal.inc({ reason: "no_token" });
     return res.status(401).json({ error: "Unauthorized: No token provided." });
   }
 
@@ -26,11 +28,13 @@ const authMiddleware = async (req, res, next) => {
   if (authHeader.startsWith("ApiKey ")) {
     const rawKey = authHeader.slice(7).trim();
     if (!rawKey) {
+      authFailuresTotal.inc({ reason: "empty_api_key" });
       return res.status(401).json({ error: "Unauthorized: Empty API key." });
     }
 
     // Validate key format — must start with "rass_" prefix
     if (!rawKey.startsWith("rass_")) {
+      authFailuresTotal.inc({ reason: "invalid_format" });
       return res.status(401).json({ error: "Unauthorized: Invalid API key format." });
     }
 
@@ -54,6 +58,7 @@ const authMiddleware = async (req, res, next) => {
       }
 
       if (!matchedKey) {
+        authFailuresTotal.inc({ reason: "invalid_api_key" });
         return res.status(401).json({ error: "Unauthorized: Invalid API key." });
       }
 
@@ -75,6 +80,7 @@ const authMiddleware = async (req, res, next) => {
 
   // ── JWT Bearer token authentication ───────────────────────────────────────
   if (!authHeader.startsWith("Bearer ")) {
+    authFailuresTotal.inc({ reason: "no_token" });
     return res.status(401).json({ error: "Unauthorized: No token provided." });
   }
 
@@ -88,6 +94,7 @@ const authMiddleware = async (req, res, next) => {
     next();
   } catch (error) {
     logger.info("[AUTH] JWT verification failed:", error.message);
+    authFailuresTotal.inc({ reason: "invalid_jwt" });
     return res.status(401).json({ error: "Unauthorized: Invalid token." });
   }
 };

@@ -25,6 +25,7 @@ const { getLoader } = require("../ingestion/parser");
 const { createChunker } = require("../chunking");
 const logger = require("../logger");
 const { withSpan } = require("../tracing");
+const { ingestionDurationSeconds } = require("../metrics");
 const {
   CHUNKING_STRATEGY,
   PARENT_CHUNK_SIZE,
@@ -154,21 +155,24 @@ async function processIngestionJob(job) {
   let docs;
   let rawSha256;
   try {
-    const rawBytes = await fs.readFile(filePath);
-    rawSha256 = crypto.createHash("sha256").update(rawBytes).digest("hex");
+    await withSpan("ingestion.parse", { "file.name": originalName }, async () => {
+      const rawBytes = await fs.readFile(filePath);
+      rawSha256 = crypto.createHash("sha256").update(rawBytes).digest("hex");
 
-    const loader = getLoader(filePath, originalName);
-    docs = await loader.load();
+      const loader = getLoader(filePath, originalName);
+      docs = await loader.load();
 
-    docs.forEach((doc) => {
-      doc.metadata.userId = userId;
-      doc.metadata.originalFilename = originalName;
-      doc.metadata.uploadedAt = new Date().toISOString();
-      if (documentId) doc.metadata.documentId = documentId;
-      if (kbId) doc.metadata.kbId = kbId;
+      docs.forEach((doc) => {
+        doc.metadata.userId = userId;
+        doc.metadata.originalFilename = originalName;
+        doc.metadata.uploadedAt = new Date().toISOString();
+        if (documentId) doc.metadata.documentId = documentId;
+        if (kbId) doc.metadata.kbId = kbId;
+      });
     });
 
     stagesMs.parse = Math.round(performance.now() - t0);
+    ingestionDurationSeconds.observe({ stage: "parse" }, stagesMs.parse / 1000);
     logger.info(
       `[Worker] Parse stage: ${docs.length} pages in ${stagesMs.parse}ms`
     );
@@ -188,53 +192,56 @@ async function processIngestionJob(job) {
   let chunkingStrategy;
   let chunkingOptions;
   try {
-    const resolvedStrategy = chunkingStrategyOverride || CHUNKING_STRATEGY;
+    await withSpan("ingestion.chunk", { "file.name": originalName }, async () => {
+      const resolvedStrategy = chunkingStrategyOverride || CHUNKING_STRATEGY;
 
-    // Build strategy-specific default options
-    let defaultOptions;
-    if (resolvedStrategy === "sentence_window") {
-      defaultOptions = { windowSize: 10, overlapSentences: 2 };
-    } else {
-      defaultOptions = { chunkSize: PARENT_CHUNK_SIZE, chunkOverlap: PARENT_CHUNK_OVERLAP };
-    }
+      // Build strategy-specific default options
+      let defaultOptions;
+      if (resolvedStrategy === "sentence_window") {
+        defaultOptions = { windowSize: 10, overlapSentences: 2 };
+      } else {
+        defaultOptions = { chunkSize: PARENT_CHUNK_SIZE, chunkOverlap: PARENT_CHUNK_OVERLAP };
+      }
 
-    const parentChunker = createChunker(
-      resolvedStrategy,
-      chunkingOptionsOverride || defaultOptions
-    );
-    chunkingStrategy = parentChunker.name;
-    chunkingOptions = parentChunker.options;
-
-    parentChunks = await parentChunker.splitDocuments(docs);
-    const parentDocIds = parentChunks.map(() => uuidv4());
-
-    // Store parent chunks in Redis docstore
-    const docstore = getDocstore();
-    if (docstore) {
-      await docstore.mset(
-        parentChunks.map((chunk, i) => [parentDocIds[i], chunk])
+      const parentChunker = createChunker(
+        resolvedStrategy,
+        chunkingOptionsOverride || defaultOptions
       );
-    }
+      chunkingStrategy = parentChunker.name;
+      chunkingOptions = parentChunker.options;
 
-    // Child chunker (always fixed/recursive for dense indexing)
-    const childChunker = createChunker("recursive_character", {
-      chunkSize: CHILD_CHUNK_SIZE,
-      chunkOverlap: CHILD_CHUNK_OVERLAP,
+      parentChunks = await parentChunker.splitDocuments(docs);
+      const parentDocIds = parentChunks.map(() => uuidv4());
+
+      // Store parent chunks in Redis docstore
+      const docstore = getDocstore();
+      if (docstore) {
+        await docstore.mset(
+          parentChunks.map((chunk, i) => [parentDocIds[i], chunk])
+        );
+      }
+
+      // Child chunker (always fixed/recursive for dense indexing)
+      const childChunker = createChunker("recursive_character", {
+        chunkSize: CHILD_CHUNK_SIZE,
+        chunkOverlap: CHILD_CHUNK_OVERLAP,
+      });
+
+      for (let i = 0; i < parentChunks.length; i++) {
+        const subDocs = await childChunker.splitDocuments([parentChunks[i]]);
+        subDocs.forEach((doc) => {
+          doc.metadata.parentId = parentDocIds[i];
+          doc.metadata.userId = parentChunks[i].metadata.userId;
+          doc.metadata.originalFilename = parentChunks[i].metadata.originalFilename;
+          doc.metadata.uploadedAt = parentChunks[i].metadata.uploadedAt;
+          if (documentId) doc.metadata.documentId = documentId;
+          childChunks.push(doc);
+        });
+      }
     });
 
-    for (let i = 0; i < parentChunks.length; i++) {
-      const subDocs = await childChunker.splitDocuments([parentChunks[i]]);
-      subDocs.forEach((doc) => {
-        doc.metadata.parentId = parentDocIds[i];
-        doc.metadata.userId = parentChunks[i].metadata.userId;
-        doc.metadata.originalFilename = parentChunks[i].metadata.originalFilename;
-        doc.metadata.uploadedAt = parentChunks[i].metadata.uploadedAt;
-        if (documentId) doc.metadata.documentId = documentId;
-        childChunks.push(doc);
-      });
-    }
-
     stagesMs.chunk = Math.round(performance.now() - t1);
+    ingestionDurationSeconds.observe({ stage: "chunk" }, stagesMs.chunk / 1000);
     logger.info(
       `[Worker] Chunk stage: ${parentChunks.length} parents, ${childChunks.length} children in ${stagesMs.chunk}ms`
     );
@@ -250,21 +257,24 @@ async function processIngestionJob(job) {
   // ── Stage 3: Embed + Index ──────────────────────────────────────────────────
   const t2 = performance.now();
   try {
-    if (childChunks.length > 0) {
-      logger.info(
-        `[Worker] Indexing ${childChunks.length} child chunks in batches of ${BATCH_SIZE}`
-      );
-      for (let i = 0; i < childChunks.length; i += BATCH_SIZE) {
-        const batch = childChunks.slice(i, i + BATCH_SIZE);
-        const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-        logger.info(`  → Bulk batch #${batchNum}: ${batch.length} docs`);
-        await OpenSearchVectorStore.fromDocuments(batch, embeddings, {
-          client: openSearchClient,
-          indexName,
-        });
+    await withSpan("ingestion.embedAndIndex", { "chunks.count": childChunks.length }, async () => {
+      if (childChunks.length > 0) {
+        logger.info(
+          `[Worker] Indexing ${childChunks.length} child chunks in batches of ${BATCH_SIZE}`
+        );
+        for (let i = 0; i < childChunks.length; i += BATCH_SIZE) {
+          const batch = childChunks.slice(i, i + BATCH_SIZE);
+          const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+          logger.info(`  → Bulk batch #${batchNum}: ${batch.length} docs`);
+          await OpenSearchVectorStore.fromDocuments(batch, embeddings, {
+            client: openSearchClient,
+            indexName,
+          });
+        }
       }
-    }
+    });
     stagesMs.embedAndIndex = Math.round(performance.now() - t2);
+    ingestionDurationSeconds.observe({ stage: "embed_and_index" }, stagesMs.embedAndIndex / 1000);
     logger.info(
       `[Worker] Embed+Index stage: ${stagesMs.embedAndIndex}ms`
     );

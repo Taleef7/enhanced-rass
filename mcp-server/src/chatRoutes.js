@@ -1,10 +1,8 @@
 // mcp-server/src/chatRoutes.js
 const { Router } = require("express");
-const { PrismaClient } = require("@prisma/client");
+const { prisma } = require("./prisma");
 const authMiddleware = require("./authMiddleware.js");
 const logger = require("./logger");
-
-const prisma = new PrismaClient();
 const router = Router();
 
 // Apply authentication middleware to all chat routes

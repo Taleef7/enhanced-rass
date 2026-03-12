@@ -29,7 +29,14 @@ const sdk = new NodeSDK({
 });
 
 if (process.env.OTEL_ENABLED !== "false") {
-  sdk.start();
+  sdk.start().catch((err) => {
+    // Non-fatal: log but don't crash the service
+    const logger = require("./logger");
+    logger.warn({ err: err.message }, "[OTel] SDK start failed; tracing disabled.");
+  });
+} else {
+  const logger = require("./logger");
+  logger.warn("[OTel] Tracing disabled via OTEL_ENABLED=false.");
 }
 
 module.exports = sdk;

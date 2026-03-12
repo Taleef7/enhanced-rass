@@ -368,7 +368,10 @@ def main():
 
 
 def _push_metrics_to_gateway(gateway_url: str, aggregates: dict, run_id: str) -> None:
-    """Push evaluation metrics to Prometheus Pushgateway in text exposition format."""
+    """Push evaluation metrics to Prometheus Pushgateway in text exposition format.
+    Also pushes static baseline values (read from evaluation/BASELINE.json) so that
+    Grafana quality-trend panels can draw a reference baseline line.
+    """
     lines = [
         f"# HELP rass_eval_context_relevance_mean Mean context relevance score",
         f"# TYPE rass_eval_context_relevance_mean gauge",
@@ -387,6 +390,35 @@ def _push_metrics_to_gateway(gateway_url: str, aggregates: dict, run_id: str) ->
         f"rass_eval_latency_p95_ms {{run_id=\"{run_id}\"}} {aggregates.get('latency_ms', {}).get('p95', 0):.1f}",
         "",
     ]
+
+    # Push static baseline values so the dashboard can render a reference line
+    baseline_path = Path(__file__).parent / "BASELINE.json"
+    if baseline_path.exists():
+        try:
+            with open(baseline_path) as f:
+                baseline = json.load(f)
+            bm = baseline.get("metrics", {})
+            lines += [
+                f"# HELP rass_eval_context_relevance_baseline Baseline context relevance mean",
+                f"# TYPE rass_eval_context_relevance_baseline gauge",
+                f"rass_eval_context_relevance_baseline {bm.get('context_relevance_mean', 0):.4f}",
+                f"# HELP rass_eval_answer_faithfulness_baseline Baseline answer faithfulness mean",
+                f"# TYPE rass_eval_answer_faithfulness_baseline gauge",
+                f"rass_eval_answer_faithfulness_baseline {bm.get('answer_faithfulness_mean', 0):.4f}",
+                f"# HELP rass_eval_answer_relevance_baseline Baseline answer relevance mean",
+                f"# TYPE rass_eval_answer_relevance_baseline gauge",
+                f"rass_eval_answer_relevance_baseline {bm.get('answer_relevance_mean', 0):.4f}",
+                f"# HELP rass_eval_recall_at_5_baseline Baseline recall@5 mean",
+                f"# TYPE rass_eval_recall_at_5_baseline gauge",
+                f"rass_eval_recall_at_5_baseline {bm.get('recall_at_5_mean', 0):.4f}",
+                f"# HELP rass_eval_latency_p95_ms_baseline Baseline query latency p95 in milliseconds",
+                f"# TYPE rass_eval_latency_p95_ms_baseline gauge",
+                f"rass_eval_latency_p95_ms_baseline {bm.get('latency_p95_ms', 0):.1f}",
+                "",
+            ]
+        except Exception as exc:
+            log.warning(f"Could not read BASELINE.json for pushgateway: {exc}")
+
     payload = "\n".join(lines)
     push_url = f"{gateway_url.rstrip('/')}/metrics/job/rass_evaluation/run_id/{run_id}"
     try:

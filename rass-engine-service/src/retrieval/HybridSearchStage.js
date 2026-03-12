@@ -9,6 +9,7 @@ const { DEFAULT_K_OPENSEARCH_HITS, OPENSEARCH_INDEX_NAME } = require("../config"
 const { osClient } = require("../clients/opensearchClient");
 const logger = require("../logger");
 const { withSpan } = require("../tracing");
+const { opensearchQueryDurationSeconds } = require("../metrics");
 
 /**
  * Builds a hybrid KNN + keyword OpenSearch query.
@@ -99,7 +100,9 @@ class HybridSearchStage extends Stage {
 
     return withSpan("retrieval.hybridSearch", { "search.k": k, "search.hasUserFilter": !!userId }, async () => {
       try {
+        const searchStart = Date.now();
         const results = await osClient.search({ index: OPENSEARCH_INDEX_NAME, body: searchBody });
+        opensearchQueryDurationSeconds.observe({ operation: "hybrid_search" }, (Date.now() - searchStart) / 1000);
         const hits = results.body.hits.hits || [];
         logger.info(`[HybridSearchStage] Found ${hits.length} candidate chunks (status: ${results.statusCode}).`);
         context.candidateChunks = hits;

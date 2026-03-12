@@ -21,7 +21,7 @@ const logger = pino({
     censor: "[REDACTED]",
   },
   transport:
-    process.env.NODE_ENV !== "production"
+    process.env.PINO_PRETTY === "true"
       ? { target: "pino-pretty", options: { colorize: true, translateTime: "SYS:standard" } }
       : undefined,
 });

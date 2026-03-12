@@ -12,7 +12,7 @@ const { StreamAskBodySchema } = require("../schemas/askSchema");
 const { RetrievalHitSchema } = require("../schemas/retrievalSchemas");
 const { createPipeline } = require("../retrieval/createPipeline");
 const { createContext } = require("../retrieval/context");
-const logger = require("../logger");
+const { queryLatencySeconds } = require("../metrics");
 
 const router = express.Router();
 
@@ -30,28 +30,30 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
 
     // Register close handler early so we detect client disconnects during retrieval or generation.
     res.on("close", () => {
-      logger.info("[API /stream-ask] Client closed connection.");
+      req.log.info("[API /stream-ask] Client closed connection.");
     });
 
-    logger.info("---------------------------------");
-    logger.info(
+    req.log.info("---------------------------------");
+    req.log.info(
       `[API /stream-ask] Received query: "${query}", top_k: ${top_k}`
     );
-    if (userId) logger.info(`[API /stream-ask] Request from user: ${userId}`);
-    logger.info("---------------------------------");
+    if (userId) req.log.info(`[API /stream-ask] Request from user: ${userId}`);
+    req.log.info("---------------------------------");
 
     const topK = typeof top_k === "number" ? top_k : DEFAULT_TOP_K;
 
     // Run the full retrieval pipeline (HyDE → Embed → Search → Fetch → Dedup → Rerank → TopK)
     const context = createContext({ query, userId, documents, topK, config });
+    const pipelineStart = Date.now();
     const result = await pipeline.run(context);
+    queryLatencySeconds.observe({ stage: "pipeline" }, (Date.now() - pipelineStart) / 1000);
 
     if (res.writableEnded || res.destroyed) return;
 
     const selectedDocs = result.selectedDocs || [];
 
     if (selectedDocs.length === 0) {
-      logger.warn("[stream-ask] No documents found after pipeline.");
+      req.log.warn("[stream-ask] No documents found after pipeline.");
       writeSSE(res, {
         choices: [
           { delta: { content: "I could not find any relevant information." } },
@@ -69,7 +71,7 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
     const validHits = selectedDocs.filter((hit) => {
       const r = RetrievalHitSchema.safeParse(hit);
       if (!r.success) {
-        logger.warn(
+        req.log.warn(
           `[API /stream-ask] Excluding invalid hit (id=${hit._id}):`,
           r.error.issues
         );
@@ -88,13 +90,13 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
 
     if (res.writableEnded || res.destroyed) return;
 
-    logger.info(
+    req.log.info(
       `[Generation] Streaming with ${source_documents.length} documents...`
     );
 
     await streamAnswer(res, query, source_documents);
   } catch (e) {
-    logger.error("[API /stream-ask] Endpoint error:", e);
+    req.log.error({ err: e.message }, "[API /stream-ask] Endpoint error.");
     if (!res.headersSent) {
       res.status(500).json({ error: e.message || "Error processing request." });
     } else {

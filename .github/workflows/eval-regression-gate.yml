@@ -38,7 +38,7 @@ jobs:
 
       - name: Start RASS stack (core services only)
         run: |
-          docker compose up -d opensearch redis db embedding-service rass-engine-service mcp-server
+          OTEL_ENABLED=false docker compose up -d opensearch redis db embedding-service rass-engine-service mcp-server
           echo "Waiting for services to become healthy..."
           sleep 45
 
@@ -100,7 +100,7 @@ jobs:
             --test-set evaluation/datasets/test_set.json \
             --output "$OUTPUT_FILE" \
             --top-k 5 \
-            --max-queries 5 || true
+            --max-queries 5
 
           echo "output_file=$OUTPUT_FILE" >> "$GITHUB_OUTPUT"
           echo "timestamp=$TIMESTAMP" >> "$GITHUB_OUTPUT"

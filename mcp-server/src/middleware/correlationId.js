@@ -14,7 +14,8 @@ const logger = require("../logger");
  *   1. Reads or generates a correlation ID.
  *   2. Attaches it to req.correlationId.
  *   3. Sets the x-correlation-id response header.
- *   4. Attaches a child pino logger to req.log with correlationId + userId context.
+ *   4. Attaches a child pino logger to req.log with correlationId, method, and path context.
+ *      (User context can be added later by authMiddleware via req.log = req.log.child({ userId }).)
  */
 function correlationIdMiddleware(req, res, next) {
   const correlationId = req.headers["x-correlation-id"] || uuidv4();
