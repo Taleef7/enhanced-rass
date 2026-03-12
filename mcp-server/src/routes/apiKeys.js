@@ -46,6 +46,16 @@ router.post("/api/api-keys", apiLimiter, authMiddleware, async (req, res) => {
   }
 
   try {
+    // Validate expiresAt if provided
+    let parsedExpiresAt = null;
+    if (expiresAt !== undefined && expiresAt !== null) {
+      const ts = Date.parse(expiresAt);
+      if (Number.isNaN(ts)) {
+        return res.status(400).json({ error: "Invalid 'expiresAt' value; expected a valid ISO-8601 date string." });
+      }
+      parsedExpiresAt = new Date(ts);
+    }
+
     // Generate a cryptographically secure random key with a recognisable prefix
     const rawKey = `rass_${crypto.randomBytes(32).toString("hex")}`;
     const keyHash = await bcrypt.hash(rawKey, 10);
@@ -55,7 +65,7 @@ router.post("/api/api-keys", apiLimiter, authMiddleware, async (req, res) => {
         name: name.trim(),
         keyHash,
         userId,
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        expiresAt: parsedExpiresAt,
       },
       select: { id: true, name: true, expiresAt: true, createdAt: true },
     });

@@ -88,9 +88,20 @@ ALTER TABLE "Document"
     ADD COLUMN "purgedAt" TIMESTAMP(3),
     ADD COLUMN "purgedBy" TEXT;
 
--- AlterTable: AuditLog — replace with enhanced schema
--- Drop old AuditLog and recreate with new fields
-DROP TABLE IF EXISTS "AuditLog";
+-- AlterTable: AuditLog — preserve existing rows by renaming to legacy, then recreate
+-- This avoids data loss on upgrade. The old table is kept as AuditLog_legacy.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_name = 'AuditLog'
+          AND table_schema = current_schema()
+    ) THEN
+        ALTER TABLE "AuditLog" RENAME TO "AuditLog_legacy";
+    END IF;
+END
+$$;
 
 CREATE TABLE "AuditLog" (
     "id" TEXT NOT NULL,

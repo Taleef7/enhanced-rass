@@ -209,6 +209,10 @@ router.post("/api/organizations/:orgId/members", apiLimiter, authMiddleware, asy
   const userId = req.userId;
   const { targetUserId, role } = req.body;
 
+  if (!targetUserId || typeof targetUserId !== "string") {
+    return res.status(400).json({ error: "targetUserId is required." });
+  }
+
   const callerRole = await assertOrgRole(userId, orgId, "ADMIN", res);
   if (callerRole === false) return;
 
@@ -216,6 +220,12 @@ router.post("/api/organizations/:orgId/members", apiLimiter, authMiddleware, asy
   const memberRole = validRoles.includes(role) ? role : "MEMBER";
 
   try {
+    // Verify the target user exists before upserting (avoids FK constraint 500)
+    const targetUser = await prisma.user.findUnique({ where: { id: targetUserId }, select: { id: true } });
+    if (!targetUser) {
+      return res.status(404).json({ error: "Target user not found." });
+    }
+
     const member = await prisma.orgMember.upsert({
       where: { orgId_userId: { orgId, userId: targetUserId } },
       update: { role: memberRole },
@@ -251,28 +261,55 @@ router.post("/api/organizations/:orgId/workspaces", apiLimiter, authMiddleware, 
     return res.status(400).json({ error: "Workspace name is required." });
   }
 
+  // Validate optional numeric fields
+  let parsedQuotaMb = 500;
+  if (quotaMb !== undefined && quotaMb !== null) {
+    const q = Number(quotaMb);
+    if (!Number.isFinite(q) || !Number.isInteger(q) || q <= 0) {
+      return res.status(400).json({ error: "quotaMb must be a positive integer." });
+    }
+    parsedQuotaMb = q;
+  }
+
+  let parsedRetentionDays = null;
+  if (retentionDays !== undefined && retentionDays !== null) {
+    const r = Number(retentionDays);
+    if (!Number.isFinite(r) || !Number.isInteger(r) || r < 0) {
+      return res.status(400).json({ error: "retentionDays must be a non-negative integer." });
+    }
+    parsedRetentionDays = r;
+  }
+
   const callerRole = await assertOrgRole(userId, orgId, "ADMIN", res);
   if (callerRole === false) return;
 
   const indexName = generateIndexName();
 
   try {
-    // Provision OpenSearch index
+    // Provision OpenSearch index BEFORE creating the DB record.
+    // On DB failure below, we best-effort delete the index to avoid orphaning it.
     await provisionWorkspaceIndex(indexName, EMBED_DIM);
 
-    const workspace = await prisma.workspace.create({
-      data: {
-        orgId,
-        name: name.trim(),
-        openSearchIndex: indexName,
-        quotaMb: quotaMb || 500,
-        retentionDays: retentionDays || null,
-        members: {
-          create: { userId, role: "ADMIN" },
+    let workspace;
+    try {
+      workspace = await prisma.workspace.create({
+        data: {
+          orgId,
+          name: name.trim(),
+          openSearchIndex: indexName,
+          quotaMb: parsedQuotaMb,
+          retentionDays: parsedRetentionDays,
+          members: {
+            create: { userId, role: "ADMIN" },
+          },
         },
-      },
-      include: { members: true },
-    });
+        include: { members: true },
+      });
+    } catch (dbErr) {
+      // Roll back the provisioned OS index to avoid orphaning it
+      await deleteWorkspaceIndex(indexName);
+      throw dbErr;
+    }
 
     await writeAuditLog({
       userId,
@@ -454,9 +491,21 @@ router.delete("/api/workspaces/:workspaceId/members/:memberId", deleteLimiter, a
   if (callerRole === false) return;
 
   try {
-    await prisma.workspaceMember.delete({
+    // IDOR protection: verify the member record belongs to this workspace before deleting
+    const membership = await prisma.workspaceMember.findUnique({
       where: { id: memberId },
     });
+
+    if (!membership) {
+      return res.status(404).json({ error: "Member not found." });
+    }
+
+    if (membership.workspaceId !== workspaceId) {
+      // Do not reveal existence of members in other workspaces
+      return res.status(404).json({ error: "Member not found in this workspace." });
+    }
+
+    await prisma.workspaceMember.delete({ where: { id: memberId } });
 
     await writeAuditLog({
       userId,
@@ -465,7 +514,7 @@ router.delete("/api/workspaces/:workspaceId/members/:memberId", deleteLimiter, a
       resourceType: "Workspace",
       resourceId: workspaceId,
       outcome: "SUCCESS",
-      metadata: { memberId },
+      metadata: { memberId, removedUserId: membership.userId },
       req,
     });
 
@@ -492,6 +541,19 @@ router.patch("/api/workspaces/:workspaceId/members/:memberId", apiLimiter, authM
   }
 
   try {
+    // IDOR protection: verify the member record belongs to this workspace before updating
+    const membership = await prisma.workspaceMember.findUnique({
+      where: { id: memberId },
+    });
+
+    if (!membership) {
+      return res.status(404).json({ error: "Member not found." });
+    }
+
+    if (membership.workspaceId !== workspaceId) {
+      return res.status(404).json({ error: "Member not found in this workspace." });
+    }
+
     const updated = await prisma.workspaceMember.update({
       where: { id: memberId },
       data: { role },
@@ -504,7 +566,7 @@ router.patch("/api/workspaces/:workspaceId/members/:memberId", apiLimiter, authM
       resourceType: "Workspace",
       resourceId: workspaceId,
       outcome: "SUCCESS",
-      metadata: { memberId, newRole: role },
+      metadata: { memberId, targetUserId: membership.userId, newRole: role, previousRole: membership.role },
       req,
     });
 
@@ -526,9 +588,50 @@ router.patch("/api/workspaces/:id", apiLimiter, authMiddleware, async (req, res)
   if (role === false) return;
 
   const updateData = {};
-  if (name !== undefined) updateData.name = name;
-  if (quotaMb !== undefined) updateData.quotaMb = quotaMb;
-  if (retentionDays !== undefined) updateData.retentionDays = retentionDays;
+
+  // Validate and normalize name if provided
+  if (name !== undefined) {
+    if (typeof name !== "string") {
+      return res.status(400).json({ error: "name must be a string." });
+    }
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: "name cannot be empty." });
+    }
+    if (trimmedName.length > 255) {
+      return res.status(400).json({ error: "name must be at most 255 characters." });
+    }
+    updateData.name = trimmedName;
+  }
+
+  // Validate quotaMb if provided
+  if (quotaMb !== undefined && quotaMb !== null) {
+    const q = Number(quotaMb);
+    if (!Number.isFinite(q) || !Number.isInteger(q) || q <= 0) {
+      return res.status(400).json({ error: "quotaMb must be a positive integer." });
+    }
+    updateData.quotaMb = q;
+  }
+
+  // Validate retentionDays if provided (null = disable retention)
+  if (retentionDays !== undefined) {
+    if (retentionDays === null) {
+      updateData.retentionDays = null;
+    } else {
+      const r = Number(retentionDays);
+      if (!Number.isFinite(r) || !Number.isInteger(r) || r < 0) {
+        return res.status(400).json({ error: "retentionDays must be a non-negative integer or null to disable." });
+      }
+      if (r > 3650) {
+        return res.status(400).json({ error: "retentionDays cannot exceed 3650 (10 years)." });
+      }
+      updateData.retentionDays = r;
+    }
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    return res.status(400).json({ error: "No valid fields provided for update." });
+  }
 
   try {
     const updated = await prisma.workspace.update({

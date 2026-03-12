@@ -15,10 +15,11 @@ class ChatAPI {
   }
 
   getAuthHeaders() {
-    return {
-      Authorization: this._token ? `Bearer ${this._token}` : "",
-      "Content-Type": "application/json",
-    };
+    const headers = { "Content-Type": "application/json" };
+    if (this._token) {
+      headers["Authorization"] = `Bearer ${this._token}`;
+    }
+    return headers;
   }
 
   async fetchChats() {

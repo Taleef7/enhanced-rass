@@ -8,10 +8,9 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
-const { PrismaClient } = require('@prisma/client');
+const { prisma } = require('./prisma');
 const { writeAuditLog } = require('./services/auditService');
 
-const prisma = new PrismaClient();
 const router = Router();
 
 // Rate limiters for auth endpoints
@@ -202,6 +201,27 @@ router.post('/refresh', refreshLimiter, async (req, res) => {
 
     const user = await prisma.user.findUnique({ where: { id: stored.userId } });
     if (!user) {
+      // User referenced by the refresh token no longer exists.
+      // Clear the cookie so the client stops retrying, revoke all tokens for that userId,
+      // and write a failure audit event.
+      res.clearCookie('refreshToken', { path: '/api/auth/refresh' });
+      try {
+        await prisma.refreshToken.updateMany({
+          where: { userId: stored.userId, usedAt: null },
+          data: { usedAt: new Date() },
+        });
+      } catch (_) {
+        // Ignore — best-effort cleanup
+      }
+      await writeAuditLog({
+        userId: stored.userId,
+        action: 'TOKEN_REFRESH_FAILED',
+        resourceType: 'User',
+        resourceId: stored.userId,
+        outcome: 'FAILURE',
+        metadata: { reason: 'user_not_found' },
+        req,
+      });
       return res.status(401).json({ error: 'User not found.' });
     }
 

@@ -8,10 +8,7 @@
 const axios = require("axios");
 const { prisma } = require("../prisma");
 const { writeAuditLog } = require("./auditService");
-const { OPENSEARCH_HOST, OPENSEARCH_PORT } = require("../config");
-
-const REDIS_SERVICE_URL =
-  process.env.EMBEDDING_SERVICE_URL || "http://embedding-service:8001";
+const { OPENSEARCH_HOST, OPENSEARCH_PORT, EMBEDDING_SERVICE_BASE_URL } = require("../config");
 
 /** Convert days to milliseconds for retention cutoff calculations. */
 function daysToMs(days) {
@@ -51,9 +48,22 @@ async function purgeDocument(documentId, requestedBy = "system") {
   try {
     const indexName = doc.openSearchIndex || "knowledge_base";
     const osUrl = `http://${OPENSEARCH_HOST}:${OPENSEARCH_PORT}`;
+    // Use multi-variant query to be robust across different metadata field mappings
+    // (text vs keyword) in OpenSearch
     const deleteRes = await axios.post(
       `${osUrl}/${indexName}/_delete_by_query`,
-      { query: { term: { "metadata.documentId": documentId } } },
+      {
+        query: {
+          bool: {
+            should: [
+              { term: { "metadata.documentId": documentId } },
+              { term: { "metadata.documentId.keyword": documentId } },
+              { match_phrase: { "metadata.documentId": documentId } },
+            ],
+            minimum_should_match: 1,
+          },
+        },
+      },
       { headers: { "Content-Type": "application/json" }, timeout: 30000 }
     );
     summary.openSearchChunksRemoved = deleteRes.data?.deleted || 0;
@@ -63,10 +73,14 @@ async function purgeDocument(documentId, requestedBy = "system") {
   }
 
   // 2. Remove Redis parent keys (best-effort) ───────────────────────────────
+  // Calls the embedding-service internal endpoint to delete parent document chunks
+  // stored in Redis by their key prefix (set during ingestion).
+  // Note: The embedding-service must expose DELETE /internal/redis-parents for this
+  // to take effect. Without it, the call degrades silently (best-effort).
   if (doc.redisKeyPrefix) {
     try {
       const resp = await axios.delete(
-        `${REDIS_SERVICE_URL}/internal/redis-parents`,
+        `${EMBEDDING_SERVICE_BASE_URL}/internal/redis-parents`,
         {
           data: { keyPrefix: doc.redisKeyPrefix },
           headers: { "Content-Type": "application/json" },
@@ -76,7 +90,7 @@ async function purgeDocument(documentId, requestedBy = "system") {
       summary.redisKeysRemoved = resp.data?.deleted || 0;
     } catch (err) {
       summary.errors.push(`Redis purge error: ${err.message}`);
-      console.warn(`[PurgeService] Redis purge failed for ${documentId}: ${err.message}`);
+      console.warn(`[PurgeService] Redis parent purge failed for ${documentId} (best-effort): ${err.message}`);
     }
   }
 

@@ -5,10 +5,12 @@
 
 import React, { createContext, useState, useContext, useEffect, useRef } from "react";
 import axios from "axios";
+import { API_BASE_URL } from "../apiClient";
 
 const AuthContext = createContext(null);
 
-const API_BASE = "http://localhost:8080/api";
+// Use the same base URL as the rest of the app (env-driven, not hardcoded)
+const API_BASE = API_BASE_URL;
 
 // Named constants for refresh scheduling
 const REFRESH_BUFFER_MS = 60 * 1000;  // Refresh 1 minute before JWT expiry

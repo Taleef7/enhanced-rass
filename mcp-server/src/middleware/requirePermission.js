@@ -48,8 +48,10 @@ function requirePermission(permission) {
           select: { workspaceId: true },
         });
         workspaceId = doc?.workspaceId || null;
-      } catch (_) {
-        // ignore — let the route handler return 404 properly
+      } catch (err) {
+        // DB error during workspace resolution — fail closed to prevent unauthorized access
+        console.error("[requirePermission] Error during document workspace lookup:", err.message);
+        return res.status(500).json({ error: "Internal server error during workspace resolution." });
       }
     }
 

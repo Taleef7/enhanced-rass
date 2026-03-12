@@ -139,7 +139,15 @@ router.delete("/api/documents/:id", deleteLimiter, authMiddleware, requirePermis
   const userId = req.userId;
 
   try {
-    const doc = await prisma.document.findFirst({ where: { id, userId } });
+    // Look up by id only — workspace members may delete documents they didn't upload.
+    // Ownership is enforced by the requirePermission middleware (workspace ADMIN role
+    // required); for personal (non-workspace) documents we still apply userId scoping.
+    const workspaceId = req.workspaceId || null; // populated by requirePermission if workspace context
+    const doc = await prisma.document.findFirst({
+      where: workspaceId
+        ? { id } // workspace context: role already verified by middleware
+        : { id, userId }, // personal context: must own the document
+    });
     if (!doc) {
       return res.status(404).json({ error: "Document not found." });
     }

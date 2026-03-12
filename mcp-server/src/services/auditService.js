@@ -33,8 +33,12 @@ async function writeAuditLog({
   req = null,
 } = {}) {
   try {
+    // Use req.ip (Express-resolved, respects trust proxy setting) instead of
+    // X-Forwarded-For to prevent client IP spoofing.
+    // Enable `app.set('trust proxy', 1)` in index.js if the server sits behind
+    // a trusted reverse proxy (Nginx, AWS ALB, etc.) to correctly resolve client IPs.
     const ipAddress = req
-      ? (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || null)
+      ? (req.ip || req.socket?.remoteAddress || null)
       : null;
     const userAgent = req ? (req.headers["user-agent"] || null) : null;
 
