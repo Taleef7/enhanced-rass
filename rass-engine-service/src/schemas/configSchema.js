@@ -82,6 +82,9 @@ const ConfigSchema = z
     // Phase G #136: Multi-modal / vision
     VISION_ENABLED: z.boolean().optional().default(false),
 
+    // LLM generation limit
+    LLM_MAX_TOKENS: z.number().int().positive().optional().default(2048),
+
     // RAG parameters
     EMBED_DIM: z
       .number()

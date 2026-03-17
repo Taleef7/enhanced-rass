@@ -8,6 +8,7 @@ const {
   OPENAI_MODEL_NAME,
   GEMINI_MODEL_NAME,
   OLLAMA_LLM_MODEL,
+  LLM_MAX_TOKENS,
 } = require("../config");
 const { buildGenerationPrompt } = require("./generator");
 const { CitationSchema } = require("../schemas/retrievalSchemas");
@@ -37,6 +38,28 @@ function writeSSE(res, data) {
           ...data,
         });
   res.write(`data: ${chunk}\n\n`);
+}
+
+function buildGenerationErrorMessage(error) {
+  const message = error?.message || "";
+
+  if (error?.status === 404 && /no longer available to new users/i.test(message)) {
+    return (
+      "Generation could not run because the configured Gemini model is no " +
+      "longer available for new users. Update config.yml to use a newer " +
+      "model such as gemini-2.5-flash, then restart the backend."
+    );
+  }
+
+  if (error?.status === 429 && /quota/i.test(error?.message || "")) {
+    return (
+      "Generation could not run because the configured Gemini API key has no " +
+      "available quota for the current model. Enable billing or switch the LLM " +
+      "provider, then try again."
+    );
+  }
+
+  return "Sorry, an error occurred during generation.";
 }
 
 /**
@@ -158,7 +181,7 @@ async function streamAnswer(res, query, sourceDocuments) {
         model,
         messages: [{ role: "user", content: generationPrompt }],
         temperature: 0.3,
-        max_tokens: 500,
+        max_tokens: LLM_MAX_TOKENS,
         stream: true,
       });
       for await (const chunk of completionStream) {
@@ -199,12 +222,30 @@ async function streamAnswer(res, query, sourceDocuments) {
       ],
     });
   } catch (e) {
-    logger.error("[Generation] Error during LLM stream:", e);
+    const structuredCitations = buildStructuredCitations(
+      sourceDocuments,
+      fullAnswer
+    );
+    const errorMessage = buildGenerationErrorMessage(e);
+
+    logger.error({ err: e }, "[Generation] Error during LLM stream.");
     writeSSE(res, {
       choices: [
         {
           delta: {
-            content: "\n\nSorry, an error occurred during generation.",
+            content: `\n\n${errorMessage}`,
+          },
+        },
+      ],
+    });
+    writeSSE(res, {
+      choices: [
+        {
+          delta: {
+            custom_meta: {
+              type: "citations",
+              citations: structuredCitations,
+            },
           },
         },
       ],

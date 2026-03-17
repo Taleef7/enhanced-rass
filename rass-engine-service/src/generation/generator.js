@@ -2,7 +2,7 @@
 // Non-streaming LLM answer generation from assembled context.
 
 const { llmClient } = require("../clients/llmClient");
-const { LLM_PROVIDER, OPENAI_MODEL_NAME, OLLAMA_LLM_MODEL } = require("../config");
+const { LLM_PROVIDER, OPENAI_MODEL_NAME, OLLAMA_LLM_MODEL, LLM_MAX_TOKENS } = require("../config");
 const logger = require("../logger");
 
 /**
@@ -40,6 +40,24 @@ function getOpenAICompatibleModel() {
   return OPENAI_MODEL_NAME;
 }
 
+async function generateFromPrompt(
+  prompt,
+  { temperature = 0.3, maxTokens = LLM_MAX_TOKENS } = {}
+) {
+  if (LLM_PROVIDER === "openai" || LLM_PROVIDER === "ollama") {
+    const completion = await llmClient.chat.completions.create({
+      model: getOpenAICompatibleModel(),
+      messages: [{ role: "user", content: prompt }],
+      temperature,
+      max_tokens: maxTokens,
+    });
+    return completion.choices[0].message.content;
+  }
+
+  const result = await llmClient.generateContent(prompt);
+  return result.response.text();
+}
+
 /**
  * Generates a non-streaming answer from the LLM given source documents and a query.
  *
@@ -53,19 +71,10 @@ async function generateAnswer(query, sourceDocuments) {
 
   let answer = "Sorry, I was unable to generate an answer.";
   try {
-    if (LLM_PROVIDER === "openai" || LLM_PROVIDER === "ollama") {
-      // Both OpenAI and Ollama use the OpenAI-compatible SDK
-      const completion = await llmClient.chat.completions.create({
-        model: getOpenAICompatibleModel(),
-        messages: [{ role: "user", content: generationPrompt }],
-        temperature: 0.3,
-        max_tokens: 500,
-      });
-      answer = completion.choices[0].message.content;
-    } else {
-      const result = await llmClient.generateContent(generationPrompt);
-      answer = result.response.text();
-    }
+    answer = await generateFromPrompt(generationPrompt, {
+      temperature: 0.3,
+      maxTokens: LLM_MAX_TOKENS,
+    });
   } catch (e) {
     logger.error("[Generation] Error calling LLM:", e);
   }
@@ -73,4 +82,8 @@ async function generateAnswer(query, sourceDocuments) {
   return answer;
 }
 
-module.exports = { generateAnswer, buildGenerationPrompt };
+module.exports = {
+  generateAnswer,
+  buildGenerationPrompt,
+  generateFromPrompt,
+};

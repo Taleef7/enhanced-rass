@@ -11,13 +11,13 @@
 # Provider Choices
 # ---------------------------------------------------------------------------
 # type: enum["openai", "gemini"] — provider for document embeddings
-EMBEDDING_PROVIDER: "gemini"
+EMBEDDING_PROVIDER: "ollama"
 
 # type: enum["openai", "gemini"] — provider for LLM answer generation
-LLM_PROVIDER: "gemini"
+LLM_PROVIDER: "ollama"
 
 # type: enum["openai", "gemini"] — provider for query-term embeddings at retrieval time
-SEARCH_TERM_EMBEDDING_PROVIDER: "gemini"
+SEARCH_TERM_EMBEDDING_PROVIDER: "ollama"
 
 # ---------------------------------------------------------------------------
 # Model Names
@@ -27,14 +27,16 @@ SEARCH_TERM_EMBEDDING_PROVIDER: "gemini"
 OPENAI_EMBED_MODEL_NAME: "text-embedding-3-large"
 
 # type: string — Google Gemini embedding model (used when EMBEDDING_PROVIDER="gemini")
-GEMINI_EMBED_MODEL_NAME: "text-embedding-004"
+GEMINI_EMBED_MODEL_NAME: "gemini-embedding-001"
+OLLAMA_EMBED_MODEL: "nomic-embed-text"
 
 # LLM (generator) models — the active model is determined by LLM_PROVIDER
 # type: string — OpenAI chat model (used when LLM_PROVIDER="openai")
 OPENAI_MODEL_NAME: "gpt-4.1-nano"
 
 # type: string — Google Gemini chat model (used when LLM_PROVIDER="gemini")
-GEMINI_MODEL_NAME: "gemini-2.0-flash"
+GEMINI_MODEL_NAME: "gemini-2.5-flash"
+OLLAMA_LLM_MODEL: "llama3.2"
 
 # Reranker (future Phase B feature)
 # type: string — cross-encoder model for reranking retrieved documents
@@ -80,6 +82,7 @@ RERANKER_PORT: 8008
 #   OpenAI text-embedding-3-large → 3072  (or 1536 with truncation)
 #   Google text-embedding-004     → 768
 EMBED_DIM: 768
+OLLAMA_BASE_URL: "http://ollama:11434"
 
 # Small-to-Big Retrieval chunking strategy (parent/child)
 # type: integer, positive — max characters per parent chunk stored in Redis
@@ -103,3 +106,7 @@ OPENSEARCH_SCORE_THRESHOLD: 0.1
 search:
   # type: integer, positive — maximum source documents passed to the LLM for generation
   DEFAULT_TOP_K: 50
+
+# --- LLM Generation Limits ---
+# type: integer — maximum number of tokens the LLM may generate per response.
+LLM_MAX_TOKENS: 2048

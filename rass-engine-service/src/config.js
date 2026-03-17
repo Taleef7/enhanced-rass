@@ -64,4 +64,6 @@ module.exports = {
   FEEDBACK_BOOST_ENABLED: config.FEEDBACK_BOOST_ENABLED,
   // Phase G #136: Vision/multi-modal
   VISION_ENABLED: config.VISION_ENABLED,
+  // LLM generation limit
+  LLM_MAX_TOKENS: config.LLM_MAX_TOKENS,
 };
