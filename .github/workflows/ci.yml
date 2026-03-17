@@ -9,7 +9,7 @@ on:
 jobs:
   # ── Backend: mcp-server ─────────────────────────────────────────────────────
   mcp-server:
-    name: mcp-server (lint + test + openapi)
+    name: mcp-server (test + openapi)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -19,9 +19,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: mcp-server/package-lock.json
-      - run: npm ci
+      - run: npm install
       - run: npm test
       - run: npm run validate:api
 
@@ -37,9 +35,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: rass-engine-service/package-lock.json
-      - run: npm ci
+      - run: npm install
       - run: npm test
 
   # ── Backend: embedding-service ──────────────────────────────────────────────
@@ -54,9 +50,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: embedding-service/package-lock.json
-      - run: npm ci
+      - run: npm install --legacy-peer-deps
       - run: npm test
 
   # ── Frontend: build + test ───────────────────────────────────────────────────
@@ -71,9 +65,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
+      - run: npm install --legacy-peer-deps
       - run: npm test -- --watchAll=false --passWithNoTests
         env:
           CI: true
