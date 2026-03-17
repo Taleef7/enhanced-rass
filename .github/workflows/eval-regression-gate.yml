@@ -30,11 +30,9 @@ jobs:
 
       - name: Create .env file for services
         run: |
-          cat > .env << 'EOF'
-          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-          JWT_SECRET=ci-regression-secret
-          EOF
+          printf 'OPENAI_API_KEY=%s\nGEMINI_API_KEY=%s\nJWT_SECRET=ci-regression-secret\n' \
+            '${{ secrets.OPENAI_API_KEY }}' \
+            '${{ secrets.GEMINI_API_KEY }}' > .env
 
       - name: Start RASS stack (core services only)
         run: |
@@ -50,7 +48,7 @@ jobs:
               echo "Services ready on attempt $i."
               break
             fi
-            echo "Attempt $i/12 — not ready yet, waiting 10s..."
+            echo "Attempt $i/12 - not ready yet, waiting 10s..."
             sleep 10
           done
 
@@ -132,7 +130,8 @@ jobs:
             }
             const data = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
             const agg = data.aggregates || {};
-            const status = '${{ steps.regression_check.outcome }}' === 'success' ? '✅ Passed' : '❌ Regression Detected';
+            const passed = '${{ steps.regression_check.outcome }}' === 'success';
+            const status = passed ? 'PASSED' : 'REGRESSION DETECTED';
 
             const rows = Object.entries(agg)
               .filter(([k]) => k !== 'latency_ms')
@@ -140,7 +139,7 @@ jobs:
               .join('\n');
 
             const latency = agg.latency_ms || {};
-            const body = `## 🧪 Evaluation Regression Gate — ${status}
+            const body = `## Evaluation Regression Gate -- ${status}
 
 **Run**: \`${{ steps.run_eval.outputs.timestamp }}\` | **Queries evaluated**: ${data.n_queries ?? 'N/A'} (lightweight CI subset)
 
