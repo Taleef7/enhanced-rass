@@ -1,10 +1,10 @@
 node_modules
 .DS_Store
 package-lock.json
+!frontend/package-lock.json
 dist
 evaluation/trulens_evaluator/venv/
 evaluation/trulens_evaluator/__pycache__/
-package-lock.json
 rass-engine-service/pnpm-lock.yaml
 evaluation/trulens_evaluator/default.sqlite
 .env
