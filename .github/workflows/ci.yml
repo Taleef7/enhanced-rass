@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Backend: mcp-server ─────────────────────────────────────────────────────
+  mcp-server:
+    name: mcp-server (lint + test + openapi)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mcp-server/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run validate:api
+
+  # ── Backend: rass-engine-service ────────────────────────────────────────────
+  rass-engine:
+    name: rass-engine-service (test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rass-engine-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: rass-engine-service/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  # ── Backend: embedding-service ──────────────────────────────────────────────
+  embedding-service:
+    name: embedding-service (test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: embedding-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: embedding-service/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  # ── Frontend: build + test ───────────────────────────────────────────────────
+  frontend:
+    name: frontend (test + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test -- --watchAll=false --passWithNoTests
+        env:
+          CI: true
+      - run: npm run build
+        env:
+          CI: false  # suppress react-scripts build warnings as errors
