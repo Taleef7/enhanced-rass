@@ -12,7 +12,7 @@ const { queryLatencySeconds, llmApiErrorsTotal } = require("../metrics");
 const router = express.Router();
 
 router.post("/api/stream-ask", authMiddleware, validateBody(StreamAskBodySchema), async (req, res) => {
-  const { query, documents } = req.validatedBody;
+  const { query, documents, kbId } = req.validatedBody;
   const userId = req.userId;
 
   req.log.info(`[Stream Proxy] Query from user: ${userId}`);
@@ -24,7 +24,7 @@ router.post("/api/stream-ask", authMiddleware, validateBody(StreamAskBodySchema)
 
     const response = await axios.post(
       rassEngineStreamUrl,
-      { query, documents, userId },
+      { query, documents, userId, kbId },
       {
         responseType: "stream",
         headers: { "x-correlation-id": req.correlationId },

@@ -15,6 +15,7 @@ const StreamAskBodySchema = z.object({
     .positive("top_k must be a positive integer")
     .optional(),
   documents: z.array(z.string()).optional(),
+  kbId: z.string().uuid("kbId must be a valid UUID").optional(),
 });
 
 module.exports = { StreamAskBodySchema };

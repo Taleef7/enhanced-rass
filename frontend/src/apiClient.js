@@ -3,8 +3,9 @@
 // All API calls that need auth accept a token parameter from useAuth().
 import axios from "axios";
 
-// The base URL for all our backend requests
-const API_BASE_URL = "http://localhost:8080/api";
+// Prefer a relative path so the dev proxy and production same-origin setups
+// work without hardcoded host assumptions.
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "/api";
 
 // Helper to read token from memory — falls back to localStorage for backward compat
 // during the session migration period.
@@ -42,18 +43,43 @@ export const logoutUser = (token) => {
   );
 };
 
-export const uploadFile = (file, kbId = null, chunkingStrategy = null, token = null) => {
+export const uploadFile = async (
+  file,
+  kbId = null,
+  chunkingStrategy = null,
+  token = null
+) => {
   const formData = new FormData();
   formData.append("file", file);
   if (kbId) formData.append("kbId", kbId);
   if (chunkingStrategy) formData.append("chunkingStrategy", chunkingStrategy);
 
-  return apiClient.post("/embed-upload", formData, {
+  const response = await fetch(`${API_BASE_URL}/embed-upload`, {
+    method: "POST",
     headers: {
-      "Content-Type": "multipart/form-data",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
+    body: formData,
+    credentials: "include",
   });
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const error = new Error(
+      data?.error || `Request failed with status code ${response.status}`
+    );
+    error.response = {
+      status: response.status,
+      data,
+    };
+    throw error;
+  }
+
+  return {
+    data,
+    status: response.status,
+  };
 };
 
 export const pollIngestionStatus = (jobId, token = null) => {
@@ -164,6 +190,9 @@ export const fetchAuditLogs = (params = {}, token = null) => {
   });
 };
 
+const STREAM_MAX_RETRIES = 3;
+const STREAM_BASE_DELAY_MS = 1000;
+
 export const streamQuery = async (
   query,
   documents = [],
@@ -171,59 +200,96 @@ export const streamQuery = async (
   onSources,
   signal,
   token = null,
-  onContext = null
+  onContext = null,
+  onReconnecting = null,
+  kbId = null
 ) => {
-  const response = await fetch("/api/stream-ask", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ query }),
-    signal,
-    credentials: "include",
-  });
+  let attempt = 0;
 
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
+  while (attempt <= STREAM_MAX_RETRIES) {
+    if (signal?.aborted) return;
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
+    if (attempt > 0) {
+      const delay = STREAM_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+      onReconnecting && onReconnecting(attempt);
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, delay);
+        signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(new DOMException("AbortError", "AbortError"));
+        }, { once: true });
+      });
+      if (signal?.aborted) return;
+    }
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+    try {
+      const body = { query };
+      if (kbId) body.kbId = kbId;
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n\n");
-    buffer = lines.pop(); // Keep incomplete line in buffer
+      const response = await fetch("/api/stream-ask", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+        signal,
+        credentials: "include",
+      });
 
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const dataContent = line.substring(6).trim();
-      if (dataContent === "[DONE]") break;
+      if (!response.ok) {
+        // 4xx errors are not retryable
+        if (response.status >= 400 && response.status < 500) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        // 5xx: retry
+        attempt++;
+        continue;
+      }
 
-      try {
-        const parsed = JSON.parse(dataContent);
-        const delta = parsed.choices?.[0]?.delta;
-        if (!delta) continue;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-        if (delta.content) {
-          onTextChunk(delta.content);
-        } else if (delta.custom_meta) {
-          const meta = delta.custom_meta;
-          if (meta.type === "citations" && meta.citations) {
-            onSources(meta.citations);
-          } else if (meta.type === "context" && meta.chunks && onContext) {
-            // Phase F (#129): "What RASS is thinking" context chunks
-            onContext(meta.chunks);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop(); // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const dataContent = line.substring(6).trim();
+          if (dataContent === "[DONE]") break;
+
+          try {
+            const parsed = JSON.parse(dataContent);
+            const delta = parsed.choices?.[0]?.delta;
+            if (!delta) continue;
+
+            if (delta.content) {
+              onTextChunk(delta.content);
+            } else if (delta.custom_meta) {
+              const meta = delta.custom_meta;
+              if (meta.type === "citations" && meta.citations) {
+                onSources(meta.citations);
+              } else if (meta.type === "context" && meta.chunks && onContext) {
+                onContext(meta.chunks);
+              }
+            }
+          } catch (e) {
+            console.error("Error parsing stream data:", e);
           }
         }
-      } catch (e) {
-        console.error("Error parsing stream data:", e);
       }
+      return; // Success — exit retry loop
+    } catch (e) {
+      if (e.name === "AbortError") throw e;
+      attempt++;
+      if (attempt > STREAM_MAX_RETRIES) throw e;
+      console.warn(`[streamQuery] attempt ${attempt} failed, retrying:`, e.message);
     }
   }
 };
