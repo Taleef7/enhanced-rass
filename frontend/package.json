@@ -54,5 +54,8 @@
   "devDependencies": {
     "openapi-typescript-codegen": "^0.30.0",
     "prettier": "^3.3.2"
+  },
+  "overrides": {
+    "ajv": "^8.0.0"
   }
 }
