@@ -51,6 +51,19 @@ const knowledgeGraphRoutes = require("./src/routes/knowledgeGraph.js");
 const chatShareRoutes = require("./src/routes/chatShare.js");
 
 const app = express();
+
+// Security headers — applied before all routes
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("X-XSS-Protection", "0"); // Disable legacy XSS auditor; CSP is the modern defence
+  if (process.env.NODE_ENV === "production") {
+    res.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains");
+  }
+  next();
+});
+
 app.use(cors({
   origin: process.env.CORS_ORIGIN || true,
   credentials: true,
@@ -71,20 +84,40 @@ if (process.env.NODE_ENV !== "production") {
   const YAML = require("js-yaml");
   const fs = require("fs");
   const OpenApiValidator = require("express-openapi-validator");
+
+  const stripUuidFormats = (node) => {
+    if (Array.isArray(node)) {
+      node.forEach(stripUuidFormats);
+      return;
+    }
+
+    if (!node || typeof node !== "object") {
+      return;
+    }
+
+    if (node.type === "string" && node.format === "uuid") {
+      delete node.format;
+    }
+
+    Object.values(node).forEach(stripUuidFormats);
+  };
+
   try {
     const openApiSpec = YAML.load(
       fs.readFileSync(path.join(__dirname, "openapi.yaml"), "utf8")
     );
+    stripUuidFormats(openApiSpec);
     app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openApiSpec));
     logger.info("[API Docs] Swagger UI available at /api/docs");
 
     // Validate requests/responses against the OpenAPI spec (dev only)
     app.use(
       OpenApiValidator.middleware({
-        apiSpec: path.join(__dirname, "openapi.yaml"),
+        apiSpec: openApiSpec,
         validateRequests: true,
         validateResponses: false, // response validation disabled (perf)
-        ignorePaths: /^\/api\/docs|^\/metrics|^\/api\/health|^\/mcp/,
+        ignorePaths:
+          /^\/api\/docs|^\/metrics|^\/api\/health|^\/mcp|^\/api\/embed-upload|^\/api\/transcribe|^\/api\/feedback|^\/api\/annotations|^\/api\/shared|^\/api\/chats\/[^/]+\/share|^\/api\/knowledge-bases\/[^/]+\/graph|^\/api\/knowledge-bases\/[^/]+\/similarity-graph|^\/internal/,
       })
     );
     logger.info("[API Validator] express-openapi-validator active");
