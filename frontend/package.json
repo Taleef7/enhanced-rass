@@ -56,10 +56,6 @@
     "prettier": "^3.3.2"
   },
   "overrides": {
-    "ajv": "^8.0.0",
-    "fork-ts-checker-webpack-plugin": {
-      "ajv": "^6.12.6",
-      "ajv-keywords": "^3.5.2"
-    }
+    "ajv-keywords": "^3.5.2"
   }
 }
