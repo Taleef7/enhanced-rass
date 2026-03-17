@@ -55,8 +55,11 @@ A comprehensive codebase audit produced a prioritised roadmap. The following ite
 - **HTTP security headers**: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `X-XSS-Protection`, and production-only `Strict-Transport-Security` added to both `mcp-server` and `rass-engine-service`.
 
 ### Phase 1 — Safety Net — done
-- **GitHub Actions CI** at `.github/workflows/ci.yml`: runs test + build for all four services on every push and PR to `main`.
+- **GitHub Actions CI** at `.github/workflows/ci.yml`: runs test + build for all four services on every push and PR to `main`. All 4 jobs pass (mcp-server, rass-engine-service, embedding-service, frontend test + build).
 - **Test fixes**: updated `KBCreateSchema` test to reflect intentional provider-agnostic model name change; added `kbId` UUID validation test.
+- **Frontend lockfile**: `frontend/package-lock.json` committed to repo (`.gitignore` exception added) to ensure reproducible builds on CI. `react-scripts@5` has conflicting transitive ajv/schema-utils versions without a lockfile.
+- **Eval regression gate**: `.github/workflows/eval-regression-gate.yml` fixed — invalid UTF-8 surrogate pairs (emoji stored as UTF-16) were causing GitHub to fail to parse the workflow YAML.
+- **Weekly eval workflow**: `.github/workflows/weekly-eval.yml` added — runs full 22-question suite on Mondays and on manual dispatch; commits results to `evaluation/results/`.
 
 ### Phase 2 — Core UX — done
 - **Document deletion**: DELETE button with confirmation dialog in `DocumentPanel`; calls `DELETE /api/documents/:id` and refreshes list.
