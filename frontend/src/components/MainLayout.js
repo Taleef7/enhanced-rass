@@ -1,52 +1,46 @@
-// In frontend/src/components/MainLayout.js
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { Box, useMediaQuery } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import { ChatProvider } from "../context/ChatContext";
-import { ThemeProvider, CssBaseline, Box } from "@mui/material";
-import { darkTheme } from "../theme";
 import Sidebar from "./Sidebar";
 import Chat from "./Chat";
 
 const MainLayout = () => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [isDocumentPanelOpen, setIsDocumentPanelOpen] = useState(false);
+  const theme = useTheme();
+  const hasPersistentSidebar = useMediaQuery(theme.breakpoints.up("lg"));
+  const [isSidebarOpen, setIsSidebarOpen] = useState(hasPersistentSidebar);
 
-  const handleToggleSidebar = () => {
-    setIsSidebarOpen(!isSidebarOpen);
-  };
-
-  const handleToggleDocumentPanel = () =>
-    setIsDocumentPanelOpen(!isDocumentPanelOpen);
+  useEffect(() => {
+    setIsSidebarOpen(hasPersistentSidebar);
+  }, [hasPersistentSidebar]);
 
   return (
-    <ThemeProvider theme={darkTheme}>
-      <CssBaseline />
-      <ChatProvider>
-        <Box sx={{ display: "flex", height: "100vh", overflow: "hidden" }}>
-          <Sidebar
-            isSidebarOpen={isSidebarOpen}
-            onClose={handleToggleSidebar}
-          />
+    <ChatProvider>
+      <Box
+        sx={{
+          display: "flex",
+          minHeight: "100vh",
+          bgcolor: "background.default",
+        }}
+      >
+        <Sidebar
+          isSidebarOpen={isSidebarOpen}
+          onClose={() => setIsSidebarOpen(false)}
+        />
 
-          <Box
-            component="main"
-            sx={{
-              flexGrow: 1,
-              // No margin shifting; sidebar overlays instead
-              height: "100vh",
-              display: "flex",
-              flexDirection: "column",
-              minWidth: 0,
-              overflow: "hidden", // Prevent any scrolling on main container
-            }}
-          >
-            <Chat
-              onToggleSidebar={handleToggleSidebar}
-              onToggleDocumentPanel={handleToggleDocumentPanel}
-            />
-          </Box>
+        <Box
+          component="main"
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: "100vh",
+            display: "flex",
+          }}
+        >
+          <Chat onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)} />
         </Box>
-      </ChatProvider>
-    </ThemeProvider>
+      </Box>
+    </ChatProvider>
   );
 };
 

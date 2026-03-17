@@ -1,49 +1,39 @@
-// In frontend/src/components/MessageList.js
-import React, { useRef, useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { Box } from "@mui/material";
 import MessageBubble from "./MessageBubble";
 import TypingIndicator from "./TypingIndicator";
 
-const MessageList = ({ messages, isTyping, scrollContainerRef }) => {
-  const containerRef = useRef(null);
+const MessageList = ({ messages, isTyping }) => {
   const bottomRef = useRef(null);
 
   useEffect(() => {
-    // Scroll the sentinel into view to guarantee the latest content is visible
     requestAnimationFrame(() => {
       bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     });
   }, [messages, isTyping]);
+
   return (
     <Box
-      ref={containerRef}
       sx={{
         display: "flex",
         flexDirection: "column",
-        gap: 5, // Slightly increased spacing between messages
-        py: 2,
-        // Remove any internal scrolling - let the parent handle it
-        overflow: "visible",
+        gap: 3,
         width: "100%",
       }}
     >
       {(messages || [])
         .filter(
-          (m) => !(m.sender === "bot" && (!m.text || m.text.trim() === ""))
-        )
-        .filter(
-          (m) => !(m.sender === "bot" && (!m.text || m.text.trim() === ""))
+          (message) =>
+            !(message.sender === "bot" && (!message.text || !message.text.trim()))
         )
         .map((message, index) => (
-          <MessageBubble
-            key={message.id || `${message.sender}-${index}`}
-            message={message}
-          />
+          <Box key={message.id || `${message.sender}-${index}`} sx={{ contentVisibility: "auto" }}>
+            <MessageBubble message={message} index={index} />
+          </Box>
         ))}
-      {isTyping && <TypingIndicator />}
-      {/* Spacer so the last message clears the fixed input bar */}
-      <Box sx={{ height: 140 }} />
-      <div ref={bottomRef} />
+
+      {isTyping ? <TypingIndicator /> : null}
+      <Box sx={{ height: 8 }} ref={bottomRef} />
     </Box>
   );
 };

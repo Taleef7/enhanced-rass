@@ -1,56 +1,49 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
+  Alert,
   Box,
-  Paper,
-  Avatar,
-  Tooltip,
-  Collapse,
   Button,
-  Chip,
-  IconButton,
-  Typography,
   Card,
   CardContent,
-  Snackbar,
-  Alert,
+  Chip,
+  Collapse,
   Dialog,
-  DialogTitle,
-  DialogContent,
   DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  Paper,
+  Snackbar,
+  Stack,
   TextField,
+  Tooltip,
+  Typography,
 } from "@mui/material";
 import {
+  ArticleOutlined as ArticleOutlinedIcon,
   Check as CheckIcon,
+  CheckCircle as CheckCircleIcon,
+  CommentOutlined as CommentOutlinedIcon,
   ContentCopy as CopyIcon,
   ExpandLess as ExpandLessIcon,
   ExpandMore as ExpandMoreIcon,
-  WarningAmber as WarningIcon,
-  CheckCircle as CheckCircleIcon,
-  Article as ArticleIcon,
-  ThumbUp as ThumbUpIcon,
   ThumbDown as ThumbDownIcon,
-  ThumbUpOutlined as ThumbUpOutlinedIcon,
   ThumbDownOutlined as ThumbDownOutlinedIcon,
-  Comment as CommentIcon,
+  ThumbUp as ThumbUpIcon,
+  ThumbUpOutlined as ThumbUpOutlinedIcon,
+  WarningAmber as WarningAmberIcon,
 } from "@mui/icons-material";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import "highlight.js/styles/github-dark.css";
+import "highlight.js/styles/github.css";
 import { useAuth } from "../context/AuthContext";
 
-/**
- * Determines whether a citation object is the new structured format (Issue #117)
- * or the legacy format.
- */
 function isStructuredCitation(citation) {
   return citation && typeof citation.documentName === "string";
 }
 
-/**
- * Renders a single structured citation card.
- */
 function StructuredCitationCard({ citation, onCitationClick, onAnnotate }) {
   const [expanded, setExpanded] = useState(false);
   const score =
@@ -64,105 +57,132 @@ function StructuredCitationCard({ citation, onCitationClick, onAnnotate }) {
       variant="outlined"
       sx={{
         mb: 1,
-        backgroundColor: "rgba(255,255,255,0.03)",
-        borderColor: isGrounded
-          ? "rgba(255,255,255,0.1)"
-          : "warning.dark",
+        border: "1px solid",
+        borderColor: isGrounded ? "#E2E8F0" : "#FECACA",
+        backgroundColor: isGrounded ? "#FFFFFF" : "#FEF2F2",
         cursor: onCitationClick ? "pointer" : "default",
+        transition: "all 150ms",
+        "&:hover": {
+          borderColor: "#0052FF",
+          backgroundColor: isGrounded ? "rgba(0,82,255,0.04)" : "#FEF2F2",
+          "& .citation-text": {
+            color: "#0052FF",
+          },
+        },
       }}
       onClick={() => onCitationClick && onCitationClick(citation)}
     >
-      <CardContent sx={{ py: 1.5, px: 2, "&:last-child": { pb: 1.5 } }}>
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            gap: 1,
-          }}
-        >
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1 }}>
-            <ArticleIcon sx={{ fontSize: 16, color: "primary.main", flexShrink: 0 }} />
-            <Typography
-              variant="caption"
-              sx={{ fontWeight: 600, color: "text.primary", lineHeight: 1.3 }}
-            >
-              [{citation.index}] {citation.documentName}
-            </Typography>
+      <CardContent sx={{ py: 1.5, px: 1.75, "&:last-child": { pb: 1.5 } }}>
+        <Stack direction="row" spacing={1.25} alignItems="flex-start">
+          <Box
+            sx={{
+              width: 28,
+              height: 28,
+              border: "1px solid #E2E8F0",
+              display: "grid",
+              placeItems: "center",
+              flexShrink: 0,
+              color: "#64748B",
+            }}
+          >
+            <ArticleOutlinedIcon sx={{ fontSize: 14 }} />
           </Box>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexShrink: 0 }}>
-            {isGrounded ? (
-              <Tooltip title="Citation grounded in retrieved context">
-                <CheckCircleIcon sx={{ fontSize: 14, color: "success.main" }} />
-              </Tooltip>
-            ) : (
-              <Tooltip title="Citation may not be grounded in retrieved context">
-                <WarningIcon sx={{ fontSize: 14, color: "warning.main" }} />
-              </Tooltip>
-            )}
-            <Chip
-              label={`Score: ${score}`}
-              size="small"
-              sx={{ fontSize: "0.65rem", height: 18 }}
-              variant="outlined"
-            />
-            {citation.pageNumber && (
-              <Chip
-                label={`p.${citation.pageNumber}`}
-                size="small"
-                sx={{ fontSize: "0.65rem", height: 18 }}
-                variant="outlined"
-              />
-            )}
-            {onAnnotate && (
-              <Tooltip title="Add annotation">
-                <IconButton
-                  size="small"
-                  onClick={(e) => { e.stopPropagation(); onAnnotate(citation); }}
-                  sx={{ p: 0.25 }}
-                >
-                  <CommentIcon sx={{ fontSize: 14 }} />
-                </IconButton>
-              </Tooltip>
-            )}
-          </Box>
-        </Box>
 
-        {citation.excerpt && (
-          <Box sx={{ mt: 1 }}>
-            <Button
-              size="small"
-              onClick={() => setExpanded(!expanded)}
-              endIcon={expanded ? <ExpandLessIcon sx={{ fontSize: 14 }} /> : <ExpandMoreIcon sx={{ fontSize: 14 }} />}
-              sx={{
-                color: "text.secondary",
-                textTransform: "none",
-                p: 0,
-                minWidth: "auto",
-                fontSize: "0.7rem",
-              }}
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Stack
+              direction="row"
+              spacing={1}
+              justifyContent="space-between"
+              alignItems="flex-start"
             >
-              {expanded ? "Hide excerpt" : "Show excerpt"}
-            </Button>
-            <Collapse in={expanded}>
-              <Typography
-                variant="caption"
-                sx={{
-                  display: "block",
-                  mt: 0.5,
-                  color: "text.secondary",
-                  fontStyle: "italic",
-                  lineHeight: 1.5,
-                  borderLeft: "2px solid",
-                  borderColor: "primary.main",
-                  pl: 1,
-                }}
-              >
-                "{citation.excerpt}"
-              </Typography>
-            </Collapse>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography
+                  className="citation-text"
+                  variant="body2"
+                  sx={{ fontWeight: 600, fontSize: "0.78rem" }}
+                  noWrap
+                >
+                  [{citation.index}] {citation.documentName}
+                </Typography>
+                <Typography
+                  sx={{
+                    fontFamily: '"JetBrains Mono", monospace',
+                    fontSize: "0.62rem",
+                    color: "#94A3B8",
+                    letterSpacing: "0.04em",
+                    mt: 0.25,
+                  }}
+                >
+                  Score {score}
+                  {citation.pageNumber ? ` · p.${citation.pageNumber}` : ""}
+                </Typography>
+              </Box>
+
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                <Tooltip
+                  title={
+                    isGrounded
+                      ? "Grounded in retrieved context"
+                      : "May not be fully grounded"
+                  }
+                >
+                  {isGrounded ? (
+                    <CheckCircleIcon sx={{ fontSize: 14, color: "#0052FF" }} />
+                  ) : (
+                    <WarningAmberIcon sx={{ fontSize: 14, color: "#64748B" }} />
+                  )}
+                </Tooltip>
+
+                {onAnnotate ? (
+                  <Tooltip title="Add annotation">
+                    <IconButton
+                      size="small"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onAnnotate(citation);
+                      }}
+                      sx={{ p: 0.25 }}
+                    >
+                      <CommentOutlinedIcon sx={{ fontSize: 13 }} />
+                    </IconButton>
+                  </Tooltip>
+                ) : null}
+              </Stack>
+            </Stack>
+
+            {citation.excerpt ? (
+              <Box sx={{ mt: 0.75 }}>
+                <Button
+                  size="small"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setExpanded((previous) => !previous);
+                  }}
+                  endIcon={expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                  sx={{ px: 0, minWidth: 0, fontSize: "0.68rem" }}
+                >
+                  {expanded ? "Hide excerpt" : "Show excerpt"}
+                </Button>
+                <Collapse in={expanded}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      mt: 0.75,
+                      pl: 1.5,
+                      borderLeft: "2px solid #0052FF",
+                      color: "#64748B",
+                      fontSize: "0.8rem",
+                      lineHeight: 1.6,
+                      fontStyle: "italic",
+                    }}
+                  >
+                    &ldquo;{citation.excerpt}&rdquo;
+                  </Typography>
+                </Collapse>
+              </Box>
+            ) : null}
           </Box>
-        )}
+        </Stack>
       </CardContent>
     </Card>
   );
@@ -170,35 +190,39 @@ function StructuredCitationCard({ citation, onCitationClick, onAnnotate }) {
 
 const MessageBubble = ({ message, index }) => {
   const [copied, setCopied] = useState(false);
-  const [sourcesExpanded, setSourcesExpanded] = useState(false);
-  // Phase G #134: Adaptive retrieval feedback
-  const [feedbackSent, setFeedbackSent] = useState(null); // 'positive' | 'negative' | null
+  const [sourcesExpanded, setSourcesExpanded] = useState(
+    () => Boolean(message.sources?.length)
+  );
+  const [feedbackSent, setFeedbackSent] = useState(null);
   const [feedbackSnackbar, setFeedbackSnackbar] = useState(false);
-  // Phase G #138: Annotation dialog
   const [annotationOpen, setAnnotationOpen] = useState(false);
   const [annotationCitation, setAnnotationCitation] = useState(null);
   const [annotationText, setAnnotationText] = useState("");
   const [annotationSnackbar, setAnnotationSnackbar] = useState(false);
-  const { user } = useAuth();
-  const isUser = message.sender === "user";
+  const { user, token } = useAuth();
 
-  const getInitials = (username) => {
-    if (!username) return "U";
-    return username.charAt(0).toUpperCase();
-  };
+  const isUser = message.sender === "user";
+  const isSystem = message.sender === "system";
+  const sources = message.sources || [];
+  const useStructuredCitations =
+    sources.length > 0 && isStructuredCitation(sources[0]);
+  const initials = user?.username?.charAt(0)?.toUpperCase() || "U";
+
+  const renderedText = useMemo(() => message.text || "", [message.text]);
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(message.text);
+    await navigator.clipboard.writeText(renderedText);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), 1500);
   };
 
   const handleFeedback = async (signal) => {
-    if (feedbackSent || !user) return; // Only once per message
+    if (feedbackSent || !user) return;
+
     setFeedbackSent(signal);
     setFeedbackSnackbar(true);
+
     try {
-      const token = localStorage.getItem("accessToken");
       await fetch("/api/feedback", {
         method: "POST",
         headers: {
@@ -212,16 +236,15 @@ const MessageBubble = ({ message, index }) => {
           query: message.query || undefined,
         }),
       });
-    } catch (err) {
-      console.warn("[Feedback] Failed to submit feedback:", err);
+    } catch (error) {
+      console.warn("[Feedback] Failed to submit feedback:", error);
     }
   };
 
   const handleCitationClick = async (citation) => {
-    // Phase G #134: Track citation clicks as implicit feedback
     if (!user) return;
+
     try {
-      const token = localStorage.getItem("accessToken");
       await fetch("/api/feedback/implicit", {
         method: "POST",
         headers: {
@@ -237,15 +260,15 @@ const MessageBubble = ({ message, index }) => {
           query: message.query || undefined,
         }),
       });
-    } catch (err) {
-      // Non-fatal
+    } catch (error) {
+      console.warn("[Feedback] Failed to track citation click:", error);
     }
   };
 
   const handleAnnotationSubmit = async () => {
     if (!annotationCitation || !user) return;
+
     try {
-      const token = localStorage.getItem("accessToken");
       await fetch("/api/annotations", {
         method: "POST",
         headers: {
@@ -253,376 +276,514 @@ const MessageBubble = ({ message, index }) => {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
-          chunkId: annotationCitation.chunkId || annotationCitation.index?.toString() || "unknown",
-          documentId: annotationCitation.documentId || annotationCitation.documentName || "unknown",
+          chunkId:
+            annotationCitation.chunkId ||
+            annotationCitation.index?.toString() ||
+            "unknown",
+          documentId:
+            annotationCitation.documentId ||
+            annotationCitation.documentName ||
+            "unknown",
           annotationType: "NOTE",
           content: annotationText,
         }),
       });
       setAnnotationSnackbar(true);
-    } catch (err) {
-      console.warn("[Annotation] Failed to submit annotation:", err);
+    } catch (error) {
+      console.warn("[Annotation] Failed to submit annotation:", error);
     }
+
     setAnnotationOpen(false);
     setAnnotationText("");
     setAnnotationCitation(null);
   };
 
-  const sources = message.sources || [];
-  const useStructuredCitations = sources.length > 0 && isStructuredCitation(sources[0]);
+  // System message
+  if (isSystem) {
+    return (
+      <Box sx={{ display: "flex", justifyContent: "center" }}>
+        <Box
+          sx={{
+            maxWidth: 720,
+            width: "100%",
+            border: "1px solid #E2E8F0",
+            borderLeft: "3px solid #0052FF",
+            borderRadius: "8px",
+            px: 2,
+            py: 1.25,
+            backgroundColor: "#F1F5F9",
+          }}
+        >
+          <Typography
+            sx={{
+              fontSize: "0.78rem",
+              fontFamily: '"JetBrains Mono", monospace',
+              color: "#64748B",
+              letterSpacing: "0.02em",
+              lineHeight: 1.6,
+            }}
+          >
+            {renderedText}
+          </Typography>
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: index * 0.1 }}
+      transition={{ duration: 0.18, delay: Math.min(index * 0.025, 0.15) }}
     >
       <Box
         sx={{
           display: "flex",
           justifyContent: isUser ? "flex-end" : "flex-start",
           alignItems: "flex-start",
-          gap: 2,
-          width: "100%",
+          gap: 1.5,
         }}
       >
-        {!isUser && (
-          <Avatar
+        {/* Bot avatar */}
+        {!isUser ? (
+          <Box
             sx={{
-              bgcolor: "primary.main",
-              width: 32,
-              height: 32,
-              fontSize: "0.875rem",
+              width: 28,
+              height: 28,
+              border: "2px solid #0052FF",
+              borderRadius: "8px",
+              display: "grid",
+              placeItems: "center",
               flexShrink: 0,
-              mt: 0.5,
+              mt: 0.25,
             }}
           >
-            AI
-          </Avatar>
-        )}
+            <Typography
+              sx={{
+                fontSize: "0.6rem",
+                fontFamily: '"JetBrains Mono", monospace',
+                fontWeight: 700,
+                letterSpacing: "0.05em",
+                color: "#0052FF",
+              }}
+            >
+              R
+            </Typography>
+          </Box>
+        ) : null}
 
         <Box
           sx={{
-            maxWidth: isUser ? "70%" : "100%", // User messages narrower, AI full width
             width: isUser ? "auto" : "100%",
-            position: "relative",
+            maxWidth: isUser ? 680 : 820,
           }}
         >
+          {/* User message */}
           {isUser ? (
-            // User message: bubble style like Gemini
             <Paper
-              elevation={1}
               sx={{
-                p: 2.5,
-                borderRadius: "18px",
-                backgroundColor: "primary.main",
-                color: "white",
-                position: "relative",
-                wordBreak: "break-word",
+                px: 2.5,
+                py: 1.75,
+                border: "none",
+                background: "linear-gradient(135deg, #0052FF, #4D7CFF)",
+                borderRadius: "16px 16px 4px 16px",
+                boxShadow: "0 4px 14px rgba(0,82,255,0.3)",
               }}
             >
-              <Box
+              <Typography
+                variant="body1"
                 sx={{
-                  fontSize: "0.95rem",
-                  lineHeight: 1.5,
+                  color: "#FFFFFF",
+                  lineHeight: 1.7,
+                  fontSize: "0.92rem",
                 }}
               >
-                {message.text}
-              </Box>
+                {renderedText}
+              </Typography>
             </Paper>
           ) : (
-            // AI message: plain text style like Gemini
-            <Box sx={{ position: "relative" }}>
+            /* Bot message */
+            <Paper
+              sx={{
+                px: { xs: 2, md: 2.5 },
+                py: { xs: 1.75, md: 2 },
+                border: "1px solid #E2E8F0",
+                borderRadius: "4px 16px 16px 16px",
+                backgroundColor: "#FFFFFF",
+                boxShadow: "0 1px 4px rgba(15,23,42,0.06)",
+              }}
+            >
+              {/* Response header */}
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="center"
+                sx={{ mb: 1.5, pb: 1.5, borderBottom: "1px solid #E2E8F0" }}
+              >
+                <Typography
+                  sx={{
+                    fontSize: "0.6rem",
+                    fontFamily: '"JetBrains Mono", monospace',
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: "#94A3B8",
+                  }}
+                >
+                  RASS response
+                </Typography>
+
+                <Tooltip title={copied ? "Copied" : "Copy response"}>
+                  <IconButton
+                    size="small"
+                    onClick={handleCopy}
+                    sx={{ p: 0.5 }}
+                  >
+                    {copied ? (
+                      <CheckIcon sx={{ fontSize: 14 }} />
+                    ) : (
+                      <CopyIcon sx={{ fontSize: 14 }} />
+                    )}
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+
+              {/* Markdown content */}
               <Box
                 sx={{
-                  fontSize: "0.95rem",
-                  lineHeight: 1.6,
-                  color: "text.primary",
+                  fontSize: "0.92rem",
+                  lineHeight: 1.75,
+                  color: "#0F172A",
+                  fontFamily: '"Inter", system-ui, sans-serif',
                   "& p": {
-                    margin: "0 0 16px 0",
-                    "&:last-child": {
-                      marginBottom: 0,
-                    },
+                    margin: "0 0 14px 0",
+                    "&:last-child": { marginBottom: 0 },
+                  },
+                  "& h1, & h2, & h3, & h4": {
+                    fontFamily: '"Calistoga", Georgia, serif',
+                    fontWeight: 400,
+                    letterSpacing: "-0.02em",
+                    margin: "20px 0 10px",
                   },
                   "& pre": {
-                    backgroundColor: "rgba(255,255,255,0.04)",
-                    color: "grey.100",
+                    backgroundColor: "#F8FAFC",
                     padding: "12px 16px",
-                    borderRadius: "8px",
                     overflow: "auto",
-                    fontSize: "0.875rem",
-                    margin: "12px 0",
-                    border: "1px solid rgba(255,255,255,0.06)",
+                    border: "1px solid #E2E8F0",
+                    fontFamily: '"JetBrains Mono", monospace',
+                    fontSize: "0.82rem",
+                    lineHeight: 1.6,
+                    margin: "14px 0",
                   },
                   "& code": {
-                    backgroundColor: "rgba(255,255,255,0.06)",
-                    color: "grey.100",
-                    padding: "2px 6px",
-                    borderRadius: "4px",
-                    fontSize: "0.875rem",
+                    backgroundColor: "#F8FAFC",
+                    padding: "1px 5px",
+                    fontFamily: '"JetBrains Mono", monospace',
+                    fontSize: "0.82rem",
+                    border: "1px solid #E2E8F0",
                   },
                   "& ul, & ol": {
-                    paddingLeft: "24px",
-                    margin: "8px 0",
+                    paddingLeft: "22px",
+                    margin: "10px 0",
                   },
                   "& li": {
-                    marginBottom: "4px",
-                  },
-                  "& h1, & h2, & h3, & h4, & h5, & h6": {
-                    margin: "16px 0 8px 0",
-                    fontWeight: 600,
+                    margin: "4px 0",
                   },
                   "& blockquote": {
-                    borderLeft: "4px solid",
-                    borderColor: "primary.main",
-                    paddingLeft: "16px",
                     margin: "16px 0",
+                    paddingLeft: 16,
+                    borderLeft: "3px solid #0052FF",
+                    color: "#64748B",
                     fontStyle: "italic",
+                  },
+                  "& strong": {
+                    fontWeight: 700,
+                    color: "#0F172A",
+                  },
+                  "& a": {
+                    color: "#0052FF",
+                    textDecoration: "underline",
+                  },
+                  "& hr": {
+                    border: "none",
+                    borderTop: "1px solid #E2E8F0",
+                    margin: "16px 0",
+                  },
+                  "& table": {
+                    borderCollapse: "collapse",
+                    width: "100%",
+                    margin: "14px 0",
+                    fontSize: "0.85rem",
+                  },
+                  "& th, & td": {
+                    border: "1px solid #E2E8F0",
+                    padding: "8px 12px",
+                    textAlign: "left",
+                  },
+                  "& th": {
+                    backgroundColor: "#F8FAFC",
+                    fontWeight: 700,
+                    fontFamily: '"JetBrains Mono", monospace',
+                    fontSize: "0.72rem",
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                  },
+                  // Code highlighting: override github.css to be monochrome-friendly
+                  "& .hljs": {
+                    background: "transparent",
+                    color: "#0F172A",
+                    fontFamily: '"JetBrains Mono", monospace',
                   },
                 }}
               >
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   rehypePlugins={[rehypeHighlight]}
-                  components={{
-                    code({ node, inline, className, children, ...props }) {
-                      const match = /language-(\w+)/.exec(className || "");
-                      return !inline && match ? (
-                        <Box
-                          component="pre"
-                          sx={{
-                            backgroundColor: "rgba(0,0,0,0.1)",
-                            borderRadius: 1,
-                            p: 1,
-                            overflow: "auto",
-                            fontSize: "0.875rem",
-                            maxWidth: "100%",
-                          }}
-                        >
-                          <code className={className} {...props}>
-                            {children}
-                          </code>
-                        </Box>
-                      ) : (
-                        <code className={className} {...props}>
-                          {children}
-                        </code>
-                      );
-                    },
-                  }}
                 >
-                  {message.text}
+                  {renderedText}
                 </ReactMarkdown>
               </Box>
 
-              {/* Copy button for AI messages */}
-              <Tooltip title={copied ? "Copied!" : "Copy message"}>
-                <IconButton
-                  size="small"
-                  onClick={handleCopy}
-                  className="copy-button"
-                  sx={{
-                    position: "absolute",
-                    top: 8,
-                    right: 8,
-                    opacity: 0,
-                    transition: "opacity 0.2s, transform 0.2s",
-                    color: "text.secondary",
-                    transform: "translateY(-2px)",
-                    "&:hover": { opacity: 1, transform: "translateY(0)" },
-                  }}
-                >
-                  {copied ? (
-                    <CheckIcon fontSize="small" />
-                  ) : (
-                    <CopyIcon fontSize="small" />
-                  )}
-                </IconButton>
-              </Tooltip>
-
-              {/* Sources section */}
-              {Array.isArray(message.sources) && message.sources.length > 0 && (
+              {/* Citations section */}
+              {sources.length > 0 ? (
                 <Box
-                  sx={{ mt: 3, pt: 2, borderTop: 1, borderColor: "divider" }}
+                  sx={{
+                    mt: 2,
+                    pt: 2,
+                    borderTop: "1px solid #E2E8F0",
+                  }}
                 >
                   <Button
                     size="small"
-                    onClick={() => setSourcesExpanded(!sourcesExpanded)}
-                    endIcon={
-                      sourcesExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />
-                    }
-                    sx={{
-                      color: "text.secondary",
-                      textTransform: "none",
-                      p: 0,
-                      minWidth: "auto",
-                      fontSize: "0.875rem",
-                    }}
+                    onClick={() => setSourcesExpanded((previous) => !previous)}
+                    endIcon={sourcesExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                    sx={{ px: 0, fontSize: "0.68rem" }}
                   >
-                    {useStructuredCitations ? "Citations" : "Sources"} ({message.sources.length})
+                    Citations ({sources.length})
                   </Button>
 
                   <Collapse in={sourcesExpanded}>
-                    <Box sx={{ mt: 2 }}>
+                    <Box sx={{ mt: 1.25 }}>
                       {useStructuredCitations ? (
-                        // Structured citation cards (Phase C #117)
-                        <Box>
-                          {message.sources.slice(0, 10).map((citation, i) => (
-                            <StructuredCitationCard
-                              key={i}
-                              citation={citation}
-                              onCitationClick={handleCitationClick}
-                              onAnnotate={(c) => {
-                                setAnnotationCitation(c);
-                                setAnnotationOpen(true);
-                              }}
-                            />
-                          ))}
-                          {message.sources.length > 10 && (
-                            <Typography
-                              variant="caption"
-                              sx={{ color: "text.secondary", ml: 1 }}
-                            >
-                              +{message.sources.length - 10} more citations
-                            </Typography>
-                          )}
-                        </Box>
+                        sources.slice(0, 10).map((citation, citationIndex) => (
+                          <StructuredCitationCard
+                            key={`${citation.documentName}-${citationIndex}`}
+                            citation={citation}
+                            onCitationClick={handleCitationClick}
+                            onAnnotate={(selectedCitation) => {
+                              setAnnotationCitation(selectedCitation);
+                              setAnnotationOpen(true);
+                            }}
+                          />
+                        ))
                       ) : (
-                        // Legacy chip display
-                        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                          {message.sources.slice(0, 10).map((source, i) => (
+                        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                          {sources.slice(0, 10).map((source, sourceIndex) => (
                             <Chip
-                              key={i}
+                              key={sourceIndex}
                               label={`${source.metadata?.source || "Unknown"} (${source.initial_score?.toFixed(3) ?? "N/A"})`}
-                              size="small"
                               variant="outlined"
-                              sx={{
-                                fontSize: "0.75rem",
-                                cursor: "pointer",
-                                "&:hover": {
-                                  backgroundColor: "action.hover",
-                                },
-                              }}
-                              onClick={() => {
-                                console.log("View source:", source);
-                              }}
+                              size="small"
                             />
                           ))}
-                          {message.sources.length > 10 && (
-                            <Chip
-                              label={`+${message.sources.length - 10} more`}
-                              size="small"
-                              variant="outlined"
-                              sx={{ fontSize: "0.75rem" }}
-                            />
-                          )}
-                        </Box>
+                        </Stack>
                       )}
+
+                      {sources.length > 10 ? (
+                        <Typography
+                          sx={{
+                            mt: 0.75,
+                            fontSize: "0.65rem",
+                            fontFamily: '"JetBrains Mono", monospace',
+                            color: "#94A3B8",
+                          }}
+                        >
+                          +{sources.length - 10} more citations
+                        </Typography>
+                      ) : null}
                     </Box>
                   </Collapse>
                 </Box>
-              )}
+              ) : null}
 
-              {/* Phase G #134: Answer-level feedback buttons */}
-              {!isUser && (
-                <Box sx={{ mt: 2, display: "flex", gap: 1, alignItems: "center" }}>
-                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                    Was this helpful?
-                  </Typography>
-                  <Tooltip title="Helpful">
-                    <IconButton
-                      size="small"
-                      onClick={() => handleFeedback("positive")}
-                      disabled={!!feedbackSent}
-                      sx={{ color: feedbackSent === "positive" ? "success.main" : "text.secondary" }}
-                    >
-                      {feedbackSent === "positive" ? <ThumbUpIcon sx={{ fontSize: 16 }} /> : <ThumbUpOutlinedIcon sx={{ fontSize: 16 }} />}
-                    </IconButton>
-                  </Tooltip>
-                  <Tooltip title="Not helpful">
-                    <IconButton
-                      size="small"
-                      onClick={() => handleFeedback("negative")}
-                      disabled={!!feedbackSent}
-                      sx={{ color: feedbackSent === "negative" ? "error.main" : "text.secondary" }}
-                    >
-                      {feedbackSent === "negative" ? <ThumbDownIcon sx={{ fontSize: 16 }} /> : <ThumbDownOutlinedIcon sx={{ fontSize: 16 }} />}
-                    </IconButton>
-                  </Tooltip>
-                </Box>
-              )}
-            </Box>
+              {/* Feedback row */}
+              <Stack
+                direction="row"
+                spacing={0.5}
+                alignItems="center"
+                sx={{
+                  mt: 1.75,
+                  pt: 1.5,
+                  borderTop: "1px solid #E2E8F0",
+                }}
+              >
+                <Typography
+                  sx={{
+                    fontSize: "0.62rem",
+                    fontFamily: '"JetBrains Mono", monospace',
+                    color: "#94A3B8",
+                    mr: 0.5,
+                    letterSpacing: "0.04em",
+                  }}
+                >
+                  Helpful?
+                </Typography>
+                <Tooltip title="Helpful">
+                  <IconButton
+                    size="small"
+                    onClick={() => handleFeedback("positive")}
+                    disabled={Boolean(feedbackSent)}
+                    sx={{
+                      p: 0.4,
+                      color: feedbackSent === "positive" ? "#0052FF" : "#94A3B8",
+                      backgroundColor: feedbackSent === "positive" ? "rgba(0,82,255,0.08)" : "transparent",
+                    }}
+                  >
+                    {feedbackSent === "positive" ? (
+                      <ThumbUpIcon sx={{ fontSize: 14 }} />
+                    ) : (
+                      <ThumbUpOutlinedIcon sx={{ fontSize: 14 }} />
+                    )}
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Not helpful">
+                  <IconButton
+                    size="small"
+                    onClick={() => handleFeedback("negative")}
+                    disabled={Boolean(feedbackSent)}
+                    sx={{
+                      p: 0.4,
+                      color: feedbackSent === "negative" ? "#0052FF" : "#94A3B8",
+                      backgroundColor: feedbackSent === "negative" ? "rgba(0,82,255,0.08)" : "transparent",
+                    }}
+                  >
+                    {feedbackSent === "negative" ? (
+                      <ThumbDownIcon sx={{ fontSize: 14 }} />
+                    ) : (
+                      <ThumbDownOutlinedIcon sx={{ fontSize: 14 }} />
+                    )}
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+            </Paper>
           )}
         </Box>
 
-        {/* Phase G #138: Annotation dialog */}
-        <Dialog open={annotationOpen} onClose={() => setAnnotationOpen(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>Add Annotation</DialogTitle>
-          <DialogContent>
-            {annotationCitation && (
-              <Typography variant="caption" sx={{ display: "block", mb: 2, color: "text.secondary" }}>
-                Annotating: [{annotationCitation.index}] {annotationCitation.documentName}
-              </Typography>
-            )}
-            <TextField
-              autoFocus
-              multiline
-              rows={4}
-              fullWidth
-              label="Annotation note"
-              value={annotationText}
-              onChange={(e) => setAnnotationText(e.target.value)}
-              placeholder="Add your note, correction, or flag..."
-              variant="outlined"
-            />
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => { setAnnotationOpen(false); setAnnotationText(""); }}>Cancel</Button>
-            <Button onClick={handleAnnotationSubmit} variant="contained" disabled={!annotationText.trim()}>
-              Save Annotation
-            </Button>
-          </DialogActions>
-        </Dialog>
-
-        {/* Feedback success snackbar */}
-        <Snackbar
-          open={feedbackSnackbar}
-          autoHideDuration={3000}
-          onClose={() => setFeedbackSnackbar(false)}
-          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-        >
-          <Alert severity="success" onClose={() => setFeedbackSnackbar(false)} sx={{ width: "100%" }}>
-            Thanks for your feedback!
-          </Alert>
-        </Snackbar>
-
-        {/* Annotation success snackbar */}
-        <Snackbar
-          open={annotationSnackbar}
-          autoHideDuration={3000}
-          onClose={() => setAnnotationSnackbar(false)}
-          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-        >
-          <Alert severity="success" onClose={() => setAnnotationSnackbar(false)} sx={{ width: "100%" }}>
-            Annotation saved!
-          </Alert>
-        </Snackbar>
-
-        {isUser && (
-          <Avatar
+        {/* User avatar */}
+        {isUser ? (
+          <Box
             sx={{
-              bgcolor: "secondary.main",
-              width: 32,
-              height: 32,
-              fontSize: "0.875rem",
+              width: 28,
+              height: 28,
+              border: "1px solid #C7D2FE",
+              borderRadius: "8px",
+              display: "grid",
+              placeItems: "center",
               flexShrink: 0,
-              mt: 0.5,
+              mt: 0.25,
+              backgroundColor: "#EEF2FF",
             }}
           >
-            {getInitials(user?.username)}
-          </Avatar>
-        )}
+            <Typography
+              sx={{
+                fontSize: "0.6rem",
+                fontFamily: '"JetBrains Mono", monospace',
+                fontWeight: 700,
+                color: "#0052FF",
+              }}
+            >
+              {initials}
+            </Typography>
+          </Box>
+        ) : null}
       </Box>
+
+      {/* Annotation dialog */}
+      <Dialog
+        open={annotationOpen}
+        onClose={() => setAnnotationOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Add annotation</DialogTitle>
+        <DialogContent>
+          {annotationCitation ? (
+            <Typography
+              sx={{
+                display: "block",
+                mb: 2,
+                fontSize: "0.68rem",
+                fontFamily: '"JetBrains Mono", monospace',
+                color: "#64748B",
+                letterSpacing: "0.04em",
+              }}
+            >
+              [{annotationCitation.index}] {annotationCitation.documentName}
+            </Typography>
+          ) : null}
+          <TextField
+            autoFocus
+            fullWidth
+            multiline
+            rows={4}
+            label="Annotation"
+            value={annotationText}
+            onChange={(event) => setAnnotationText(event.target.value)}
+            placeholder="Add a note, correction, or follow-up for this citation."
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+          <Button
+            onClick={() => {
+              setAnnotationOpen(false);
+              setAnnotationText("");
+            }}
+            variant="outlined"
+            size="small"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleAnnotationSubmit}
+            variant="contained"
+            size="small"
+            disabled={!annotationText.trim()}
+          >
+            Save annotation
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Feedback snackbar */}
+      <Snackbar
+        open={feedbackSnackbar}
+        autoHideDuration={3000}
+        onClose={() => setFeedbackSnackbar(false)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={() => setFeedbackSnackbar(false)}
+          severity="success"
+          variant="filled"
+        >
+          Thanks for the feedback.
+        </Alert>
+      </Snackbar>
+
+      {/* Annotation snackbar */}
+      <Snackbar
+        open={annotationSnackbar}
+        autoHideDuration={3000}
+        onClose={() => setAnnotationSnackbar(false)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={() => setAnnotationSnackbar(false)}
+          severity="success"
+          variant="filled"
+        >
+          Annotation saved.
+        </Alert>
+      </Snackbar>
     </motion.div>
   );
 };

@@ -1,54 +1,52 @@
-// frontend/src/components/KnowledgeGraphPanel.js
-// Phase F (#129): Knowledge graph visualization panel for a Knowledge Base.
-// Uses react-force-graph-2d to render an interactive force-directed graph where
-// nodes = documents and edges = inter-document similarity.
-
-import React, { useCallback, useRef, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 import {
   Box,
-  Typography,
-  CircularProgress,
-  Tooltip,
-  IconButton,
   Chip,
+  CircularProgress,
+  IconButton,
   Paper,
+  Stack,
+  Tooltip,
+  Typography,
 } from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
+import FitScreenIcon from "@mui/icons-material/FitScreen";
+import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
-import FitScreenIcon from "@mui/icons-material/FitScreen";
-import HubIcon from "@mui/icons-material/Hub";
 
 const KnowledgeGraphPanel = ({ kbId, kbName, onClose, token }) => {
+  const theme = useTheme();
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [hoveredNode, setHoveredNode] = useState(null);
-  const fgRef = useRef();
+  const graphRef = useRef(null);
 
   useEffect(() => {
     if (!kbId) return;
+
     setLoading(true);
     setError(null);
 
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
-    fetch(`/api/knowledge-bases/${kbId}/graph?threshold=0.3`, { headers })
-      .then((r) => {
-        if (!r.ok) throw new Error(`Failed to load graph: ${r.status}`);
-        return r.json();
+    fetch(`/api/knowledge-bases/${kbId}/similarity-graph?threshold=0.3`, { headers })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Failed to load graph: ${response.status}`);
+        return response.json();
       })
       .then((data) => {
-        // Transform edges → links (react-force-graph-2d uses source/target as link props)
         setGraphData({
-          nodes: data.nodes.map((n) => ({
-            ...n,
-            val: Math.max(4, (n.chunkCount || 1) * 0.6),
+          nodes: data.nodes.map((node) => ({
+            ...node,
+            val: Math.max(4, (node.chunkCount || 1) * 0.6),
           })),
-          links: (data.edges || []).map((e) => ({
-            source: e.source,
-            target: e.target,
-            weight: e.weight,
+          links: (data.edges || []).map((edge) => ({
+            source: edge.source,
+            target: edge.target,
+            weight: edge.weight,
           })),
         });
         setLoading(false);
@@ -59,214 +57,204 @@ const KnowledgeGraphPanel = ({ kbId, kbName, onClose, token }) => {
       });
   }, [kbId, token]);
 
-  const handleNodeHover = useCallback((node) => {
-    setHoveredNode(node || null);
-  }, []);
-
-  const handleZoomIn = () => fgRef.current?.zoom(fgRef.current.zoom() * 1.4, 300);
-  const handleZoomOut = () => fgRef.current?.zoom(fgRef.current.zoom() / 1.4, 300);
-  const handleFit = () => fgRef.current?.zoomToFit(400, 40);
+  const zoomIn = () => graphRef.current?.zoom(graphRef.current.zoom() * 1.25, 250);
+  const zoomOut = () =>
+    graphRef.current?.zoom(graphRef.current.zoom() / 1.25, 250);
+  const zoomToFit = () => graphRef.current?.zoomToFit(300, 40);
+  const handleNodeHover = useCallback((node) => setHoveredNode(node || null), []);
 
   return (
     <Paper
-      elevation={4}
       sx={{
-        position: "absolute",
-        top: 0,
-        right: 0,
-        width: 420,
+        width: "100%",
         height: "100%",
         display: "flex",
         flexDirection: "column",
-        backgroundColor: "rgba(15,15,35,0.97)",
-        borderLeft: "1px solid rgba(255,255,255,0.08)",
-        zIndex: 10,
-        overflow: "hidden",
+        borderRadius: 0,
       }}
     >
-      {/* Header */}
       <Box
         sx={{
-          px: 2,
-          py: 1.5,
-          display: "flex",
-          alignItems: "center",
-          gap: 1,
-          borderBottom: "1px solid rgba(255,255,255,0.08)",
-          flexShrink: 0,
+          px: 2.25,
+          py: 2,
+          borderBottom: "1px solid",
+          borderColor: "divider",
         }}
       >
-        <HubIcon sx={{ color: "#8ab4f8", fontSize: 20 }} />
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: 700, color: "text.primary" }}>
-            Knowledge Graph
-          </Typography>
-          {kbName && (
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {kbName}
-            </Typography>
-          )}
-        </Box>
-        <Tooltip title="Zoom in">
-          <IconButton size="small" onClick={handleZoomIn} sx={{ color: "text.secondary" }}>
-            <ZoomInIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Zoom out">
-          <IconButton size="small" onClick={handleZoomOut} sx={{ color: "text.secondary" }}>
-            <ZoomOutIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Fit to view">
-          <IconButton size="small" onClick={handleFit} sx={{ color: "text.secondary" }}>
-            <FitScreenIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Close graph">
-          <IconButton size="small" onClick={onClose} sx={{ color: "text.secondary" }}>
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </Box>
-
-      {/* Graph canvas */}
-      <Box sx={{ flex: 1, position: "relative", overflow: "hidden" }}>
-        {loading && (
+        <Stack direction="row" spacing={1.25} alignItems="center">
           <Box
             sx={{
-              position: "absolute",
-              inset: 0,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 2,
-              zIndex: 2,
+              width: 36,
+              height: 36,
+              borderRadius: 3,
+              display: "grid",
+              placeItems: "center",
+              bgcolor: alpha(theme.palette.primary.main, 0.14),
+              color: "primary.light",
             }}
           >
-            <CircularProgress size={36} />
-            <Typography variant="caption" color="text.secondary">
-              Computing document graph…
+            <HubOutlinedIcon sx={{ fontSize: 18 }} />
+          </Box>
+
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="subtitle1">Knowledge graph</Typography>
+            <Typography variant="body2" color="text.secondary" noWrap>
+              {kbName || "Document similarity view"}
             </Typography>
           </Box>
-        )}
 
-        {error && (
+          <Tooltip title="Zoom in">
+            <IconButton size="small" onClick={zoomIn}>
+              <ZoomInIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Zoom out">
+            <IconButton size="small" onClick={zoomOut}>
+              <ZoomOutIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Fit to screen">
+            <IconButton size="small" onClick={zoomToFit}>
+              <FitScreenIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          {onClose ? (
+            <Tooltip title="Close knowledge graph">
+              <IconButton size="small" onClick={onClose}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          ) : null}
+        </Stack>
+      </Box>
+
+      <Box sx={{ flex: 1, position: "relative" }}>
+        {loading ? (
           <Box
             sx={{
               position: "absolute",
               inset: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              p: 3,
-              zIndex: 2,
+              display: "grid",
+              placeItems: "center",
+              gap: 2,
             }}
           >
-            <Typography variant="caption" color="error.main" textAlign="center">
+            <Box sx={{ display: "grid", justifyItems: "center", gap: 2 }}>
+              <CircularProgress />
+              <Typography variant="body2" color="text.secondary">
+                Computing document graph...
+              </Typography>
+            </Box>
+          </Box>
+        ) : null}
+
+        {error ? (
+          <Box
+            sx={{
+              position: "absolute",
+              inset: 0,
+              display: "grid",
+              placeItems: "center",
+              p: 3,
+            }}
+          >
+            <Typography variant="body2" color="error.main" textAlign="center">
               {error}
             </Typography>
           </Box>
-        )}
+        ) : null}
 
-        {!loading && !error && graphData.nodes.length === 0 && (
+        {!loading && !error && graphData.nodes.length === 0 ? (
           <Box
             sx={{
               position: "absolute",
               inset: 0,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
+              display: "grid",
+              placeItems: "center",
               p: 3,
-              gap: 1,
-              zIndex: 2,
+              textAlign: "center",
             }}
           >
-            <HubIcon sx={{ fontSize: 40, color: "rgba(255,255,255,0.15)" }} />
-            <Typography variant="caption" color="text.disabled" textAlign="center">
-              No documents in this knowledge base yet.
-              <br />
-              Upload documents to see the graph.
-            </Typography>
+            <Box>
+              <HubOutlinedIcon sx={{ fontSize: 36, color: "text.disabled", mb: 1.5 }} />
+              <Typography variant="subtitle2">No graph data yet</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Upload more documents to see how sources cluster and connect.
+              </Typography>
+            </Box>
           </Box>
-        )}
+        ) : null}
 
-        {!loading && !error && graphData.nodes.length > 0 && (
+        {!loading && !error && graphData.nodes.length > 0 ? (
           <ForceGraph2D
-            ref={fgRef}
+            ref={graphRef}
             graphData={graphData}
-            nodeLabel={(n) => `${n.label} (${n.chunkCount} chunks)`}
-            nodeColor={() => "#8ab4f8"}
-            nodeRelSize={5}
-            linkColor={(l) => `rgba(138,180,248,${Math.max(0.1, l.weight || 0.3)})`}
-            linkWidth={(l) => Math.max(0.5, (l.weight || 0.3) * 2.5)}
+            width={420}
+            backgroundColor="transparent"
+            nodeLabel={(node) => `${node.label} (${node.chunkCount} chunks)`}
+            nodeColor={() => theme.palette.primary.main}
+            linkColor={(link) =>
+              alpha(theme.palette.primary.main, Math.max(0.16, link.weight || 0.3))
+            }
+            linkWidth={(link) => Math.max(0.75, (link.weight || 0.3) * 2.2)}
             onNodeHover={handleNodeHover}
             nodeCanvasObject={(node, ctx, globalScale) => {
-              const label = node.label || "";
+              const radius = Math.max(4, node.val || 5);
+              const hovered = hoveredNode && hoveredNode.id === node.id;
               const fontSize = Math.max(8, 12 / globalScale);
-              const r = Math.max(4, node.val || 5);
+              const shortLabel =
+                (node.label || "").length > 20
+                  ? `${node.label.slice(0, 18)}...`
+                  : node.label || "";
 
-              // Outer glow for hovered node
-              if (hoveredNode && hoveredNode.id === node.id) {
+              if (hovered) {
                 ctx.beginPath();
-                ctx.arc(node.x, node.y, r + 4, 0, 2 * Math.PI, false);
-                ctx.fillStyle = "rgba(138,180,248,0.25)";
+                ctx.arc(node.x, node.y, radius + 5, 0, 2 * Math.PI, false);
+                ctx.fillStyle = alpha(theme.palette.primary.main, 0.2);
                 ctx.fill();
               }
 
-              // Node circle
               ctx.beginPath();
-              ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
-              ctx.fillStyle =
-                hoveredNode && hoveredNode.id === node.id ? "#f472b6" : "#8ab4f8";
+              ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
+              ctx.fillStyle = hovered
+                ? theme.palette.warning.main
+                : theme.palette.primary.main;
               ctx.fill();
 
-              // Label (only when not too zoomed out)
-              if (globalScale >= 0.6) {
-                ctx.font = `${fontSize}px Inter, sans-serif`;
-                ctx.fillStyle = "rgba(255,255,255,0.85)";
+              if (globalScale >= 0.65) {
+                ctx.font = `${fontSize}px IBM Plex Sans, sans-serif`;
+                ctx.fillStyle = "rgba(244,247,251,0.88)";
                 ctx.textAlign = "center";
                 ctx.textBaseline = "top";
-                const shortLabel =
-                  label.length > 20 ? label.slice(0, 18) + "…" : label;
-                ctx.fillText(shortLabel, node.x, node.y + r + 2);
+                ctx.fillText(shortLabel, node.x, node.y + radius + 3);
               }
             }}
-            backgroundColor="transparent"
-            width={420}
           />
-        )}
+        ) : null}
       </Box>
 
-      {/* Footer: hovered node info */}
       <Box
         sx={{
-          px: 2,
-          py: 1,
-          borderTop: "1px solid rgba(255,255,255,0.08)",
-          minHeight: 44,
-          display: "flex",
-          alignItems: "center",
-          gap: 1,
-          flexShrink: 0,
+          px: 2.25,
+          py: 1.5,
+          borderTop: "1px solid",
+          borderColor: "divider",
         }}
       >
         {hoveredNode ? (
-          <>
+          <Stack direction="row" spacing={1} alignItems="center">
             <Chip
               label={`${hoveredNode.chunkCount} chunks`}
               size="small"
-              sx={{ fontSize: "0.65rem", height: 20 }}
               variant="outlined"
             />
             <Typography variant="caption" color="text.secondary" noWrap>
               {hoveredNode.label}
             </Typography>
-          </>
+          </Stack>
         ) : (
-          <Typography variant="caption" color="text.disabled">
-            {graphData.nodes.length} documents · {graphData.links.length} similarity edges
+          <Typography variant="caption" color="text.secondary">
+            {graphData.nodes.length} documents and {graphData.links.length} similarity edges
           </Typography>
         )}
       </Box>

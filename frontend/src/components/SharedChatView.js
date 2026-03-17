@@ -1,59 +1,74 @@
-// frontend/src/components/SharedChatView.js
-// Phase G #138: Public read-only view of a shared chat session.
-// Accessed via /shared/:token (no auth required).
-
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
-  Box,
-  Paper,
-  Typography,
-  CircularProgress,
-  Alert,
-  Chip,
-  Avatar,
-  Divider,
   AppBar,
+  Avatar,
+  Box,
+  Chip,
+  CircularProgress,
+  Paper,
+  Stack,
   Toolbar,
+  Typography,
+  Alert,
 } from "@mui/material";
-import { SmartToy as BotIcon, Person as PersonIcon } from "@mui/icons-material";
+import { alpha, useTheme } from "@mui/material/styles";
+import SmartToyOutlinedIcon from "@mui/icons-material/SmartToyOutlined";
+import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
+import ShareOutlinedIcon from "@mui/icons-material/ShareOutlined";
 
-function MessageRow({ msg }) {
-  const isUser = msg.role === "user";
+function MessageRow({ message }) {
+  const theme = useTheme();
+  const role = message.sender || message.role;
+  const content = message.text || message.content;
+  const isUser = role === "user";
+
   return (
     <Box
       sx={{
         display: "flex",
-        gap: 1.5,
-        mb: 2,
         flexDirection: isUser ? "row-reverse" : "row",
+        gap: 1.25,
         alignItems: "flex-start",
       }}
     >
       <Avatar
         sx={{
-          width: 32,
-          height: 32,
-          bgcolor: isUser ? "secondary.main" : "primary.main",
-          flexShrink: 0,
+          width: 34,
+          height: 34,
+          bgcolor: isUser
+            ? alpha(theme.palette.secondary.main, 0.16)
+            : alpha(theme.palette.primary.main, 0.16),
+          color: isUser ? "secondary.light" : "primary.light",
         }}
       >
-        {isUser ? <PersonIcon sx={{ fontSize: 18 }} /> : <BotIcon sx={{ fontSize: 18 }} />}
+        {isUser ? (
+          <PersonOutlineIcon sx={{ fontSize: 18 }} />
+        ) : (
+          <SmartToyOutlinedIcon sx={{ fontSize: 18 }} />
+        )}
       </Avatar>
+
       <Paper
-        elevation={1}
         sx={{
-          p: 2,
-          maxWidth: "80%",
-          borderRadius: 2,
-          bgcolor: isUser ? "primary.dark" : "background.paper",
-          color: isUser ? "primary.contrastText" : "text.primary",
+          px: 2,
+          py: 1.5,
+          maxWidth: "min(760px, 100%)",
+          borderRadius: 4,
+          bgcolor: isUser
+            ? alpha(theme.palette.primary.main, 0.16)
+            : alpha(theme.palette.common.white, 0.02),
+          borderColor: isUser
+            ? alpha(theme.palette.primary.main, 0.26)
+            : "divider",
         }}
       >
-        <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
-          {msg.content}
+        <Typography variant="body1" sx={{ whiteSpace: "pre-wrap" }}>
+          {content}
         </Typography>
-        <Typography variant="caption" sx={{ opacity: 0.6, display: "block", mt: 0.5 }}>
-          {new Date(msg.createdAt).toLocaleTimeString()}
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
+          {message.createdAt
+            ? new Date(message.createdAt).toLocaleString()
+            : "Unknown time"}
         </Typography>
       </Paper>
     </Box>
@@ -67,10 +82,17 @@ function SharedChatView({ token }) {
 
   useEffect(() => {
     if (!token) return;
+
     fetch(`/api/shared/${token}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(res.status === 410 ? "This share link has expired." : "Share link not found.");
-        return res.json();
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(
+            response.status === 410
+              ? "This share link has expired."
+              : "Share link not found."
+          );
+        }
+        return response.json();
       })
       .then(setChat)
       .catch((err) => setError(err.message))
@@ -78,67 +100,83 @@ function SharedChatView({ token }) {
   }, [token]);
 
   return (
-    <Box sx={{ minHeight: "100vh", bgcolor: "#0f0f23", display: "flex", flexDirection: "column" }}>
-      <AppBar position="static" elevation={0} sx={{ bgcolor: "background.paper", borderBottom: 1, borderColor: "divider" }}>
-        <Toolbar>
-          <Typography variant="h6" sx={{ fontWeight: 700, color: "primary.main" }}>
-            ⚡ RASS
-          </Typography>
-          <Typography variant="body2" sx={{ ml: 2, color: "text.secondary" }}>
-            Shared Conversation
-          </Typography>
+    <Box sx={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      <AppBar position="sticky" color="transparent">
+        <Toolbar sx={{ minHeight: 68, gap: 1.5 }}>
+          <Avatar
+            variant="rounded"
+            sx={{
+              width: 38,
+              height: 38,
+              bgcolor: (theme) => alpha(theme.palette.primary.main, 0.16),
+              color: "primary.light",
+            }}
+          >
+            <ShareOutlinedIcon />
+          </Avatar>
+          <Box>
+            <Typography variant="subtitle1">Shared RASS conversation</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Read-only transcript with document-backed answers and context.
+            </Typography>
+          </Box>
         </Toolbar>
       </AppBar>
 
-      <Box sx={{ flex: 1, maxWidth: 900, mx: "auto", width: "100%", p: 3 }}>
-        {loading && (
-          <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
-            <CircularProgress />
-          </Box>
-        )}
-
-        {error && (
-          <Alert severity="error" sx={{ mt: 4 }}>
-            {error}
-          </Alert>
-        )}
-
-        {chat && (
-          <>
-            <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-              <Typography variant="h5" fontWeight={700} gutterBottom>
-                {chat.title}
-              </Typography>
-              <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-                <Chip label={`Shared by ${chat.owner}`} size="small" variant="outlined" />
-                <Chip
-                  label={`${chat.messages.length} messages`}
-                  size="small"
-                  variant="outlined"
-                />
-                <Chip
-                  label={new Date(chat.createdAt).toLocaleDateString()}
-                  size="small"
-                  variant="outlined"
-                />
+      <Box sx={{ flex: 1, px: { xs: 2, md: 3 }, py: { xs: 2, md: 3 } }}>
+        <Box sx={{ maxWidth: 1040, mx: "auto", display: "grid", gap: 2.5 }}>
+          {loading ? (
+            <Box sx={{ minHeight: 260, display: "grid", placeItems: "center" }}>
+              <Box sx={{ display: "grid", justifyItems: "center", gap: 2 }}>
+                <CircularProgress />
+                <Typography variant="body2" color="text.secondary">
+                  Loading shared conversation...
+                </Typography>
               </Box>
-            </Paper>
-
-            <Divider sx={{ mb: 3 }} />
-
-            <Box>
-              {chat.messages.map((msg) => (
-                <MessageRow key={msg.id} msg={msg} />
-              ))}
             </Box>
+          ) : null}
 
-            {chat.messages.length === 0 && (
-              <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ py: 4 }}>
-                This conversation is empty.
-              </Typography>
-            )}
-          </>
-        )}
+          {error ? <Alert severity="error">{error}</Alert> : null}
+
+          {chat ? (
+            <>
+              <Paper sx={{ p: { xs: 2.5, md: 3 } }}>
+                <Typography variant="overline" color="warning.main">
+                  Shared transcript
+                </Typography>
+                <Typography variant="h4" sx={{ mt: 1 }}>
+                  {chat.title}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1.25 }}>
+                  Shared by {chat.owner}. This view is read-only and is intended
+                  for review, collaboration, and citation lookup.
+                </Typography>
+
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 2 }}>
+                  <Chip label={`${chat.messages.length} messages`} variant="outlined" />
+                  <Chip
+                    label={new Date(chat.createdAt).toLocaleDateString()}
+                    variant="outlined"
+                  />
+                </Stack>
+              </Paper>
+
+              <Stack spacing={2}>
+                {chat.messages.length > 0 ? (
+                  chat.messages.map((message) => (
+                    <MessageRow key={message.id} message={message} />
+                  ))
+                ) : (
+                  <Paper sx={{ p: 3 }}>
+                    <Typography variant="body2" color="text.secondary" textAlign="center">
+                      This conversation is empty.
+                    </Typography>
+                  </Paper>
+                )}
+              </Stack>
+            </>
+          ) : null}
+        </Box>
       </Box>
     </Box>
   );

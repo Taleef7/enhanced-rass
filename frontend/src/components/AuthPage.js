@@ -1,73 +1,192 @@
-// In frontend/src/components/AuthPage.js
+import React, { useState } from "react";
+import {
+  Box,
+  Button,
+  CircularProgress,
+  Stack,
+  Tab,
+  Tabs,
+  TextField,
+  Typography,
+} from "@mui/material";
+import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
+import VerifiedOutlinedIcon from "@mui/icons-material/VerifiedOutlined";
+import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
+import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import { loginUser, registerUser } from "../apiClient";
+import { useAuth } from "../context/AuthContext";
 
-import React, { useState } from 'react';
-import { Box, Paper, Typography, TextField, Button, Tabs, Tab, CircularProgress } from '@mui/material';
-import { loginUser, registerUser } from '../apiClient';
-import { useAuth } from '../context/AuthContext';
-
+const AUTH_PILLARS = [
+  {
+    icon: <ArticleOutlinedIcon sx={{ fontSize: 16 }} />,
+    title: "Document grounded",
+    body: "Keep uploads, chats, and retrieved evidence connected in one workspace.",
+  },
+  {
+    icon: <VerifiedOutlinedIcon sx={{ fontSize: 16 }} />,
+    title: "Traceable answers",
+    body: "Inspect citations, retrieved chunks, and message-level feedback without leaving the flow.",
+  },
+  {
+    icon: <AutoAwesomeOutlinedIcon sx={{ fontSize: 16 }} />,
+    title: "Operationally ready",
+    body: "Move from uploads to shared chats and knowledge views with one consistent interface.",
+  },
+];
 
 const AuthForm = ({ isLogin }) => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError("");
     setIsLoading(true);
+
     try {
+      const normalizedUsername = username.trim();
+
+      if (normalizedUsername.length < 3) {
+        setError("Username must be at least 3 characters long.");
+        return;
+      }
+
+      if (password.length < 8) {
+        setError("Password must be at least 8 characters long.");
+        return;
+      }
+
       if (isLogin) {
-        const response = await loginUser(username, password);
+        const response = await loginUser(normalizedUsername, password);
         login(response.data.token);
       } else {
-        await registerUser(username, password);
-        const response = await loginUser(username, password);
+        await registerUser(normalizedUsername, password);
+        const response = await loginUser(normalizedUsername, password);
         login(response.data.token);
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'An unexpected error occurred.');
+      setError(err.response?.data?.error || "An unexpected error occurred.");
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <Box component="form" onSubmit={handleSubmit} sx={{ mt: 3 }}>
-      <TextField
-        label="Username"
-        variant="outlined"
-        fullWidth
-        margin="normal"
-        value={username}
-        onChange={(e) => setUsername(e.target.value)}
-        disabled={isLoading}
-      />
-      <TextField
-        label="Password"
-        type="password"
-        variant="outlined"
-        fullWidth
-        margin="normal"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        disabled={isLoading}
-      />
-      {error && (
-        <Typography color="error" variant="body2" sx={{ mt: 1 }}>
-          {error}
-        </Typography>
-      )}
-      <Button
-        type="submit"
-        variant="contained"
-        fullWidth
-        sx={{ mt: 2, py: 1.5 }}
-        disabled={isLoading}
-      >
-        {isLoading ? <CircularProgress size={24} color="inherit" /> : (isLogin ? 'Login' : 'Register')}
-      </Button>
+    <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 3 }}>
+      <Stack spacing={2.5}>
+        <Box>
+          <Typography
+            sx={{
+              fontSize: "0.62rem",
+              fontFamily: '"JetBrains Mono", monospace',
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: "#64748B",
+              mb: 0.75,
+              display: "block",
+            }}
+            component="label"
+            htmlFor="username-field"
+          >
+            Username
+          </Typography>
+          <TextField
+            id="username-field"
+            fullWidth
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            disabled={isLoading}
+            autoComplete="username"
+            placeholder="Enter username (min. 3 chars)"
+            size="small"
+            sx={{
+              "& .MuiInputBase-input": {
+                fontFamily: '"JetBrains Mono", monospace',
+                fontSize: "0.85rem",
+              },
+            }}
+          />
+        </Box>
+
+        <Box>
+          <Typography
+            sx={{
+              fontSize: "0.62rem",
+              fontFamily: '"JetBrains Mono", monospace',
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: "#64748B",
+              mb: 0.75,
+              display: "block",
+            }}
+            component="label"
+            htmlFor="password-field"
+          >
+            Password
+          </Typography>
+          <TextField
+            id="password-field"
+            type="password"
+            fullWidth
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            disabled={isLoading}
+            autoComplete={isLogin ? "current-password" : "new-password"}
+            placeholder="Enter password (min. 8 chars)"
+            size="small"
+            sx={{
+              "& .MuiInputBase-input": {
+                fontFamily: '"JetBrains Mono", monospace',
+                fontSize: "0.85rem",
+              },
+            }}
+          />
+        </Box>
+
+        {error ? (
+          <Box
+            sx={{
+              px: 2,
+              py: 1.25,
+              border: "1px solid #FECACA",
+              backgroundColor: "#FEF2F2",
+              borderRadius: "8px",
+            }}
+          >
+            <Typography
+              sx={{
+                fontSize: "0.72rem",
+                fontFamily: '"JetBrains Mono", monospace',
+                color: "#DC2626",
+                letterSpacing: "0.03em",
+              }}
+            >
+              {error}
+            </Typography>
+          </Box>
+        ) : null}
+
+        <Button
+          type="submit"
+          variant="contained"
+          fullWidth
+          size="large"
+          disabled={isLoading}
+          endIcon={!isLoading && <ArrowForwardIcon sx={{ fontSize: 16 }} />}
+          sx={{ mt: 1 }}
+        >
+          {isLoading ? (
+            <CircularProgress size={18} sx={{ color: "#FFFFFF" }} />
+          ) : isLogin ? (
+            "Sign in"
+          ) : (
+            "Create account"
+          )}
+        </Button>
+      </Stack>
     </Box>
   );
 };
@@ -75,23 +194,234 @@ const AuthForm = ({ isLogin }) => {
 const AuthPage = () => {
   const [value, setValue] = useState(0);
 
-  const handleChange = (event, newValue) => {
-    setValue(newValue);
-  };
-
   return (
-    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#0f0f23' }}>
-      <Paper elevation={6} sx={{ p: 4, width: '100%', maxWidth: 400 }}>
-        <Typography variant="h4" component="h1" gutterBottom sx={{ textAlign: 'center' }}>
-          {value === 0 ? 'Welcome Back' : 'Create Account'}
-        </Typography>
-        <Tabs value={value} onChange={handleChange} centered>
-          <Tab label="Login" />
-          <Tab label="Register" />
-        </Tabs>
-        {value === 0 && <AuthForm isLogin={true} />}
-        {value === 1 && <AuthForm isLogin={false} />}
-      </Paper>
+    <Box
+      sx={{
+        minHeight: "100vh",
+        display: "grid",
+        alignItems: "center",
+        px: { xs: 2, md: 4 },
+        py: { xs: 3, md: 5 },
+        backgroundColor: "#FFFFFF",
+        // Subtle grid texture
+        backgroundImage: `
+          linear-gradient(rgba(0,82,255,0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0,82,255,0.03) 1px, transparent 1px)
+        `,
+        backgroundSize: "48px 48px",
+      }}
+    >
+      <Box
+        sx={{
+          width: "100%",
+          maxWidth: 1100,
+          mx: "auto",
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", lg: "1.1fr 0.9fr" },
+          gap: 0,
+          border: "1px solid #E2E8F0",
+          borderRadius: "16px",
+          backgroundColor: "#FFFFFF",
+          boxShadow: "0 20px 60px rgba(15,23,42,0.08), 0 8px 24px rgba(0,82,255,0.06)",
+        }}
+      >
+        {/* Left panel — Brand & features */}
+        <Box
+          sx={{
+            p: { xs: 3, md: 5 },
+            borderRight: { lg: "1px solid #E2E8F0" },
+            borderBottom: { xs: "1px solid #E2E8F0", lg: "none" },
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+            minHeight: { lg: 560 },
+          }}
+        >
+          <Box>
+            {/* Brand mark */}
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 4 }}>
+              <Box
+                sx={{
+                  width: 32,
+                  height: 32,
+                  background: "linear-gradient(135deg, #0052FF, #4D7CFF)",
+                  borderRadius: "8px",
+                  display: "grid",
+                  placeItems: "center",
+                }}
+              >
+                <Typography
+                  sx={{
+                    color: "#FFFFFF",
+                    fontSize: "0.65rem",
+                    fontFamily: '"JetBrains Mono", monospace',
+                    fontWeight: 700,
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  R
+                </Typography>
+              </Box>
+              <Typography
+                sx={{
+                  fontSize: "0.62rem",
+                  fontFamily: '"JetBrains Mono", monospace',
+                  letterSpacing: "0.15em",
+                  textTransform: "uppercase",
+                  color: "#64748B",
+                }}
+              >
+                Enhanced RASS
+              </Typography>
+            </Box>
+
+            {/* Headline */}
+            <Typography
+              variant="h2"
+              sx={{
+                maxWidth: 480,
+                mb: 2,
+                fontSize: { xs: "1.75rem", md: "2.2rem" },
+              }}
+            >
+              Retrieval-augmented answers with a complete evidence trail.
+            </Typography>
+
+            {/* Thick rule */}
+            <Box sx={{ width: 40, height: 4, backgroundColor: "#0052FF", borderRadius: "2px", mb: 2.5 }} />
+
+            <Typography
+              sx={{
+                color: "#64748B",
+                fontSize: "0.9rem",
+                lineHeight: 1.75,
+                maxWidth: 460,
+              }}
+            >
+              Upload files, ask focused questions, inspect retrieved evidence,
+              and keep the reasoning trail visible while you work.
+            </Typography>
+          </Box>
+
+          {/* Feature pillars */}
+          <Stack spacing={0} sx={{ mt: { xs: 3, md: 5 } }}>
+            {AUTH_PILLARS.map((pillar, idx) => (
+              <Box
+                key={pillar.title}
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "auto 1fr",
+                  gap: 2,
+                  alignItems: "start",
+                  py: 2,
+                  borderTop: "1px solid #E2E8F0",
+                  borderBottom: idx === AUTH_PILLARS.length - 1 ? "1px solid #E2E8F0" : "none",
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 32,
+                    height: 32,
+                    border: "none",
+                    backgroundColor: "rgba(0,82,255,0.08)",
+                    borderRadius: "8px",
+                    display: "grid",
+                    placeItems: "center",
+                    flexShrink: 0,
+                    color: "#0052FF",
+                  }}
+                >
+                  {pillar.icon}
+                </Box>
+                <Box>
+                  <Typography
+                    variant="subtitle2"
+                    sx={{ mb: 0.5, fontSize: "0.68rem" }}
+                  >
+                    {pillar.title}
+                  </Typography>
+                  <Typography
+                    sx={{
+                      fontSize: "0.8rem",
+                      color: "#64748B",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    {pillar.body}
+                  </Typography>
+                </Box>
+              </Box>
+            ))}
+          </Stack>
+        </Box>
+
+        {/* Right panel — Auth form */}
+        <Box
+          sx={{
+            p: { xs: 3, md: 5 },
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+          }}
+        >
+          <Typography
+            variant="overline"
+            sx={{ display: "block", mb: 0.5, color: "#64748B" }}
+          >
+            Workspace access
+          </Typography>
+          <Typography
+            variant="h4"
+            sx={{ mb: 0.75, fontSize: "1.4rem" }}
+          >
+            {value === 0 ? "Sign in" : "Create account"}
+          </Typography>
+          <Typography
+            sx={{
+              fontSize: "0.82rem",
+              color: "#64748B",
+              lineHeight: 1.6,
+              mb: 2,
+            }}
+          >
+            {value === 0
+              ? "Return to your chats, document library, and evidence panels."
+              : "Set up an account to start uploading documents and querying with citations."}
+          </Typography>
+
+          {/* Mode tabs */}
+          <Box sx={{ borderBottom: "1px solid #E2E8F0", mb: 0 }}>
+            <Tabs
+              value={value}
+              onChange={(_, nextValue) => setValue(nextValue)}
+              sx={{
+                minHeight: 40,
+              }}
+            >
+              <Tab
+                label="Login"
+                sx={{
+                  minHeight: 40,
+                  py: 0,
+                  px: 2,
+                  fontSize: "0.68rem",
+                }}
+              />
+              <Tab
+                label="Register"
+                sx={{
+                  minHeight: 40,
+                  py: 0,
+                  px: 2,
+                  fontSize: "0.68rem",
+                }}
+              />
+            </Tabs>
+          </Box>
+
+          {value === 0 ? <AuthForm isLogin /> : <AuthForm isLogin={false} />}
+        </Box>
+      </Box>
     </Box>
   );
 };

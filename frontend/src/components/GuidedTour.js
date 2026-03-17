@@ -1,81 +1,60 @@
-// frontend/src/components/GuidedTour.js
-// Phase F (#131): Interactive guided tour for first-time users using react-joyride.
-// Walks through chat creation, document upload, knowledge base, and settings.
-
-import React, { useState, useCallback } from "react";
-import Joyride, { STATUS, EVENTS } from "react-joyride";
+import React, { useCallback, useState } from "react";
+import Joyride, { EVENTS, STATUS } from "react-joyride";
 import { Box, Button, Typography } from "@mui/material";
-import ExploreIcon from "@mui/icons-material/Explore";
+import { alpha, useTheme } from "@mui/material/styles";
+import ExploreOutlinedIcon from "@mui/icons-material/ExploreOutlined";
 
 const TOUR_STEPS = [
   {
     target: "body",
     placement: "center",
-    title: "Welcome to RASS! 👋",
+    title: "Welcome to RASS",
     content:
-      "RASS is your AI-powered document intelligence platform. " +
-      "Let me show you around in about 60 seconds.",
+      "This workspace is built for document-grounded analysis. Ask questions, inspect evidence, and keep the retrieval trail visible while you work.",
     disableBeacon: true,
   },
   {
-    target: '[data-tour="new-chat"]',
-    placement: "right",
-    title: "Start a New Chat",
+    target: 'button[aria-label="Open conversations"]',
+    placement: "bottom",
+    title: "Open your conversation list",
     content:
-      "Click here to create a new conversation. Each chat keeps its own " +
-      "message history so you can work on multiple topics simultaneously.",
+      "Use the sidebar to create new threads, rename active conversations, and keep workstreams separated by topic.",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-tour="documents-button"]',
+    placement: "bottom",
+    title: "Check document readiness",
+    content:
+      "Open the document library to confirm whether uploads are queued, processing, or ready before you rely on them in answers.",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-tour="evidence-toggle"]',
+    placement: "bottom",
+    title: "Inspect retrieved context",
+    content:
+      "Open the evidence panel to review the chunks and relevance signals RASS retrieved for the current answer.",
     disableBeacon: true,
   },
   {
     target: '[data-tour="chat-input"]',
     placement: "top",
-    title: "Ask Anything",
+    title: "Ask for synthesis or extraction",
     content:
-      "Type your question here. RASS uses hybrid retrieval (semantic + keyword) " +
-      "over your documents to find the most relevant context before answering.",
+      "Use the composer for document-backed questions, comparisons, and follow-up requests. Press Enter to send and Shift+Enter for a new line.",
     disableBeacon: true,
   },
   {
     target: '[data-tour="upload-btn"]',
     placement: "top",
-    title: "Upload Documents",
+    title: "Upload source material",
     content:
-      "Click the paperclip to upload PDF, DOCX, TXT, or MD files. " +
-      "Documents are processed asynchronously — you can keep chatting while they ingest.",
-    disableBeacon: true,
-  },
-  {
-    target: '[data-tour="my-documents"]',
-    placement: "right",
-    title: "Document Library",
-    content:
-      "View all your uploaded documents here with live status badges " +
-      "(Queued → Processing → Ready). Click any document to see its ETL provenance.",
-    disableBeacon: true,
-  },
-  {
-    target: '[data-tour="knowledge-bases"]',
-    placement: "right",
-    title: "Knowledge Bases",
-    content:
-      "Organise documents into themed knowledge bases. " +
-      "Share KBs with teammates and search within a specific KB when asking questions.",
-    disableBeacon: true,
-  },
-  {
-    target: "body",
-    placement: "center",
-    title: "You're all set! 🚀",
-    content:
-      "Start by uploading a document or asking a question. " +
-      "Try one of the example queries below the chat input to see RASS in action.",
+      "Attach PDF, Markdown, text, or Word files here. RASS will ingest them asynchronously while you continue working.",
     disableBeacon: true,
   },
 ];
 
-/**
- * Custom tooltip component for Joyride to match the app's dark theme.
- */
 function CustomTooltip({
   continuous,
   index,
@@ -90,83 +69,78 @@ function CustomTooltip({
     <Box
       {...tooltipProps}
       sx={{
-        background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)",
-        border: "1px solid rgba(138,180,248,0.3)",
-        borderRadius: 2,
+        maxWidth: 360,
         p: 3,
-        maxWidth: 340,
-        boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+        borderRadius: 4,
+        border: "1px solid",
+        borderColor: "divider",
+        bgcolor: "background.paper",
+        boxShadow: "none",
       }}
     >
-      {step.title && (
-        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1, color: "#8ab4f8" }}>
-          {step.title}
-        </Typography>
-      )}
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
+      <Typography variant="overline" color="warning.main">
+        Guided tour
+      </Typography>
+      <Typography variant="h6" sx={{ mt: 0.5 }}>
+        {step.title}
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 1.25 }}>
         {step.content}
       </Typography>
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <Button
-          {...skipProps}
-          size="small"
-          sx={{ color: "text.disabled", textTransform: "none", fontSize: "0.75rem" }}
-        >
-          Skip tour
-        </Button>
+
+      <Box
+        sx={{
+          mt: 2.5,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 1.5,
+        }}
+      >
+        <Typography variant="caption" color="text.secondary">
+          Step {index + 1} of {TOUR_STEPS.length}
+        </Typography>
+
         <Box sx={{ display: "flex", gap: 1 }}>
-          {index > 0 && (
-            <Button
-              {...backProps}
-              size="small"
-              variant="outlined"
-              sx={{ textTransform: "none", fontSize: "0.75rem" }}
-            >
+          <Button {...skipProps} size="small">
+            Skip
+          </Button>
+          {index > 0 ? (
+            <Button {...backProps} size="small" variant="outlined">
               Back
             </Button>
-          )}
+          ) : null}
           <Button
-            {...primaryProps}
+            {...(continuous ? primaryProps : closeProps)}
             size="small"
             variant="contained"
             sx={{
-              textTransform: "none",
-              fontSize: "0.75rem",
-              background: "linear-gradient(45deg, #8ab4f8 30%, #f472b6 90%)",
+              boxShadow: "none",
+              "&:hover": {
+                boxShadow: "none",
+              },
             }}
           >
-            {continuous ? (index === TOUR_STEPS.length - 1 ? "Done" : "Next") : "Close"}
+            {continuous && index < TOUR_STEPS.length - 1 ? "Next" : "Done"}
           </Button>
         </Box>
       </Box>
-      <Typography
-        variant="caption"
-        color="text.disabled"
-        sx={{ display: "block", mt: 1.5, textAlign: "center" }}
-      >
-        Step {index + 1} of {TOUR_STEPS.length}
-      </Typography>
     </Box>
   );
 }
 
-/**
- * GuidedTour — mounts the Joyride tour.
- * Pass `run={true}` to start; `onFinish` is called when the tour completes or is skipped.
- */
 const GuidedTour = ({ run = false, onFinish }) => {
+  const theme = useTheme();
   const [tourKey, setTourKey] = useState(0);
 
   const handleCallback = useCallback(
     (data) => {
-      const { status, type } = data;
       if (
-        [STATUS.FINISHED, STATUS.SKIPPED].includes(status) ||
-        type === EVENTS.TOUR_END
+        [STATUS.FINISHED, STATUS.SKIPPED].includes(data.status) ||
+        data.type === EVENTS.TOUR_END
       ) {
-        if (onFinish) onFinish();
-        // Reset tour so it can be re-run from the help menu
-        setTourKey((k) => k + 1);
+        onFinish && onFinish();
+        setTourKey((previous) => previous + 1);
       }
     },
     [onFinish]
@@ -175,35 +149,32 @@ const GuidedTour = ({ run = false, onFinish }) => {
   return (
     <Joyride
       key={tourKey}
-      steps={TOUR_STEPS}
       run={run}
+      steps={TOUR_STEPS}
       continuous
       showProgress={false}
       showSkipButton
       disableScrolling={false}
-      scrollOffset={80}
+      scrollOffset={88}
       tooltipComponent={CustomTooltip}
       callback={handleCallback}
       styles={{
         options: {
-          zIndex: 9999,
-          arrowColor: "#1a1a2e",
-          overlayColor: "rgba(0,0,0,0.65)",
+          zIndex: 1400,
+          arrowColor: theme.palette.background.paper,
+          overlayColor: alpha(theme.palette.common.black, 0.65),
         },
         spotlight: {
-          borderRadius: 8,
+          borderRadius: 16,
         },
       }}
     />
   );
 };
 
-/**
- * TourLaunchButton — a button that can be placed in a help menu to restart the tour.
- */
 export const TourLaunchButton = ({ onClick }) => (
   <Button
-    startIcon={<ExploreIcon />}
+    startIcon={<ExploreOutlinedIcon />}
     onClick={onClick}
     size="small"
     sx={{ textTransform: "none" }}

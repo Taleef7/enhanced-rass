@@ -30,6 +30,7 @@ import {
   Refresh as RefreshIcon,
   CenterFocusStrong as CenterIcon,
 } from "@mui/icons-material";
+import { useAuth } from "../context/AuthContext";
 
 // Node color by entity type
 const TYPE_COLORS = {
@@ -54,6 +55,7 @@ function nodeColor(node) {
  * @param {number} [props.height=600] - Graph canvas height in pixels.
  */
 function KnowledgeGraph({ kbId, height = 600 }) {
+  const { token } = useAuth();
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -68,7 +70,6 @@ function KnowledgeGraph({ kbId, height = 600 }) {
     setLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem("accessToken");
       const res = await fetch(`/api/knowledge-bases/${kbId}/graph?limit=500`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -83,7 +84,7 @@ function KnowledgeGraph({ kbId, height = 600 }) {
     } finally {
       setLoading(false);
     }
-  }, [kbId]);
+  }, [kbId, token]);
 
   useEffect(() => {
     fetchGraph();
@@ -93,7 +94,6 @@ function KnowledgeGraph({ kbId, height = 600 }) {
     if (!kbId) return;
     setExtracting(true);
     try {
-      const token = localStorage.getItem("accessToken");
       await fetch(`/api/knowledge-bases/${kbId}/graph/extract`, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
