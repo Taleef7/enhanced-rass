@@ -34,11 +34,11 @@ Install these first:
 - npm
 - Git
 
-You also need one of these generation setups:
+You also need one of these provider setups:
 
-- `OPENAI_API_KEY`
-- `GEMINI_API_KEY`
-- or local Ollama models if you want to run without hosted providers
+- local Ollama models for the most reliable local path
+- `GEMINI_API_KEY` plus enabled billing/quota if you want Gemini
+- `OPENAI_API_KEY` if you want OpenAI instead
 
 ## Step 1: Clone And Prepare The Repo
 
@@ -58,10 +58,15 @@ docker network create shared_rass_network
 Create a root `.env` file. At minimum, set:
 
 ```env
-OPENAI_API_KEY=...
-GEMINI_API_KEY=...
 JWT_SECRET=replace-me
 REFRESH_TOKEN_SECRET=replace-me-too
+```
+
+Add provider secrets only for the providers you actually use:
+
+```env
+GEMINI_API_KEY=...
+OPENAI_API_KEY=...
 ```
 
 Additional values you may need depending on your workflow:
@@ -74,7 +79,7 @@ EMBEDDING_SERVICE_URL=http://localhost:8001
 
 Notes:
 
-- you do not need both OpenAI and Gemini keys if you only use one provider
+- you do not need both Gemini and OpenAI keys if you only use one provider
 - if you change JWT secrets, existing sessions become invalid
 - do not place secrets in `config.yml`
 
@@ -393,7 +398,7 @@ The demo stack is useful for showcase scenarios, but it is not the canonical dev
 1. root backend compose
 2. local frontend dev server
 
-## Optional: Run Fully Local With Ollama
+## Recommended: Run Fully Local With Ollama
 
 RASS includes an Ollama container for local models.
 
@@ -407,10 +412,37 @@ To use it:
 3. update `config.yml`:
    - `EMBEDDING_PROVIDER: ollama`
    - `LLM_PROVIDER: ollama`
+   - `SEARCH_TERM_EMBEDDING_PROVIDER: ollama`
    - set `OLLAMA_LLM_MODEL`
    - set `OLLAMA_EMBED_MODEL`
-4. confirm `EMBED_DIM` matches the Ollama embedding model
+4. set `EMBED_DIM: 768` for `nomic-embed-text`
 5. re-ingest documents if you changed embedding settings
+
+This is the best local-development baseline because it avoids hosted-provider quota and billing failures.
+
+## Gemini Setup Checklist
+
+Use Gemini only after the local path is stable.
+
+1. Create or select the correct project in Google AI Studio.
+2. Generate the server-side API key and place it in the root `.env` as `GEMINI_API_KEY`.
+3. Enable billing / paid tier for the project if the selected model requires it.
+4. Verify the project has quota for both:
+   - `gemini-2.0-flash`
+   - `gemini-embedding-001`
+5. Set in `config.yml`:
+   - `EMBEDDING_PROVIDER: gemini`
+   - `LLM_PROVIDER: gemini`
+   - `SEARCH_TERM_EMBEDDING_PROVIDER: gemini`
+   - `GEMINI_EMBED_MODEL_NAME: gemini-embedding-001`
+   - `GEMINI_MODEL_NAME: gemini-2.5-flash`
+   - `EMBED_DIM: 3072`
+6. Re-ingest documents after changing embedding provider or dimension.
+
+Notes:
+
+- keep the Gemini API key only in `.env`; never expose it in the browser
+- if retrieval works but generation fails with `429`, the usual cause is missing billing or zero quota on the selected Gemini model
 
 ## Common Troubleshooting
 
