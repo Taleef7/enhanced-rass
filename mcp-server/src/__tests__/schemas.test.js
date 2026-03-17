@@ -50,6 +50,20 @@ describe("StreamAskBodySchema", () => {
     validateBody(StreamAskBodySchema)(req, res, () => { called = true; });
     expect(called).toBe(true);
   });
+
+  test("valid query with kbId UUID passes", () => {
+    const { req, res } = makeReqRes({ query: "test", kbId: "550e8400-e29b-41d4-a716-446655440000" });
+    let called = false;
+    validateBody(StreamAskBodySchema)(req, res, () => { called = true; });
+    expect(called).toBe(true);
+    expect(req.validatedBody.kbId).toBe("550e8400-e29b-41d4-a716-446655440000");
+  });
+
+  test("invalid kbId (not a UUID) returns 400", () => {
+    const { req, res } = makeReqRes({ query: "test", kbId: "not-a-uuid" });
+    validateBody(StreamAskBodySchema)(req, res, () => {});
+    expect(res._status).toBe(400);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -196,8 +210,14 @@ describe("KBCreateSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  test("unknown embeddingModel fails", () => {
-    const result = KBCreateSchema.safeParse({ name: "KB", embeddingModel: "unknown-model" });
+  test("any non-empty embeddingModel string passes (provider-agnostic)", () => {
+    // embeddingModel accepts any non-empty string because model names are provider-dependent.
+    const result = KBCreateSchema.safeParse({ name: "KB", embeddingModel: "nomic-embed-text" });
+    expect(result.success).toBe(true);
+  });
+
+  test("empty string embeddingModel fails", () => {
+    const result = KBCreateSchema.safeParse({ name: "KB", embeddingModel: "" });
     expect(result.success).toBe(false);
   });
 
