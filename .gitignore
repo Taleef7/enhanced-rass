@@ -13,3 +13,9 @@ evaluation/source_documents/
 # Python cache
 __pycache__/
 *.pyc
+
+# Claude Code / tool artifacts (local only, not project state)
+.claude/settings.local.json
+.interface-design/
+.playwright-mcp/
+.skill-staging/
