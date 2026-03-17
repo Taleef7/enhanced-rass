@@ -57,36 +57,26 @@ export const ChatProvider = ({ children }) => {
   // Load chats from server or localStorage fallback
   const loadChats = useCallback(async () => {
     if (!user?.userId || !token) {
-      console.log("[CHAT CONTEXT] Cannot load chats - no user or token:", {
-        userId: user?.userId,
-        hasToken: !!token,
-      });
       return;
     }
 
-    console.log("[CHAT CONTEXT] Starting loadChats for user:", user.userId);
     setIsLoading(true);
     try {
       // Try to load from server first
       if (isServerAvailable) {
-        console.log("[CHAT CONTEXT] Loading chats from server...");
         const serverChats = await chatAPI.fetchChats();
-        console.log("[CHAT CONTEXT] Server chats loaded:", serverChats);
         const localChats = {};
 
         serverChats.forEach((chat) => {
           localChats[chat.id] = convertServerChatToLocal(chat);
         });
 
-        console.log("[CHAT CONTEXT] Converted chats:", localChats);
         setChats(localChats);
 
-        // Set active chat if we have chats and no active chat is set
         const chatIds = Object.keys(localChats);
-        if (chatIds.length > 0 && !activeChatId) {
-          console.log("[CHAT CONTEXT] Setting active chat to:", chatIds[0]);
-          setActiveChatId(chatIds[0]);
-        }
+        setActiveChatId((previous) =>
+          previous && localChats[previous] ? previous : chatIds[0] || null
+        );
 
         setIsServerAvailable(true);
       } else {
@@ -104,34 +94,32 @@ export const ChatProvider = ({ children }) => {
       const savedActiveChatId = localStorage.getItem(
         `activeChatId_${user.userId}`
       );
-      console.log("[CHAT CONTEXT] localStorage backup:", {
-        savedChats: !!savedChats,
-        savedActiveChatId,
-      });
 
       if (savedChats) {
         const parsedChats = JSON.parse(savedChats);
         setChats(parsedChats);
 
-        if (savedActiveChatId && parsedChats[savedActiveChatId]) {
-          setActiveChatId(savedActiveChatId);
-        } else if (Object.keys(parsedChats).length > 0) {
-          setActiveChatId(Object.keys(parsedChats)[0]);
-        }
+        const localIds = Object.keys(parsedChats);
+        setActiveChatId((previous) => {
+          if (previous && parsedChats[previous]) return previous;
+          if (savedActiveChatId && parsedChats[savedActiveChatId]) {
+            return savedActiveChatId;
+          }
+          return localIds[0] || null;
+        });
       }
+      if (!savedChats) {
+        setActiveChatId(null);
+      }
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
-  }, [user?.userId, token]); // Remove isServerAvailable from deps to prevent infinite loop
+  }, [isServerAvailable, token, user?.userId]);
 
   // Load chats when user changes or on mount
   useEffect(() => {
-    console.log("[CHAT CONTEXT] useEffect triggered - calling loadChats", {
-      userId: user?.userId,
-      hasToken: !!token,
-      hasActiveChatId: !!activeChatId,
-    });
     loadChats();
-  }, [user?.userId, token]); // Remove loadChats from deps to prevent infinite loop
+  }, [loadChats]);
 
   // Save chats to localStorage as backup whenever chats change
   useEffect(() => {
@@ -345,6 +333,7 @@ export const ChatProvider = ({ children }) => {
   };
 
   const activeChat = activeChatId ? chats[activeChatId] : null;
+  const [activeKbId, setActiveKbId] = useState(null);
 
   const chatContextValue = {
     chats,
@@ -362,6 +351,8 @@ export const ChatProvider = ({ children }) => {
     deleteChat,
     clearAllChats,
     loadChats, // Expose for manual refresh
+    activeKbId,
+    setActiveKbId,
   };
 
   return (

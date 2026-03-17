@@ -1,37 +1,42 @@
-// In frontend/src/components/Sidebar.js
-import React, { useMemo, useState, useRef } from "react";
+import React, { useEffect, useDeferredValue, useMemo, useRef, useState } from "react";
 import {
-  Drawer,
   Box,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   Button,
-  Typography,
-  TextField,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  Drawer,
+  IconButton,
   InputAdornment,
-  Tooltip,
+  List,
+  ListItemButton,
+  ListItemText,
   Menu,
   MenuItem,
+  Select,
+  TextField,
+  Tooltip,
+  Typography,
+  useMediaQuery,
 } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import AddIcon from "@mui/icons-material/Add";
-import ChatIcon from "@mui/icons-material/Chat";
-import DeleteIcon from "@mui/icons-material/Delete";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import FolderSpecialOutlinedIcon from "@mui/icons-material/FolderSpecialOutlined";
+import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import SearchIcon from "@mui/icons-material/Search";
-import ClearIcon from "@mui/icons-material/Clear";
-import EditIcon from "@mui/icons-material/Edit";
-import MoreVertIcon from "@mui/icons-material/MoreVert";
+import { fetchKnowledgeBases } from "../apiClient";
+import { useAuth } from "../context/AuthContext";
 import { useChat } from "../context/ChatContext";
 import { DRAWER_WIDTH } from "../constants/layout";
 
 const Sidebar = ({ isSidebarOpen, onClose }) => {
+  const theme = useTheme();
+  const isDesktop = useMediaQuery(theme.breakpoints.up("lg"));
+  const { token } = useAuth();
   const {
     chats,
     activeChatId,
@@ -39,18 +44,51 @@ const Sidebar = ({ isSidebarOpen, onClose }) => {
     setActiveChatId,
     deleteChat,
     updateChatTitle,
+    activeKbId,
+    setActiveKbId,
   } = useChat();
-  const chatList = Object.values(chats);
+
+  const [knowledgeBases, setKnowledgeBases] = useState([]);
+
+  useEffect(() => {
+    if (!token) return;
+    fetchKnowledgeBases(token)
+      .then((response) => setKnowledgeBases(response.data || []))
+      .catch((err) => console.warn("[Sidebar] Failed to load KBs:", err));
+  }, [token]);
+
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [chatToDelete, setChatToDelete] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
   const [menuAnchor, setMenuAnchor] = useState(null);
   const [menuChatId, setMenuChatId] = useState(null);
+  const [search, setSearch] = useState("");
   const editStartRef = useRef(0);
+  const deferredSearch = useDeferredValue(search);
+  const chatList = Object.values(chats);
+
+  const filteredChats = useMemo(() => {
+    const normalized = deferredSearch.trim().toLowerCase();
+    if (!normalized) return chatList;
+    return chatList.filter((chat) =>
+      (chat.title || "").toLowerCase().includes(normalized)
+    );
+  }, [chatList, deferredSearch]);
+
+  const closeActionsMenu = () => {
+    setMenuAnchor(null);
+    setMenuChatId(null);
+  };
+
+  const openActionsMenu = (event, chatId) => {
+    event.stopPropagation();
+    setMenuAnchor(event.currentTarget);
+    setMenuChatId(chatId);
+  };
 
   const handleDeleteClick = (event, chat) => {
-    event.stopPropagation(); // Prevent selecting the chat when clicking delete
+    event.stopPropagation();
     setChatToDelete(chat);
     setDeleteDialogOpen(true);
   };
@@ -68,270 +106,399 @@ const Sidebar = ({ isSidebarOpen, onClose }) => {
     setChatToDelete(null);
   };
 
-  const [search, setSearch] = useState("");
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-
-  const filteredChats = useMemo(() => {
-    if (!search.trim()) return chatList;
-    const s = search.toLowerCase();
-    return chatList.filter((c) => c.title?.toLowerCase().includes(s));
-  }, [chatList, search]);
-
-  const openActionsMenu = (event, chat) => {
-    event.stopPropagation();
-    setMenuAnchor(event.currentTarget);
-    setMenuChatId(chat.id);
+  const handleRenameStart = (chat) => {
+    closeActionsMenu();
+    setEditingId(chat.id);
+    setEditValue(chat.title || "");
+    editStartRef.current = Date.now();
   };
 
-  const closeActionsMenu = () => {
-    setMenuAnchor(null);
-    setMenuChatId(null);
+  const handleRenameSubmit = async (chatId) => {
+    const title = editValue.trim() || "Untitled chat";
+    await updateChatTitle(chatId, title);
+    setEditingId(null);
   };
+
+  const drawerContent = (
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        backgroundColor: "background.paper",
+      }}
+    >
+      {/* Header */}
+      <Box
+        sx={{
+          px: 2.5,
+          pt: 3,
+          pb: 2.5,
+          borderBottom: "1px solid #E2E8F0",
+        }}
+      >
+        <Typography
+          variant="overline"
+          sx={{ color: "#64748B", display: "block", mb: 0.5 }}
+        >
+          Workspace
+        </Typography>
+        <Typography
+          variant="h5"
+          sx={{
+            fontWeight: 700,
+            letterSpacing: "-0.02em",
+            lineHeight: 1.1,
+            mb: 2.5,
+          }}
+        >
+          Enhanced RASS
+        </Typography>
+
+        <Button
+          fullWidth
+          variant="contained"
+          startIcon={<AddIcon sx={{ fontSize: 16 }} />}
+          onClick={async () => {
+            await createNewChat();
+            if (!isDesktop) onClose();
+          }}
+          data-tour="new-chat"
+          sx={{
+            py: 1.25,
+            justifyContent: "flex-start",
+            gap: 0.5,
+          }}
+        >
+          New conversation
+        </Button>
+
+        {/* Knowledge Base selector */}
+        {knowledgeBases.length > 0 && (
+          <Box sx={{ mt: 2 }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 0.75 }}>
+              <FolderSpecialOutlinedIcon sx={{ fontSize: 13, color: "#64748B" }} />
+              <Typography
+                sx={{
+                  fontSize: "0.6rem",
+                  fontFamily: '"JetBrains Mono", monospace',
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: "#64748B",
+                  fontWeight: 600,
+                }}
+              >
+                Knowledge base
+              </Typography>
+            </Box>
+            <Select
+              size="small"
+              fullWidth
+              displayEmpty
+              value={activeKbId || ""}
+              onChange={(e) => setActiveKbId(e.target.value || null)}
+              sx={{
+                fontSize: "0.78rem",
+                fontFamily: '"JetBrains Mono", monospace',
+                "& .MuiSelect-select": { py: 0.75 },
+              }}
+            >
+              <MenuItem value="">
+                <Typography sx={{ fontSize: "0.78rem", color: "#94A3B8" }}>
+                  All documents
+                </Typography>
+              </MenuItem>
+              {knowledgeBases.map((kb) => (
+                <MenuItem key={kb.id} value={kb.id}>
+                  <Typography sx={{ fontSize: "0.78rem" }} noWrap>
+                    {kb.name}
+                  </Typography>
+                </MenuItem>
+              ))}
+            </Select>
+          </Box>
+        )}
+      </Box>
+
+      {/* Search */}
+      <Box sx={{ px: 2, py: 2, borderBottom: "1px solid #E2E8F0" }}>
+        <TextField
+          fullWidth
+          size="small"
+          placeholder="Search conversations"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon fontSize="small" sx={{ color: "#64748B" }} />
+              </InputAdornment>
+            ),
+          }}
+          sx={{
+            "& .MuiOutlinedInput-root": {
+              fontSize: "0.8rem",
+              fontFamily: '"JetBrains Mono", monospace',
+            },
+          }}
+        />
+      </Box>
+
+      {/* Conversation list */}
+      <List
+        sx={{
+          flex: 1,
+          px: 0,
+          pb: 2,
+          overflowY: "auto",
+        }}
+      >
+        {filteredChats.length > 0 ? (
+          filteredChats.map((chat) => {
+            const isActive = chat.id === activeChatId;
+
+            return (
+              <Box key={chat.id}>
+                <ListItemButton
+                  selected={isActive}
+                  onClick={() => {
+                    setActiveChatId(chat.id);
+                    if (!isDesktop) onClose();
+                  }}
+                  sx={{
+                    px: 2.5,
+                    py: 1.25,
+                    borderBottom: "1px solid #E2E8F0",
+                    borderLeft: isActive ? "3px solid #0052FF" : "3px solid transparent",
+                    backgroundColor: isActive ? "rgba(0,82,255,0.08)" : "transparent",
+                    "&.Mui-selected": {
+                      backgroundColor: "rgba(0,82,255,0.08)",
+                      "&:hover": {
+                        backgroundColor: "rgba(0,82,255,0.12)",
+                      },
+                    },
+                    "&:hover": {
+                      backgroundColor: "rgba(0,82,255,0.04)",
+                    },
+                    gap: 1,
+                    alignItems: "flex-start",
+                    transition: "none",
+                  }}
+                >
+                  <ListItemText
+                    primary={
+                      editingId === chat.id ? (
+                        <TextField
+                          autoFocus
+                          size="small"
+                          fullWidth
+                          value={editValue}
+                          onChange={(event) => setEditValue(event.target.value)}
+                          onFocus={() => {
+                            editStartRef.current = Date.now();
+                          }}
+                          onBlur={async () => {
+                            if (Date.now() - editStartRef.current < 120) return;
+                            await handleRenameSubmit(chat.id);
+                          }}
+                          onKeyDown={async (event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              await handleRenameSubmit(chat.id);
+                            }
+                            if (event.key === "Escape") {
+                              setEditingId(null);
+                            }
+                          }}
+                          variant="standard"
+                          sx={{
+                            "& .MuiInput-underline:before": {
+                              borderBottom: "1px solid #E2E8F0",
+                            },
+                            "& .MuiInput-underline:after": {
+                              borderBottom: "2px solid #0052FF",
+                            },
+                          }}
+                        />
+                      ) : (
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            fontWeight: isActive ? 600 : 400,
+                            fontSize: "0.82rem",
+                            lineHeight: 1.4,
+                            color: isActive ? "#0F172A" : "#0F172A",
+                          }}
+                          noWrap
+                        >
+                          {chat.title || "Untitled chat"}
+                        </Typography>
+                      )
+                    }
+                    secondary={
+                      <Typography
+                        component="span"
+                        sx={{
+                          display: "block",
+                          mt: 0.25,
+                          fontSize: "0.62rem",
+                          fontFamily: '"JetBrains Mono", monospace',
+                          color: "#94A3B8",
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        {(chat.messages || []).length} messages
+                      </Typography>
+                    }
+                    sx={{ my: 0 }}
+                  />
+
+                  <Tooltip title="Conversation actions">
+                    <IconButton
+                      size="small"
+                      onClick={(event) => openActionsMenu(event, chat.id)}
+                      sx={{
+                        flexShrink: 0,
+                        opacity: isActive ? 1 : 0,
+                        ".MuiListItemButton-root:hover &": {
+                          opacity: 1,
+                        },
+                        p: 0.5,
+                      }}
+                    >
+                      <MoreHorizIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </Tooltip>
+                </ListItemButton>
+              </Box>
+            );
+          })
+        ) : (
+          <Box
+            sx={{
+              mx: 2.5,
+              mt: 2,
+              p: 2.5,
+              border: "1px dashed #CBD5E1",
+              borderRadius: "8px",
+              textAlign: "center",
+            }}
+          >
+            <Typography
+              variant="body2"
+              sx={{ fontSize: "0.78rem", color: "#64748B" }}
+            >
+              No matching conversations.
+            </Typography>
+            <Typography
+              sx={{
+                display: "block",
+                mt: 0.5,
+                fontSize: "0.65rem",
+                fontFamily: '"JetBrains Mono", monospace',
+                color: "#94A3B8",
+              }}
+            >
+              Create a new chat or clear the search.
+            </Typography>
+          </Box>
+        )}
+      </List>
+
+      <Divider sx={{ borderColor: "#E2E8F0" }} />
+
+      {/* Footer note */}
+      <Box sx={{ px: 2.5, py: 2 }}>
+        <Typography
+          variant="overline"
+          sx={{ display: "block", color: "#64748B", mb: 0.5 }}
+        >
+          Evidence-first
+        </Typography>
+        <Typography
+          sx={{
+            fontSize: "0.7rem",
+            lineHeight: 1.5,
+            color: "#94A3B8",
+            fontFamily: '"JetBrains Mono", monospace',
+          }}
+        >
+          Upload documents, inspect retrieved context, and confirm citations before trusting an answer.
+        </Typography>
+      </Box>
+
+      <Menu
+        anchorEl={menuAnchor}
+        open={Boolean(menuAnchor)}
+        onClose={closeActionsMenu}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+      >
+        <MenuItem
+          onClick={() => {
+            const chat = chats[menuChatId];
+            if (chat) {
+              handleRenameStart(chat);
+            }
+          }}
+          sx={{ gap: 1.25 }}
+        >
+          <EditOutlinedIcon sx={{ fontSize: 15 }} />
+          Rename
+        </MenuItem>
+        <MenuItem
+          onClick={(event) => {
+            const chat = chats[menuChatId];
+            if (chat) {
+              handleDeleteClick(event, chat);
+            }
+            closeActionsMenu();
+          }}
+          sx={{ gap: 1.25 }}
+        >
+          <DeleteOutlineIcon sx={{ fontSize: 15 }} />
+          Delete
+        </MenuItem>
+      </Menu>
+
+      <Dialog open={deleteDialogOpen} onClose={handleDeleteCancel} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete conversation</DialogTitle>
+        <DialogContent>
+          <Typography
+            variant="body2"
+            sx={{ color: "#64748B", lineHeight: 1.6 }}
+          >
+            Delete &ldquo;{chatToDelete?.title}&rdquo; and remove its history from this workspace. Uploaded documents remain available in your library.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+          <Button onClick={handleDeleteCancel} variant="outlined" size="small">
+            Cancel
+          </Button>
+          <Button variant="contained" size="small" onClick={handleDeleteConfirm}>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
 
   return (
     <Drawer
-      variant="temporary"
       open={isSidebarOpen}
       onClose={onClose}
+      variant={isDesktop ? "persistent" : "temporary"}
       ModalProps={{ keepMounted: true }}
       sx={{
-        width: DRAWER_WIDTH,
+        width: isDesktop && isSidebarOpen ? DRAWER_WIDTH : 0,
         flexShrink: 0,
         "& .MuiDrawer-paper": {
           width: DRAWER_WIDTH,
           boxSizing: "border-box",
-          backgroundColor: "rgba(22,22,22,0.9)",
-          backdropFilter: "blur(10px)",
-          borderRight: "1px solid rgba(255,255,255,0.08)",
-          // Keep the global header visible and clickable above the Drawer
-          top: 60,
-          height: "calc(100% - 60px)",
         },
       }}
     >
-      {/* Removed redundant local header (brand text and close icon).
-      The global AppBar already shows the title and provides the hamburger
-      to toggle this Drawer. */}
-      <Box
-        sx={{
-          overflow: "auto",
-          display: "flex",
-          flexDirection: "column",
-          height: "100%",
-        }}
-      >
-        {/* New Chat - simplified modern list item */}
-        <Box sx={{ p: 1 }}>
-          <ListItemButton
-            onClick={() => createNewChat()}
-            sx={{
-              borderRadius: 2,
-              py: 1,
-              px: 1.25,
-              backgroundColor: "transparent",
-              "&:hover": { backgroundColor: "rgba(255,255,255,0.06)" },
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: "auto", mr: 1 }}>
-              <AddIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText
-              primary="New chat"
-              primaryTypographyProps={{ sx: { fontSize: "0.9rem" } }}
-            />
-          </ListItemButton>
-        </Box>
-
-        {/* Search: icon that expands into a text field */}
-        <Box sx={{ px: 1, pb: 1 }}>
-          {!isSearchOpen ? (
-            <Tooltip title="Search chats">
-              <IconButton
-                size="small"
-                onClick={() => setIsSearchOpen(true)}
-                sx={{ color: "text.secondary" }}
-              >
-                <SearchIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          ) : (
-            <TextField
-              size="small"
-              fullWidth
-              autoFocus
-              placeholder="Search chats…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        setIsSearchOpen(false);
-                        setSearch("");
-                      }}
-                    >
-                      <ClearIcon fontSize="small" />
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-            />
-          )}
-        </Box>
-        <List sx={{ flexGrow: 1, p: 1 }}>
-          {filteredChats.map((chat) => (
-            <ListItem key={chat.id} disablePadding sx={{ mb: 0.5 }}>
-              <ListItemButton
-                selected={chat.id === activeChatId}
-                onClick={() => setActiveChatId(chat.id)}
-                sx={{
-                  borderRadius: 1,
-                  "&.Mui-selected": {
-                    backgroundColor: "action.selected",
-                  },
-                  pr: 1,
-                  "&:hover": { backgroundColor: "rgba(255,255,255,0.06)" },
-                }}
-              >
-                <ListItemIcon>
-                  <ChatIcon fontSize="small" />
-                </ListItemIcon>
-                {editingId === chat.id ? (
-                  <TextField
-                    size="small"
-                    value={editValue}
-                    autoFocus
-                    onChange={(e) => setEditValue(e.target.value)}
-                    onFocus={() => {
-                      editStartRef.current = Date.now();
-                    }}
-                    onBlur={async () => {
-                      // Prevent immediate blur right after switching to edit mode
-                      if (Date.now() - editStartRef.current < 150) return;
-                      const val = editValue.trim() || "Untitled";
-                      await updateChatTitle(chat.id, val);
-                      setEditingId(null);
-                    }}
-                    onKeyDown={async (e) => {
-                      if (e.key === "Enter") {
-                        const val = editValue.trim() || "Untitled";
-                        await updateChatTitle(chat.id, val);
-                        setEditingId(null);
-                      } else if (e.key === "Escape") {
-                        setEditingId(null);
-                      }
-                    }}
-                    variant="standard"
-                    fullWidth
-                  />
-                ) : (
-                  <ListItemText
-                    primary={chat.title}
-                    primaryTypographyProps={{
-                      noWrap: true,
-                      sx: { fontSize: "0.875rem" },
-                    }}
-                  />
-                )}
-                <IconButton
-                  size="small"
-                  onClick={(event) => openActionsMenu(event, chat)}
-                  sx={{
-                    ml: 0.5,
-                    opacity: 0,
-                    transition: "opacity 0.2s",
-                    ".MuiListItem-root:hover &": {
-                      opacity: 1,
-                    },
-                  }}
-                >
-                  <MoreVertIcon fontSize="small" />
-                </IconButton>
-              </ListItemButton>
-            </ListItem>
-          ))}
-
-          {/* Per-item actions menu */}
-          <Menu
-            anchorEl={menuAnchor}
-            open={Boolean(menuAnchor)}
-            onClose={closeActionsMenu}
-            anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-            transformOrigin={{ vertical: "top", horizontal: "right" }}
-          >
-            <MenuItem
-              onClick={() => {
-                const chat = chats[menuChatId];
-                if (chat) {
-                  const title = chat.title || "";
-                  // Close the menu first to avoid stealing focus from the TextField
-                  closeActionsMenu();
-                  setTimeout(() => {
-                    setEditingId(chat.id);
-                    setEditValue(title);
-                    editStartRef.current = Date.now();
-                  }, 50);
-                }
-              }}
-            >
-              <ListItemIcon>
-                <EditIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText primary="Rename" />
-            </MenuItem>
-            <MenuItem
-              onClick={(e) => {
-                const chat = chats[menuChatId];
-                if (chat) {
-                  handleDeleteClick(e, chat);
-                }
-                closeActionsMenu();
-              }}
-            >
-              <ListItemIcon>
-                <DeleteIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText primary="Delete" />
-            </MenuItem>
-          </Menu>
-        </List>
-
-        {/* Delete Confirmation Dialog */}
-        <Dialog
-          open={deleteDialogOpen}
-          onClose={handleDeleteCancel}
-          aria-labelledby="delete-chat-dialog-title"
-        >
-          <DialogTitle id="delete-chat-dialog-title">Delete Chat</DialogTitle>
-          <DialogContent>
-            <Typography>
-              Are you sure you want to delete "{chatToDelete?.title}"? This
-              action cannot be undone.
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Note: Any documents uploaded in this chat will remain available in
-              your document library and other chats.
-            </Typography>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={handleDeleteCancel}>Cancel</Button>
-            <Button
-              onClick={handleDeleteConfirm}
-              color="error"
-              variant="contained"
-            >
-              Delete
-            </Button>
-          </DialogActions>
-        </Dialog>
-      </Box>
+      {drawerContent}
     </Drawer>
   );
 };

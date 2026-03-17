@@ -1,27 +1,37 @@
-// In frontend/src/components/Chat.js (Refactored)
-import React, { useState, useRef } from "react";
+import React, {
+  startTransition,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
-  Box,
-  IconButton,
+  AppBar,
   Avatar,
+  Badge,
+  Box,
+  Divider,
+  Drawer,
+  IconButton,
   Menu,
   MenuItem,
-  ListItemIcon,
-  ListItemText,
-  Divider,
-  Badge,
-  Typography,
+  Stack,
+  Toolbar,
   Tooltip,
+  Typography,
+  useMediaQuery,
 } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import MenuIcon from "@mui/icons-material/Menu";
-import FolderIcon from "@mui/icons-material/Folder";
+import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
+import FolderSpecialOutlinedIcon from "@mui/icons-material/FolderSpecialOutlined";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import LogoutIcon from "@mui/icons-material/Logout";
-import PersonIcon from "@mui/icons-material/Person";
-import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
-import ExploreIcon from "@mui/icons-material/Explore";
+import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
+import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import { useChat } from "../context/ChatContext";
 import { useAuth } from "../context/AuthContext";
-import { streamQuery } from "../apiClient"; // We'll update apiClient next
+import { fetchDocuments, streamQuery } from "../apiClient";
 import { chatAPI } from "../api/chatApi";
 import MessageList from "./MessageList";
 import ChatInput from "./ChatInput";
@@ -30,56 +40,76 @@ import DocumentPanel from "./DocumentPanel";
 import ContextPanel from "./ContextPanel";
 import GuidedTour from "./GuidedTour";
 
-function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
+function Chat({ onToggleSidebar }) {
+  const theme = useTheme();
+  const showPersistentRail = useMediaQuery(theme.breakpoints.up("xl"));
   const [query, setQuery] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [responseLength, setResponseLength] = useState("standard");
   const [anchorEl, setAnchorEl] = useState(null);
   const [isDocumentPanelOpen, setIsDocumentPanelOpen] = useState(false);
   const [isContextPanelOpen, setIsContextPanelOpen] = useState(false);
   const [contextChunks, setContextChunks] = useState([]);
   const [runTour, setRunTour] = useState(false);
+  const [libraryDocuments, setLibraryDocuments] = useState([]);
   const abortControllerRef = useRef(null);
   const scrollContainerRef = useRef(null);
-  const open = Boolean(anchorEl);
 
-  const { activeChat, addMessageToChat, updateLastMessage } = useChat();
+  const { activeChat, addMessageToChat, updateLastMessage, setChats, activeKbId } = useChat();
   const { user, logout, token } = useAuth();
+  const menuOpen = Boolean(anchorEl);
+  const documentCount = libraryDocuments.length;
+  const messageCount = activeChat?.messages?.length || 0;
+  const activeDocuments = useMemo(
+    () => activeChat?.documents || [],
+    [activeChat?.documents]
+  );
+  const readyDocuments = libraryDocuments.filter(
+    (document) => document.status === "READY"
+  ).length;
+  const documentRefreshKey = useMemo(
+    () =>
+      activeDocuments
+        .map((document) => `${document.name || document.originalFilename}:${document.status}`)
+        .join("|"),
+    [activeDocuments]
+  );
 
-  const handleProfileClick = (event) => {
-    setAnchorEl(event.currentTarget);
-  };
+  const workspaceSummary = useMemo(() => {
+    if (!activeChat) {
+      return {
+        label: "No conversation selected",
+        helper: "Create a new conversation to begin.",
+      };
+    }
 
-  const handleClose = () => {
-    setAnchorEl(null);
-  };
-
-  const handleLogout = () => {
-    handleClose();
-    logout();
-  };
-
-  // Get user's initials for avatar
-  const getInitials = (username) => {
-    if (!username) return "U";
-    return username.charAt(0).toUpperCase();
-  };
-
-  // Get document count for badge
-  const documentCount = activeChat ? activeChat.documents.length : 0;
+    return {
+      label: activeChat.title || "Untitled conversation",
+      helper:
+        messageCount > 0
+          ? `${messageCount} message${messageCount === 1 ? "" : "s"}`
+          : "Ask a question or upload a document to begin.",
+    };
+  }, [activeChat, messageCount]);
 
   const handleSendQuery = async (overrideText) => {
-    // Normalize: if a click event bubbles here accidentally, ignore it
     const raw = overrideText ?? query;
-    const qStr = typeof raw === "string" ? raw.trim() : "";
-    if (!qStr || isTyping || !activeChat) return;
+    const normalizedQuery = typeof raw === "string" ? raw.trim() : "";
 
-    // Save user message to database immediately
-    addMessageToChat(activeChat.id, { sender: "user", text: qStr });
+    if (!normalizedQuery || isTyping || !activeChat) return;
+
+    const lengthInstruction = {
+      brief: " (Please give a brief, concise answer in 1-2 sentences.)",
+      detailed: " (Please give a detailed, comprehensive answer.)",
+      standard: "",
+    }[responseLength] || "";
+    const queryWithLength = normalizedQuery + lengthInstruction;
+
+    addMessageToChat(activeChat.id, { sender: "user", text: normalizedQuery });
     setQuery("");
     setIsTyping(true);
     abortControllerRef.current = new AbortController();
 
-    // Add empty bot message locally (do not persist); stream will fill it
     addMessageToChat(activeChat.id, {
       sender: "bot",
       text: "",
@@ -92,28 +122,28 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
 
     try {
       await streamQuery(
-        qStr,
+        queryWithLength,
         activeChat.documents,
         (textChunk) => {
-          // onTextChunk - update local state and accumulate final text
-          updateLastMessage(activeChat.id, { textChunk: textChunk });
+          updateLastMessage(activeChat.id, { textChunk });
           finalBotText += textChunk;
         },
         (sources) => {
-          // onSources - update local state and store final sources
           updateLastMessage(activeChat.id, { sources });
           finalBotSources = sources;
         },
         abortControllerRef.current.signal,
         token,
         (chunks) => {
-          // Phase F (#129): "What RASS is thinking" — show context panel with retrieved chunks
           setContextChunks(chunks);
-          setIsContextPanelOpen(true);
-        }
+          if (!showPersistentRail) {
+            startTransition(() => setIsContextPanelOpen(true));
+          }
+        },
+        null, // onReconnecting — future: show reconnecting indicator
+        activeKbId
       );
 
-      // After streaming completes, save the complete bot message to database
       if (finalBotText || finalBotSources.length > 0) {
         try {
           await chatAPI.addMessage(
@@ -122,24 +152,19 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
             "bot",
             finalBotSources
           );
-          console.log("[CHAT] Successfully saved bot message to database");
         } catch (error) {
-          console.warn("[CHAT] Failed to save bot message to database:", error);
+          console.warn("[CHAT] Failed to save bot message:", error);
         }
       }
     } catch (error) {
       if (error.name !== "AbortError") {
-        console.error("Streaming error:", error);
         const errorMessage = `Error: ${error.message}`;
         updateLastMessage(activeChat.id, { text: errorMessage });
-        // Save error message to database
+
         try {
           await chatAPI.addMessage(activeChat.id, errorMessage, "bot", []);
         } catch (dbError) {
-          console.warn(
-            "[CHAT] Failed to save error message to database:",
-            dbError
-          );
+          console.warn("[CHAT] Failed to save error message:", dbError);
         }
       }
     } finally {
@@ -147,353 +172,413 @@ function Chat({ onToggleSidebar, onToggleDocumentPanel }) {
     }
   };
 
-  // 4. If there's no active chat yet, show a welcome screen
-  if (!activeChat) {
-    return (
-      <Box
-        sx={{
-          height: "100vh",
-          width: "100vw",
-          display: "flex",
-          flexDirection: "column",
-          bgcolor: "#0f0f0f",
-          overflow: "hidden",
-        }}
-      >
-        {/* Header - Fixed at top */}
-        <Box
+  useEffect(() => {
+    if (!token) return undefined;
+
+    let disposed = false;
+
+    const loadDocumentLibrary = async () => {
+      try {
+        const response = await fetchDocuments(1, 100, null, token);
+        if (!disposed) {
+          setLibraryDocuments(response.data.documents || []);
+        }
+      } catch (error) {
+        console.warn("[CHAT] Failed to load document library:", error);
+      }
+    };
+
+    loadDocumentLibrary();
+    const intervalId = window.setInterval(loadDocumentLibrary, 15000);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [token]);
+
+  useEffect(() => {
+    if (!activeChat?.id || !token || activeDocuments.length === 0) return undefined;
+
+    const hasPendingDocuments = activeDocuments.some((document) =>
+      ["QUEUED", "PROCESSING"].includes(document.status)
+    );
+
+    if (!hasPendingDocuments) return undefined;
+
+    let disposed = false;
+
+    const syncDocumentStatuses = async () => {
+      try {
+        const response = await fetchDocuments(1, 100, null, token);
+        const documents = response.data.documents || [];
+        const byName = new Map(
+          documents.map((document) => [
+            document.originalFilename || document.name,
+            document,
+          ])
+        );
+
+        if (disposed) return;
+
+        setChats((previous) => {
+          const chat = previous[activeChat.id];
+          if (!chat) return previous;
+
+          let changed = false;
+          const nextDocuments = chat.documents.map((document) => {
+            const key = document.originalFilename || document.name;
+            const match = byName.get(key);
+
+            if (!match) return document;
+
+            const nextStatus = match.status || document.status;
+            const nextChunkCount =
+              typeof match.chunkCount === "number"
+                ? match.chunkCount
+                : document.chunkCount;
+
+            if (
+              nextStatus === document.status &&
+              nextChunkCount === document.chunkCount
+            ) {
+              return document;
+            }
+
+            changed = true;
+            return {
+              ...document,
+              id: match.id || document.id,
+              status: nextStatus,
+              chunkCount: nextChunkCount,
+              uploadedAt: match.uploadedAt || document.uploadedAt,
+            };
+          });
+
+          if (!changed) return previous;
+
+          return {
+            ...previous,
+            [activeChat.id]: {
+              ...chat,
+              documents: nextDocuments,
+            },
+          };
+        });
+      } catch (error) {
+        console.warn("[CHAT] Failed to refresh document status:", error);
+      }
+    };
+
+    syncDocumentStatuses();
+    const intervalId = window.setInterval(syncDocumentStatuses, 5000);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [
+    activeChat?.id,
+    activeDocuments,
+    activeDocuments.length,
+    documentRefreshKey,
+    setChats,
+    token,
+  ]);
+
+  const handleProfileClick = (event) => setAnchorEl(event.currentTarget);
+  const handleProfileClose = () => setAnchorEl(null);
+  const handleLogout = () => {
+    handleProfileClose();
+    logout();
+  };
+
+  const getInitials = (username) =>
+    username ? username.charAt(0).toUpperCase() : "U";
+
+  return (
+    <Box
+      sx={{
+        flex: 1,
+        minWidth: 0,
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        backgroundColor: "#FAFAFA",
+      }}
+    >
+      {/* Header */}
+      <AppBar position="sticky" color="transparent" elevation={0}>
+        <Toolbar
           sx={{
-            flexShrink: 0,
-            height: "60px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            px: 3,
-            borderBottom: "1px solid #333",
-            bgcolor: "#0f0f0f",
-            // Keep header above temporary Drawer/backdrop like Gemini
-            zIndex: (theme) => theme.zIndex.modal + 1,
+            gap: 1.5,
+            px: { xs: 2, md: 3 },
+            minHeight: "64px !important",
           }}
         >
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            <IconButton onClick={onToggleSidebar} sx={{ color: "#fff" }}>
-              <MenuIcon />
-            </IconButton>
-            <Typography variant="h6" sx={{ color: "#fff", fontWeight: 500 }}>
+          <IconButton
+            onClick={onToggleSidebar}
+            edge="start"
+            aria-label="Open conversations"
+            sx={{ mr: 0.5 }}
+          >
+            <MenuIcon sx={{ fontSize: 20 }} />
+          </IconButton>
+
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Typography
+              variant="overline"
+              sx={{ color: "#64748B", display: "block", lineHeight: 1.2 }}
+            >
               Enhanced RASS
             </Typography>
+            <Typography
+              variant="subtitle1"
+              noWrap
+              sx={{ lineHeight: 1.3, fontSize: "0.9rem" }}
+            >
+              {workspaceSummary.label}
+            </Typography>
           </Box>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            <Badge
-              badgeContent={documentCount}
-              color="primary"
-              showZero={false}
+
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Tooltip title={activeKbId ? `Document library (KB filtered)` : `Document library (${documentCount})`}>
+              <Badge
+                badgeContent={readyDocuments > 0 ? readyDocuments : null}
+                color="primary"
+                overlap="circular"
+              >
+                <Badge
+                  variant="dot"
+                  invisible={!activeKbId}
+                  color="secondary"
+                  anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                >
+                  <IconButton
+                    onClick={() => setIsDocumentPanelOpen(true)}
+                    data-tour="documents-button"
+                    aria-label="Open document library"
+                  >
+                    {activeKbId ? (
+                      <FolderSpecialOutlinedIcon sx={{ fontSize: 20, color: "#0052FF" }} />
+                    ) : (
+                      <FolderOutlinedIcon sx={{ fontSize: 20 }} />
+                    )}
+                  </IconButton>
+                </Badge>
+              </Badge>
+            </Tooltip>
+
+            <Tooltip
+              title={
+                showPersistentRail
+                  ? "Evidence panel visible"
+                  : isContextPanelOpen
+                  ? "Close evidence panel"
+                  : "Open evidence panel"
+              }
             >
               <IconButton
-                onClick={() => setIsDocumentPanelOpen(true)}
-                sx={{ color: "#fff" }}
+                onClick={() => {
+                  if (!showPersistentRail) {
+                    startTransition(() =>
+                      setIsContextPanelOpen((previous) => !previous)
+                    );
+                  }
+                }}
+                aria-label="Toggle evidence panel"
+                data-tour="evidence-toggle"
+                sx={{
+                  backgroundColor: (isContextPanelOpen || showPersistentRail)
+                    ? "rgba(0,82,255,0.10)"
+                    : "transparent",
+                  border: (isContextPanelOpen || showPersistentRail)
+                    ? "1px solid rgba(0,82,255,0.4)"
+                    : "1px solid transparent",
+                }}
               >
-                <FolderIcon />
-              </IconButton>
-            </Badge>
-            <Tooltip title="Take a tour">
-              <IconButton
-                onClick={() => setRunTour(true)}
-                sx={{ color: "#fff" }}
-              >
-                <ExploreIcon />
+                <AutoAwesomeOutlinedIcon sx={{ fontSize: 20 }} />
               </IconButton>
             </Tooltip>
+
+            <Tooltip title="Take a guided tour">
+              <IconButton
+                onClick={() => setRunTour(true)}
+                aria-label="Start guided tour"
+                sx={{ color: "#64748B" }}
+              >
+                <HelpOutlineIcon sx={{ fontSize: 20 }} />
+              </IconButton>
+            </Tooltip>
+
+            <Box
+              sx={{
+                width: 1,
+                height: 24,
+                backgroundColor: "#E2E8F0",
+                mx: 0.5,
+              }}
+            />
+
             <IconButton
               onClick={handleProfileClick}
-              sx={{ color: "#fff", p: 0 }}
+              sx={{ p: 0.5 }}
+              aria-label="Open account menu"
             >
               <Avatar
                 sx={{
                   width: 32,
                   height: 32,
-                  backgroundColor: "primary.main",
-                  fontSize: "0.875rem",
+                  background: "linear-gradient(135deg, #0052FF, #4D7CFF)",
+                  color: "#FFFFFF",
+                  fontSize: "0.75rem",
+                  fontFamily: '"JetBrains Mono", monospace',
+                  fontWeight: 500,
+                  border: "none",
                 }}
               >
                 {getInitials(user?.username)}
               </Avatar>
             </IconButton>
-            <Menu
-              anchorEl={anchorEl}
-              open={open}
-              onClose={handleClose}
-              onClick={handleClose}
-              PaperProps={{
-                elevation: 3,
-                sx: {
-                  mt: 1.5,
-                  minWidth: 200,
-                },
-              }}
-            >
-              <MenuItem>
-                <ListItemIcon>
-                  <PersonIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Profile</ListItemText>
-              </MenuItem>
-              <Divider />
-              <MenuItem onClick={handleLogout}>
-                <ListItemIcon>
-                  <LogoutIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Logout</ListItemText>
-              </MenuItem>
-            </Menu>
-          </Box>
-        </Box>
+          </Stack>
 
-        {/* Main Content - Centered welcome screen */}
+          <Menu anchorEl={anchorEl} open={menuOpen} onClose={handleProfileClose}>
+            <MenuItem disabled sx={{ opacity: "1 !important" }}>
+              <PersonOutlineIcon sx={{ fontSize: 15, mr: 1.25 }} />
+              {user?.username || "User"}
+            </MenuItem>
+            <Divider sx={{ borderColor: "#E2E8F0", my: 0.5 }} />
+            <MenuItem onClick={handleLogout}>
+              <LogoutIcon sx={{ fontSize: 15, mr: 1.25 }} />
+              Sign out
+            </MenuItem>
+          </Menu>
+        </Toolbar>
+      </AppBar>
+
+      {/* Main content */}
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
         <Box
           sx={{
             flex: 1,
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
+            minHeight: 0,
+            display: "grid",
+            gridTemplateColumns: showPersistentRail
+              ? "minmax(0, 1fr) 340px"
+              : "minmax(0, 1fr)",
           }}
         >
-          <Box sx={{ width: "100%", maxWidth: "768px", px: 2 }}>
-            <WelcomeScreen onSuggestion={(t) => handleSendQuery(t)} />
-          </Box>
-        </Box>
-      </Box>
-    );
-  }
-
-  return (
-    <Box
-      sx={{
-        height: "100vh",
-        width: "100vw", // Full viewport width
-        display: "flex",
-        flexDirection: "column",
-        bgcolor: "#0f0f0f", // Dark background like Gemini
-        overflow: "hidden", // Prevent outer scroll
-      }}
-    >
-      {/* Header - Fixed at top */}
-      <Box
-        sx={{
-          flexShrink: 0,
-          height: "60px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          px: 3,
-          borderBottom: "1px solid rgba(255,255,255,0.08)",
-          bgcolor: "rgba(15,15,15,0.85)",
-          backdropFilter: "blur(10px)",
-          // Ensure the top bar is always above the Drawer/backdrop
-          zIndex: (theme) => theme.zIndex.modal + 1,
-        }}
-      >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <IconButton onClick={onToggleSidebar} sx={{ color: "#fff" }}>
-            <MenuIcon />
-          </IconButton>
-          <Typography variant="h6" sx={{ color: "#fff", fontWeight: 500 }}>
-            Enhanced RASS
-          </Typography>
-        </Box>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <Badge badgeContent={documentCount} color="primary" showZero={false}>
-            <IconButton
-              onClick={() => setIsDocumentPanelOpen(true)}
-              sx={{ color: "#fff" }}
-            >
-              <FolderIcon />
-            </IconButton>
-          </Badge>
-          <Tooltip title="What RASS is thinking">
-            <IconButton
-              onClick={() => setIsContextPanelOpen((prev) => !prev)}
-              sx={{ color: isContextPanelOpen ? "primary.main" : "#fff" }}
-            >
-              <AutoAwesomeIcon />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Take a tour">
-            <IconButton
-              onClick={() => setRunTour(true)}
-              sx={{ color: "#fff" }}
-            >
-              <ExploreIcon />
-            </IconButton>
-          </Tooltip>
-          <IconButton onClick={handleProfileClick} sx={{ color: "#fff", p: 0 }}>
-            <Avatar
-              sx={{
-                width: 32,
-                height: 32,
-                backgroundColor: "primary.main",
-                fontSize: "0.875rem",
-              }}
-            >
-              {getInitials(user?.username)}
-            </Avatar>
-          </IconButton>
-          <Menu
-            anchorEl={anchorEl}
-            open={open}
-            onClose={handleClose}
-            onClick={handleClose}
-            PaperProps={{
-              elevation: 3,
-              sx: {
-                mt: 1.5,
-                minWidth: 200,
-              },
-            }}
-          >
-            <MenuItem>
-              <ListItemIcon>
-                <PersonIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Profile</ListItemText>
-            </MenuItem>
-            <Divider />
-            <MenuItem onClick={handleLogout}>
-              <ListItemIcon>
-                <LogoutIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Logout</ListItemText>
-            </MenuItem>
-          </Menu>
-        </Box>
-      </Box>
-
-      {/* Main Content Area - full height minus header; extra bottom padding so input never covers content */}
-      <Box
-        sx={{
-          height: "calc(100vh - 60px)",
-          width: "100%",
-          overflow: "auto", // Main scrollbar will be at the edge
-          display: "flex",
-          justifyContent: "center", // Center the content
-          pb: 0, // spacer inside MessageList handles clearance; keep scrollable height accurate
-          // Custom scrollbar styling for professional look
-          "&::-webkit-scrollbar": {
-            width: "8px",
-          },
-          "&::-webkit-scrollbar-track": {
-            background: "transparent",
-          },
-          "&::-webkit-scrollbar-thumb": {
-            background: "#333",
-            borderRadius: "4px",
-          },
-          "&::-webkit-scrollbar-thumb:hover": {
-            background: "#555",
-          },
-        }}
-        ref={scrollContainerRef}
-      >
-        {/* Centered content container */}
-        <Box
-          sx={{
-            width: "100%",
-            maxWidth: "768px", // Gemini-like max width
-            display: "flex",
-            flexDirection: "column",
-            px: 2,
-            minHeight: "100%", // ensure this container stretches to full scroll area height
-          }}
-        >
-          {/* Messages content */}
+          {/* Chat column */}
           <Box
             sx={{
-              py: 3,
-              flex: 1,
+              minHeight: 0,
               display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              flexDirection: "column",
+              borderRight: showPersistentRail ? "1px solid #E2E8F0" : "none",
             }}
           >
-            {activeChat.messages.length === 0 && !isTyping ? (
-              <Box sx={{ width: "100%" }}>
-                <WelcomeScreen onSuggestion={(t) => handleSendQuery(t)} />
+            {/* Message area */}
+            <Box
+              ref={scrollContainerRef}
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                overflowY: "auto",
+              }}
+            >
+              <Box
+                sx={{
+                  width: "100%",
+                  maxWidth: 860,
+                  mx: "auto",
+                  px: { xs: 2.5, md: 5 },
+                  py: { xs: 3, md: 5 },
+                }}
+              >
+                {activeChat && activeChat.messages.length > 0 ? (
+                  <MessageList
+                    messages={activeChat.messages}
+                    isTyping={isTyping}
+                    scrollContainerRef={scrollContainerRef}
+                  />
+                ) : (
+                  <WelcomeScreen onSuggestion={(text) => handleSendQuery(text)} />
+                )}
               </Box>
-            ) : (
-              <MessageList
-                messages={activeChat.messages}
-                isTyping={isTyping}
-                scrollContainerRef={scrollContainerRef}
-              />
-            )}
+            </Box>
+
+            {/* Input area */}
+            <Box
+              sx={{
+                borderTop: "1px solid #E2E8F0",
+                px: { xs: 2.5, md: 5 },
+                py: { xs: 2, md: 2.5 },
+                backgroundColor: "#FAFAFA",
+              }}
+            >
+              <Box sx={{ width: "100%", maxWidth: 860, mx: "auto" }}>
+                <ChatInput
+                  query={query}
+                  setQuery={setQuery}
+                  onSend={handleSendQuery}
+                  onStop={() => {
+                    abortControllerRef.current?.abort();
+                    setIsTyping(false);
+                  }}
+                  isTyping={isTyping}
+                  showSuggestions={messageCount === 0}
+                  responseLength={responseLength}
+                  onResponseLengthChange={setResponseLength}
+                />
+              </Box>
+            </Box>
           </Box>
+
+          {/* Evidence rail */}
+          {showPersistentRail ? (
+            <Box sx={{ minHeight: 0, display: "flex" }}>
+              <ContextPanel chunks={contextChunks} isStreaming={isTyping} />
+            </Box>
+          ) : null}
         </Box>
       </Box>
 
-      {/* Chat input - Fixed at bottom; no full-width background so content behind stays visible */}
-      <Box
-        sx={{
-          position: "fixed",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          display: "flex",
-          justifyContent: "center",
-          background: "transparent",
-          backdropFilter: "none",
-          boxShadow: "none",
-          py: 0.5, // keep compact so it sits slightly lower without covering content
-          px: 2,
-          zIndex: (theme) => theme.zIndex.modal + 1,
-        }}
-      >
-        <Box sx={{ width: "100%", maxWidth: "768px" }}>
-          <ChatInput
-            query={query}
-            setQuery={setQuery}
-            onSend={handleSendQuery}
-            onStop={() => {
-              try {
-                abortControllerRef.current?.abort();
-              } catch {}
-              setIsTyping(false);
-            }}
-            showSuggestions={false}
-            isTyping={isTyping}
-          />
-        </Box>
-      </Box>
-
-      {/* Document Panel Modal */}
+      {/* Document library dialog */}
       <DocumentPanel
         open={isDocumentPanelOpen}
         onClose={() => setIsDocumentPanelOpen(false)}
       />
 
-      {/* Phase F (#129): "What RASS is thinking" context panel */}
-      {isContextPanelOpen && (
-        <Box
-          sx={{
-            position: "fixed",
-            top: 0,
-            right: 0,
-            height: "100vh",
-            zIndex: 1200,
-          }}
-        >
-          <ContextPanel
-            chunks={contextChunks}
-            isStreaming={isTyping}
-            onClose={() => setIsContextPanelOpen(false)}
-          />
-        </Box>
-      )}
+      {/* Evidence drawer (non-XL) */}
+      <Drawer
+        anchor="right"
+        open={!showPersistentRail && isContextPanelOpen}
+        onClose={() => setIsContextPanelOpen(false)}
+        ModalProps={{ keepMounted: true }}
+        sx={{
+          "& .MuiDrawer-paper": {
+            width: { xs: "100%", sm: 380 },
+            maxWidth: "100%",
+            borderLeft: "1px solid #E2E8F0",
+          },
+        }}
+      >
+        <ContextPanel
+          chunks={contextChunks}
+          isStreaming={isTyping}
+          onClose={() => setIsContextPanelOpen(false)}
+          showCloseButton
+        />
+      </Drawer>
 
-      {/* Phase F (#131): Guided tour */}
-      <GuidedTour
-        run={runTour}
-        onFinish={() => setRunTour(false)}
-      />
+      <GuidedTour run={runTour} onFinish={() => setRunTour(false)} />
     </Box>
   );
 }

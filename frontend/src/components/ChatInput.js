@@ -1,23 +1,37 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Box,
-  Typography,
-  Tooltip,
-  IconButton,
-  TextField,
   Chip,
   CircularProgress,
+  IconButton,
+  Stack,
+  TextField,
+  Tooltip,
+  Typography,
 } from "@mui/material";
 import {
   AttachFile as AttachFileIcon,
-  Send as SendIcon,
-  Stop as StopIcon,
   Mic as MicIcon,
   MicOff as MicOffIcon,
+  Send as SendIcon,
+  Stop as StopIcon,
 } from "@mui/icons-material";
 import { useChat } from "../context/ChatContext";
 import { useAuth } from "../context/AuthContext";
 import { uploadFile, transcribeAudio } from "../apiClient";
+
+const STATUS_LABELS = {
+  READY: "ready",
+  PROCESSING: "processing",
+  QUEUED: "queued",
+  FAILED: "failed",
+};
+
+const RESPONSE_LENGTHS = [
+  { value: "brief", label: "Brief" },
+  { value: "standard", label: "Standard" },
+  { value: "detailed", label: "Detailed" },
+];
 
 const ChatInput = ({
   query,
@@ -26,6 +40,8 @@ const ChatInput = ({
   onStop,
   isTyping,
   showSuggestions = true,
+  responseLength = "standard",
+  onResponseLengthChange,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -38,34 +54,38 @@ const ChatInput = ({
   const mediaStreamRef = useRef(null);
   const speechRecRef = useRef(null);
   const fileInputRef = useRef(null);
-  // --- 1. THE FIX: Get addMessageToChat from the context ---
+
   const { activeChat, addDocumentToChat, addMessageToChat } = useChat();
   const { token } = useAuth();
   const uploadedDocuments = activeChat ? activeChat.documents : [];
 
-  const handleKeyPress = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      onSend();
-    }
+  const handleSend = () => {
+    if (!query.trim() || isTyping || isUploading) return;
+    onSend();
   };
 
   const handleFileSelect = async (file) => {
     if (!file || !activeChat) return;
 
     setIsUploading(true);
+
     try {
-      await uploadFile(file, null, null, token);
-      const newDoc = { name: file.name, size: file.size, type: file.type };
-      addDocumentToChat(activeChat.id, newDoc);
-      // --- 2. THE FIX: Use the function to add a system message ---
+      const response = await uploadFile(file, null, null, token);
+      const newDocument = {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        status: "QUEUED",
+        jobId: response?.data?.jobId,
+      };
+
+      addDocumentToChat(activeChat.id, newDocument);
       addMessageToChat(activeChat.id, {
         sender: "system",
-        text: `📄 Document "${file.name}" has been successfully uploaded and is ready for use in this chat.`,
+        text: `Document "${file.name}" was uploaded and queued for ingestion. Wait for READY status before relying on it in answers.`,
       });
     } catch (error) {
       console.error("File upload failed in ChatInput:", error);
-      // --- 3. THE FIX: Also use it for error messages ---
       addMessageToChat(activeChat.id, {
         sender: "system",
         text: `Error uploading "${file.name}": ${error.message}`,
@@ -75,33 +95,13 @@ const ChatInput = ({
     }
   };
 
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      handleFileSelect(files[0]);
-    }
-  };
-
-  // Voice recording handlers
   const startRecording = async () => {
     try {
       setRecordingError("");
       setPartialTranscript("");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
-      // Choose the best supported MIME type
+
       let mimeType = "audio/webm";
       if (
         window.MediaRecorder &&
@@ -113,86 +113,85 @@ const ChatInput = ({
           mimeType = "audio/webm";
         } else if (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")) {
           mimeType = "audio/ogg;codecs=opus";
-        } else {
-          mimeType = "audio/webm"; // fallback
         }
       }
+
       const recorder = new MediaRecorder(stream, { mimeType });
       recordedChunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          recordedChunksRef.current.push(e.data);
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
         }
       };
+
       recorder.onstop = async () => {
         try {
           const blob = new Blob(recordedChunksRef.current, {
             type: mimeType.includes("ogg") ? "audio/ogg" : "audio/webm",
           });
+
           if (blob.size === 0) return;
+
           setIsTranscribing(true);
+
           let text = "";
           try {
             text = await transcribeAudio(blob, token);
-          } catch (err) {
-            // If unauthorized, surface a friendly message in chat
+          } catch (error) {
             if (activeChat) {
               addMessageToChat(activeChat.id, {
                 sender: "system",
-                text: `Transcription failed (${err.message}). Please log in to continue.`,
+                text: `Transcription failed (${error.message}). Please log in again and retry.`,
               });
             }
-            throw err;
+            throw error;
           }
-          if (text) setQuery((prev) => (prev ? `${prev} ${text}` : text));
-        } catch (err) {
-          console.error("Transcription failed:", err);
-          setRecordingError(err.message || "Transcription error");
+
+          if (text) {
+            setQuery((previous) => (previous ? `${previous} ${text}` : text));
+          }
+        } catch (error) {
+          console.error("Transcription failed:", error);
+          setRecordingError(error.message || "Transcription failed.");
         } finally {
           setIsTranscribing(false);
           if (mediaStreamRef.current) {
-            mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+            mediaStreamRef.current.getTracks().forEach((track) => track.stop());
             mediaStreamRef.current = null;
           }
         }
       };
+
       mediaRecorderRef.current = recorder;
       recorder.start();
       setIsRecording(true);
 
-      // Optional: Live preview via Web Speech API if supported
       const SpeechRecognition =
         window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRecognition) {
         try {
-          const rec = new SpeechRecognition();
-          rec.interimResults = true;
-          rec.continuous = true;
-          rec.lang = navigator.language || "en-US";
-          rec.onresult = (event) => {
+          const recognition = new SpeechRecognition();
+          recognition.interimResults = true;
+          recognition.continuous = true;
+          recognition.lang = navigator.language || "en-US";
+          recognition.onresult = (event) => {
             let interim = "";
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-              const res = event.results[i];
-              if (!res.isFinal) {
-                interim += res[0].transcript;
+            for (let index = event.resultIndex; index < event.results.length; index += 1) {
+              const result = event.results[index];
+              if (!result.isFinal) {
+                interim += result[0].transcript;
               }
             }
             if (interim) setPartialTranscript(interim.trim());
           };
-          rec.onerror = () => {
-            // Ignore SR errors; Whisper is the source of truth
-          };
-          rec.onend = () => {
-            // no-op
-          };
-          rec.start();
-          speechRecRef.current = rec;
-        } catch (e) {
-          // If SR fails, ignore
+          recognition.start();
+          speechRecRef.current = recognition;
+        } catch (error) {
+          console.warn("Speech recognition preview unavailable:", error);
         }
       }
-    } catch (err) {
-      console.error("Mic access error:", err);
+    } catch (error) {
+      console.error("Mic access error:", error);
       setRecordingError("Microphone access denied or unavailable.");
       setIsRecording(false);
     }
@@ -207,30 +206,14 @@ const ChatInput = ({
         mediaRecorderRef.current.stop();
       }
       if (speechRecRef.current) {
-        try {
-          speechRecRef.current.stop();
-        } catch {
-          // Ignore speech recognition cleanup errors
-        }
+        speechRecRef.current.stop();
         speechRecRef.current = null;
       }
-    } catch (e) {
-      // noop
     } finally {
       setIsRecording(false);
     }
   };
 
-  // Toggle handler (click to start/stop)
-  const toggleRecording = () => {
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
-  };
-
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       try {
@@ -240,144 +223,163 @@ const ChatInput = ({
         ) {
           mediaRecorderRef.current.stop();
         }
-      } catch {}
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
-        mediaStreamRef.current = null;
+      } catch {
+        // Ignore recorder cleanup failures.
       }
+
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+
       if (speechRecRef.current) {
         try {
           speechRecRef.current.stop();
         } catch {
-          // Ignore errors when stopping speech recognition during cleanup
+          // Ignore speech recognition cleanup failures.
         }
-        speechRecRef.current = null;
       }
     };
   }, []);
 
   return (
     <Box
-      sx={{
-        p: 2,
-        backgroundColor: "transparent",
-        borderTop: 0,
-        position: "relative",
-      }}
+      data-tour="chat-input"
+      sx={{ display: "grid", gap: 1.5 }}
     >
-      {/* Centered container like Gemini */}
-      <Box
-        sx={{
-          maxWidth: "768px", // Same as MessageList
-          width: "100%",
-          mx: "auto", // Center horizontally
-        }}
-      >
-        {/* Smart suggestions (visible when input empty) */}
-        {showSuggestions && !query.trim() && (
-          <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mb: 1.5 }}>
-            {[
-              "Summarize the key points from my uploaded PDFs",
-              "Explain this concept with an analogy",
-              "Draft an email reply using my documents",
-              "List citations with quotes and sources",
-            ].map((s, i) => (
-              <Chip
-                key={i}
-                label={s}
-                size="small"
-                onClick={() => setQuery(s)}
-                sx={{
-                  bgcolor: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  "&:hover": {
-                    bgcolor: "rgba(255,255,255,0.07)",
-                  },
-                }}
-              />
-            ))}
-          </Box>
-        )}
-        {/* Uploaded Documents Indicator */}
-        {uploadedDocuments.length > 0 && (
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              gap: 1,
-              mb: 2,
-              flexWrap: "wrap",
-            }}
-          >
-            <Typography variant="body2" color="text.secondary" sx={{ mr: 1 }}>
-              Using documents:
-            </Typography>
-            {uploadedDocuments.slice(0, 3).map((doc, index) => (
-              <Chip
-                key={index}
-                label={doc.name}
-                size="small"
-                variant="outlined"
-                sx={{ fontSize: "0.75rem" }}
-              />
-            ))}
-            {uploadedDocuments.length > 3 && (
-              <Chip
-                label={`+${uploadedDocuments.length - 3} more`}
-                size="small"
-                variant="outlined"
-                sx={{ fontSize: "0.75rem" }}
-              />
-            )}
-          </Box>
-        )}
-
-        {/* Input Area - Modern gradient ring with frosted inner */}
-        <Box
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          sx={{
-            display: "flex",
-            gap: 2,
-            alignItems: "flex-end",
-            borderRadius: "24px",
-            p: 0.75, // compact
-            pl: 2,
-            backgroundColor: "rgba(10,10,10,0.85)",
-            backdropFilter: "saturate(120%) blur(10px)",
-            border: "1px solid rgba(255,255,255,0.06)", // thinner border
-            transition: "all 0.2s ease",
-            "&:focus-within": {
-              borderColor: "primary.main",
-              boxShadow: "0 0 0 3px rgba(138,180,248,0.12)",
-            },
-          }}
-        >
-          <Tooltip title="Attach file">
-            <IconButton
-              size="small"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading || isTyping}
+      {/* Quick suggestion chips — only when no query typed */}
+      {showSuggestions && !query.trim() ? (
+        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+          {[
+            "Summarize the core claims in my uploaded documents.",
+            "Compare the evidence supporting the main recommendation.",
+            "List every deadline or action item mentioned.",
+          ].map((suggestion) => (
+            <Box
+              key={suggestion}
+              onClick={() => setQuery(suggestion)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setQuery(suggestion);
+                }
+              }}
               sx={{
-                color: "text.secondary",
-                "&:hover": { color: "primary.main" },
+                px: 1.5,
+                py: 0.75,
+                border: "1px solid #E2E8F0",
+                borderRadius: "20px",
+                cursor: "pointer",
+                transition: "all 150ms",
+                "&:hover": {
+                  border: "1px solid #0052FF",
+                  backgroundColor: "rgba(0,82,255,0.04)",
+                },
+                "&:focus-visible": {
+                  outline: "3px solid #0052FF",
+                  outlineOffset: 2,
+                },
               }}
             >
-              {isUploading ? (
-                <CircularProgress size={20} />
-              ) : (
-                <AttachFileIcon fontSize="small" />
-              )}
-            </IconButton>
+              <Typography
+                sx={{
+                  fontSize: "0.75rem",
+                  fontFamily: '"Inter", system-ui, sans-serif',
+                  color: "#64748B",
+                  lineHeight: 1.4,
+                }}
+              >
+                {suggestion}
+              </Typography>
+            </Box>
+          ))}
+        </Stack>
+      ) : null}
+
+      {/* Document status chips */}
+      {uploadedDocuments.length > 0 ? (
+        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+          {uploadedDocuments.slice(0, 4).map((document, index) => (
+            <Chip
+              key={`${document.name}-${index}`}
+              label={`${document.name} — ${STATUS_LABELS[document.status] || document.status || "unknown"}`}
+              size="small"
+              variant="outlined"
+              color={
+                document.status === "READY"
+                  ? "primary"
+                  : document.status === "FAILED"
+                  ? "error"
+                  : "default"
+              }
+            />
+          ))}
+          {uploadedDocuments.length > 4 ? (
+            <Chip
+              label={`+${uploadedDocuments.length - 4} more`}
+              size="small"
+              variant="outlined"
+            />
+          ) : null}
+        </Stack>
+      ) : null}
+
+      {/* Input container */}
+      <Box
+        onDragOver={(event) => {
+          event.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={(event) => {
+          event.preventDefault();
+          setIsDragging(false);
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          setIsDragging(false);
+          const file = event.dataTransfer.files?.[0];
+          if (file) handleFileSelect(file);
+        }}
+        sx={{
+          border: isDragging ? "2px solid #0052FF" : "1px solid #E2E8F0",
+          borderRadius: "12px",
+          backgroundColor: isDragging ? "rgba(0,82,255,0.03)" : "#FFFFFF",
+          transition: "border-color 150ms, box-shadow 150ms",
+          boxShadow: isDragging ? "0 0 0 3px rgba(0,82,255,0.12)" : "0 1px 3px rgba(15,23,42,0.06)",
+        }}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "flex-end",
+            px: 1,
+            pt: 1,
+          }}
+        >
+          <Tooltip title="Attach document (PDF, TXT, MD, DOC, DOCX)">
+            <span data-tour="upload-btn">
+              <IconButton
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading || isTyping}
+                aria-label="Upload document"
+                size="small"
+              >
+                {isUploading ? (
+                  <CircularProgress size={16} />
+                ) : (
+                  <AttachFileIcon sx={{ fontSize: 18 }} />
+                )}
+              </IconButton>
+            </span>
           </Tooltip>
 
           <input
             ref={fileInputRef}
             type="file"
-            onChange={(e) => handleFileSelect(e.target.files[0])}
-            style={{ display: "none" }}
+            hidden
             accept=".pdf,.txt,.md,.doc,.docx"
+            onChange={(event) => handleFileSelect(event.target.files?.[0])}
           />
 
           <TextField
@@ -386,153 +388,258 @@ const ChatInput = ({
             minRows={1}
             maxRows={6}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Ask anything about your documents..."
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder="Ask a document-backed question…"
             variant="standard"
             disabled={isTyping || isUploading}
             InputProps={{
               disableUnderline: true,
+              "aria-label": "Question input",
             }}
             sx={{
-              "& .MuiInputBase-input": {
-                fontSize: "1rem",
-                lineHeight: 1.5,
-                py: 1,
+              px: 1,
+              "& .MuiInputBase-root": {
+                alignItems: "flex-start",
+                fontFamily: '"Inter", system-ui, sans-serif',
               },
-              "& .MuiInput-input": {
-                padding: "8px 0",
+              "& .MuiInputBase-input": {
+                py: 1,
+                fontSize: "0.95rem",
+                lineHeight: 1.65,
+                color: "#0F172A",
+                "&::placeholder": {
+                  color: "#94A3B8",
+                  opacity: 1,
+                  fontStyle: "italic",
+                },
               },
             }}
           />
 
-          {/* Right-aligned status indicators */}
-          {isTranscribing && (
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mr: 1 }}>
-              <CircularProgress size={18} />
-              <Typography variant="caption" color="text.secondary">
-                Transcribing…
-              </Typography>
-            </Box>
-          )}
-
-          {/* Voice Input */}
-          <Tooltip title={isRecording ? "Stop recording" : "Start voice input"}>
+          <Tooltip title={isRecording ? "Stop recording" : "Voice input"}>
             <span>
               <IconButton
-                onClick={toggleRecording}
+                onClick={isRecording ? stopRecording : startRecording}
                 disabled={isTyping || isUploading}
+                aria-label={isRecording ? "Stop recording" : "Start voice input"}
+                size="small"
                 sx={{
-                  width: 36,
-                  height: 36,
-                  backgroundColor: isRecording ? "error.main" : "action.hover",
-                  color: isRecording ? "#fff" : "text.secondary",
-                  "&:hover": {
-                    backgroundColor: isRecording
-                      ? "error.dark"
-                      : "action.selected",
-                  },
+                  color: isRecording ? "#0052FF" : "#94A3B8",
+                  backgroundColor: isRecording ? "rgba(0,82,255,0.10)" : "transparent",
+                  border: isRecording ? "1px solid #0052FF" : "1px solid transparent",
+                  borderRadius: "8px",
                 }}
               >
                 {isRecording ? (
-                  <MicOffIcon fontSize="small" />
+                  <MicOffIcon sx={{ fontSize: 18 }} />
                 ) : (
-                  <MicIcon fontSize="small" />
-                )}
-              </IconButton>
-            </span>
-          </Tooltip>
-
-          <Tooltip title={isTyping ? "Stop generation" : "Send message"}>
-            <span>
-              <IconButton
-                onClick={() => (isTyping ? onStop?.() : onSend?.())}
-                disabled={!query.trim() || isTyping || isUploading}
-                color={isTyping ? "error" : "primary"}
-                sx={{
-                  width: 36,
-                  height: 36,
-                  backgroundColor:
-                    !query.trim() || isTyping || isUploading
-                      ? "action.disabledBackground"
-                      : "primary.main",
-                  color:
-                    !query.trim() || isTyping || isUploading
-                      ? "action.disabled"
-                      : "white",
-                  "&:hover": {
-                    backgroundColor:
-                      !query.trim() || isTyping || isUploading
-                        ? "action.disabledBackground"
-                        : "primary.dark",
-                  },
-                }}
-              >
-                {isTyping ? (
-                  <StopIcon fontSize="small" />
-                ) : (
-                  <SendIcon fontSize="small" />
+                  <MicIcon sx={{ fontSize: 18 }} />
                 )}
               </IconButton>
             </span>
           </Tooltip>
         </Box>
 
-        {/* Drag-and-drop overlay */}
-        {isDragging && (
-          <Box
-            sx={{
-              position: "fixed",
-              inset: 0,
-              bgcolor: "rgba(138,180,248,0.08)",
-              border: "2px dashed rgba(138,180,248,0.5)",
-              pointerEvents: "none",
-            }}
-          />
-        )}
-
-        {/* Below-input live preview and errors */}
-        {(isRecording || partialTranscript || recordingError) && (
-          <Box sx={{ mt: 1, display: "flex", alignItems: "center", gap: 2 }}>
-            {isRecording && (
-              <Chip
-                color="error"
-                label="Recording…"
-                size="small"
-                sx={{ height: 22 }}
-              />
-            )}
-            {partialTranscript && isRecording && (
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                noWrap
-                sx={{ maxWidth: "100%" }}
-              >
-                Live: {partialTranscript}
-              </Typography>
-            )}
-            {recordingError && (
-              <Typography variant="caption" color="error.main">
-                {recordingError}
-              </Typography>
-            )}
-          </Box>
-        )}
-        {/* Keyboard hint */}
-        <Typography
-          variant="caption"
-          color="text.secondary"
+        {/* Bottom bar */}
+        <Box
           sx={{
-            display: "block",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            px: 1.5,
+            pb: 1,
+            pt: 0.5,
+            borderTop: "1px solid #E2E8F0",
             mt: 0.5,
-            mb: 0.25,
-            textAlign: "center",
-            opacity: 0.8,
           }}
         >
-          Press Enter to send • Shift+Enter for a new line
-        </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+            <Typography
+              sx={{
+                fontSize: "0.62rem",
+                fontFamily: '"JetBrains Mono", monospace',
+                color: "#94A3B8",
+                letterSpacing: "0.04em",
+              }}
+            >
+              ↵ send · ⇧↵ newline
+            </Typography>
+
+            {/* Response length toggle */}
+            {onResponseLengthChange && (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
+                {RESPONSE_LENGTHS.map(({ value, label }) => (
+                  <Box
+                    key={value}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onResponseLengthChange(value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") onResponseLengthChange(value);
+                    }}
+                    sx={{
+                      px: 0.75,
+                      py: 0.25,
+                      cursor: "pointer",
+                      borderRadius: "4px",
+                      backgroundColor: responseLength === value ? "rgba(0,82,255,0.10)" : "transparent",
+                      border: responseLength === value ? "1px solid rgba(0,82,255,0.3)" : "1px solid transparent",
+                      "&:hover": { backgroundColor: "rgba(0,82,255,0.06)" },
+                    }}
+                  >
+                    <Typography
+                      sx={{
+                        fontSize: "0.58rem",
+                        fontFamily: '"JetBrains Mono", monospace',
+                        color: responseLength === value ? "#0052FF" : "#94A3B8",
+                        letterSpacing: "0.04em",
+                        fontWeight: responseLength === value ? 600 : 400,
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {label}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            )}
+
+            <Box aria-live="polite" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              {isUploading ? (
+                <Typography
+                  sx={{
+                    fontSize: "0.62rem",
+                    fontFamily: '"JetBrains Mono", monospace',
+                    color: "#64748B",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 0.5,
+                  }}
+                >
+                  <CircularProgress size={8} sx={{ color: "#64748B" }} />
+                  uploading…
+                </Typography>
+              ) : null}
+              {isTranscribing ? (
+                <Typography
+                  sx={{
+                    fontSize: "0.62rem",
+                    fontFamily: '"JetBrains Mono", monospace',
+                    color: "#64748B",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 0.5,
+                  }}
+                >
+                  <CircularProgress size={8} sx={{ color: "#64748B" }} />
+                  transcribing…
+                </Typography>
+              ) : null}
+              {isRecording ? (
+                <Typography
+                  sx={{
+                    fontSize: "0.62rem",
+                    fontFamily: '"JetBrains Mono", monospace',
+                    color: "#0052FF",
+                    letterSpacing: "0.04em",
+                    animation: "pulse 1.5s ease-in-out infinite",
+                    "@keyframes pulse": {
+                      "0%, 100%": { opacity: 1 },
+                      "50%": { opacity: 0.4 },
+                    },
+                  }}
+                >
+                  ● recording
+                </Typography>
+              ) : null}
+            </Box>
+          </Box>
+
+          <Tooltip title={isTyping ? "Stop generation" : "Send message"}>
+            <span>
+              <IconButton
+                onClick={() => (isTyping ? onStop?.() : handleSend())}
+                disabled={(isTyping ? false : !query.trim()) || isUploading}
+                aria-label={isTyping ? "Stop generation" : "Send message"}
+                size="small"
+                sx={{
+                  background: isTyping ? "transparent" : (query.trim() ? "linear-gradient(135deg, #0052FF, #4D7CFF)" : "transparent"),
+                  color: isTyping ? "#0052FF" : (query.trim() ? "#FFFFFF" : "#94A3B8"),
+                  border: isTyping ? "1px solid #0052FF" : (query.trim() ? "none" : "1px solid #E2E8F0"),
+                  width: 32,
+                  height: 32,
+                  borderRadius: "8px",
+                  transition: "all 150ms",
+                  "&:hover": {
+                    background: isTyping ? "rgba(0,82,255,0.08)" : (query.trim() ? "linear-gradient(135deg, #0041CC, #3D6BEE)" : "rgba(0,82,255,0.04)"),
+                  },
+                  "&.Mui-disabled": {
+                    color: "#E2E8F0",
+                    border: "1px solid #E2E8F0",
+                  },
+                }}
+              >
+                {isTyping ? (
+                  <StopIcon sx={{ fontSize: 16 }} />
+                ) : (
+                  <SendIcon sx={{ fontSize: 16 }} />
+                )}
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Box>
+
+        {/* Live transcript preview */}
+        {partialTranscript ? (
+          <Box
+            sx={{
+              px: 2,
+              py: 1,
+              borderTop: "1px solid #E2E8F0",
+              backgroundColor: "#F8FAFC",
+            }}
+          >
+            <Typography
+              sx={{
+                fontSize: "0.75rem",
+                fontFamily: '"Inter", system-ui, sans-serif',
+                color: "#64748B",
+                fontStyle: "italic",
+              }}
+            >
+              {partialTranscript}
+            </Typography>
+          </Box>
+        ) : null}
+
+        {/* Recording error */}
+        {recordingError ? (
+          <Box
+            sx={{
+              px: 2,
+              py: 1,
+              borderTop: "1px solid #FECACA",
+              backgroundColor: "#FEF2F2",
+              borderRadius: "0 0 12px 12px",
+            }}
+          >
+            <Typography
+              sx={{
+                fontSize: "0.7rem",
+                fontFamily: '"JetBrains Mono", monospace',
+                color: "#DC2626",
+              }}
+            >
+              {recordingError}
+            </Typography>
+          </Box>
+        ) : null}
       </Box>
     </Box>
   );
