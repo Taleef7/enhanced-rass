@@ -125,7 +125,7 @@ components:
           format: uuid
         sender:
           type: string
-          enum: [user, bot]
+          enum: [user, bot, system]
         text:
           type: string
         sources:
@@ -619,7 +619,7 @@ paths:
               properties:
                 sender:
                   type: string
-                  enum: [user, bot]
+                  enum: [user, bot, system]
                 text:
                   type: string
                 sources:

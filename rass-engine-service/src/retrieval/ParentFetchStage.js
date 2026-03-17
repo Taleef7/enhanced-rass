@@ -41,6 +41,7 @@ class ParentFetchStage extends Stage {
       logger.warn("[ParentFetchStage] No parentId found in chunk metadata; falling back to raw chunks.");
       // Fall back to using the candidate chunks directly (no parent/child splitting used)
       context.parentDocs = candidateChunks.map((hit) => ({
+        _id: hit._id,
         _source: { text: hit._source?.text, metadata: hit._source?.metadata },
         _score: hit._score,
       }));
@@ -67,6 +68,7 @@ class ParentFetchStage extends Stage {
         const metadata = { ...(doc.metadata || {}), docId: parentId };
 
         parentDocs.push({
+          _id: parentId,
           _source: { text: doc.pageContent, metadata },
           _score: score,
         });
@@ -79,6 +81,7 @@ class ParentFetchStage extends Stage {
     } catch (error) {
       logger.warn(`[ParentFetchStage] Failed to fetch parent documents: ${error.message}. Falling back to raw chunks.`);
       context.parentDocs = candidateChunks.map((hit) => ({
+        _id: hit._id,
         _source: { text: hit._source?.text, metadata: hit._source?.metadata },
         _score: hit._score,
       }));

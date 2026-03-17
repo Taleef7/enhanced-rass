@@ -8,12 +8,10 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 # Set the working directory in the container
 WORKDIR /usr/src/app/rass-engine-service
 
-# Copy package.json and package-lock.json
-# The rass-engine-service also has a package-lock.json
-COPY package.json ./
-COPY package-lock.json ./
-# Although there's a pnpm-lock.yaml, the original README and package.json scripts use npm.
-# If pnpm is preferred, this section would need to be adjusted to install and use pnpm.
+# Copy npm manifests first to leverage Docker layer caching.
+# This service does not currently commit a package-lock.json, so copy whichever
+# matching manifest files are present.
+COPY package*.json ./
 
 # Install app dependencies
 RUN npm install --omit=dev

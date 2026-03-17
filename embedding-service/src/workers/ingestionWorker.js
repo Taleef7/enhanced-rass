@@ -372,7 +372,7 @@ async function processIngestionJob(job) {
 // ── Worker instantiation ──────────────────────────────────────────────────────
 
 function createIngestionWorker() {
-  const worker = new Worker("rass:ingestion", processIngestionJob, {
+const worker = new Worker("rass-ingestion", processIngestionJob, {
     connection,
     concurrency: parseInt(process.env.INGESTION_CONCURRENCY, 10) || 2,
   });

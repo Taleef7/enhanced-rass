@@ -99,6 +99,7 @@ BEGIN
           AND table_schema = current_schema()
     ) THEN
         ALTER TABLE "AuditLog" RENAME TO "AuditLog_legacy";
+        ALTER TABLE "AuditLog_legacy" RENAME CONSTRAINT "AuditLog_pkey" TO "AuditLog_legacy_pkey";
     END IF;
 END
 $$;

@@ -53,8 +53,9 @@ router.get("/api/health", async (req, res) => {
     const embRes = await axios.get(`${EMBEDDING_SERVICE_BASE_URL}/health`, {
       timeout: 3000,
     });
+    const embStatus = embRes.data?.status;
     checks.embeddingService = {
-      status: embRes.data?.status === "ok" ? "ok" : "degraded",
+      status: embStatus === "ok" || embStatus === "healthy" ? "ok" : "degraded",
     };
     if (embRes.data?.redis) checks.redis = embRes.data.redis;
   } catch (err) {
@@ -67,8 +68,9 @@ router.get("/api/health", async (req, res) => {
     const engRes = await axios.get(`${RASS_ENGINE_BASE_URL}/health`, {
       timeout: 3000,
     });
+    const engStatus = engRes.data?.status;
     checks.rassEngine = {
-      status: engRes.data?.status === "ok" ? "ok" : "degraded",
+      status: engStatus === "ok" || engStatus === "healthy" ? "ok" : "degraded",
     };
   } catch (err) {
     checks.rassEngine = { status: "error", message: err.message };

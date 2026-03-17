@@ -138,6 +138,7 @@ services:
       - "8080:8080"
     volumes:
       - ./embedding-service/uploads:/usr/src/app/uploads:ro
+      - ./config.yml:/usr/src/app/mcp-server/config.yml:ro
     # No environment variables needed for this service currently
     networks:
       - rass_network

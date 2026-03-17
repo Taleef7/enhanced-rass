@@ -16,13 +16,31 @@ const { z } = require("zod");
 const authMiddleware = require("../authMiddleware");
 const { writeAuditLog } = require("../services/auditService");
 const { prisma } = require("../prisma");
-const { OPENSEARCH_HOST, OPENSEARCH_PORT, EMBED_DIM } = require("../config");
+const {
+  OPENSEARCH_HOST,
+  OPENSEARCH_PORT,
+  EMBED_DIM,
+  EMBEDDING_PROVIDER,
+  OPENAI_EMBED_MODEL_NAME,
+  GEMINI_EMBED_MODEL_NAME,
+  OLLAMA_EMBED_MODEL,
+} = require("../config");
 const { apiLimiter, deleteLimiter } = require("../middleware/rateLimits");
 const { KBCreateSchema } = require("../schemas/knowledgeBaseSchema");
 const { validateBody } = require("../middleware/validate");
 const logger = require("../logger");
 
 const router = express.Router();
+
+function resolveDefaultEmbeddingModel() {
+  if (EMBEDDING_PROVIDER === "openai") {
+    return OPENAI_EMBED_MODEL_NAME || "text-embedding-3-large";
+  }
+  if (EMBEDDING_PROVIDER === "ollama") {
+    return OLLAMA_EMBED_MODEL || "nomic-embed-text";
+  }
+  return GEMINI_EMBED_MODEL_NAME || "gemini-embedding-001";
+}
 
 // ── Helper: create an OpenSearch index for a KB ───────────────────────────────
 
@@ -80,7 +98,7 @@ router.post("/api/knowledge-bases", apiLimiter, authMiddleware, validateBody(KBC
   const { name, description, isPublic, embeddingModel, embedDim } = req.validatedBody;
 
   const resolvedEmbedDim = embedDim || EMBED_DIM;
-  const resolvedModel = embeddingModel || "text-embedding-004"; // server-side default
+  const resolvedModel = embeddingModel || resolveDefaultEmbeddingModel();
 
   // Derive a unique, OpenSearch-safe index name from the KB name
   const safeBase = name
@@ -286,7 +304,7 @@ router.post("/api/knowledge-bases/:id/members", apiLimiter, authMiddleware, asyn
 // Phase F: Returns a document similarity graph for knowledge graph visualization.
 // Computes cosine similarity between document chunk embedding centroids.
 
-router.get("/api/knowledge-bases/:kbId/graph", apiLimiter, authMiddleware, async (req, res) => {
+router.get("/api/knowledge-bases/:kbId/similarity-graph", apiLimiter, authMiddleware, async (req, res) => {
   const { kbId } = req.params;
   const userId = req.userId;
   const threshold = parseFloat(req.query.threshold) || 0.3;

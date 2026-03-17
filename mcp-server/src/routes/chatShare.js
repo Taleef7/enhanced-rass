@@ -118,8 +118,8 @@ router.get("/api/shared/:token", apiLimiter, async (req, res) => {
               orderBy: { createdAt: "asc" },
               select: {
                 id: true,
-                role: true,
-                content: true,
+                sender: true,
+                text: true,
                 createdAt: true,
               },
             },
@@ -154,6 +154,8 @@ router.get("/api/shared/:token", apiLimiter, async (req, res) => {
 function buildShareUrl(token, req) {
   const baseUrl =
     process.env.APP_BASE_URL ||
+    req.get("origin") ||
+    req.get("referer")?.replace(/\/$/, "") ||
     `${req.protocol}://${req.get("host")}`;
   return `${baseUrl}/shared/${token}`;
 }

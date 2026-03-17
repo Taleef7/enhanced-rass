@@ -1,22 +1,20 @@
 // mcp-server/src/services/kgExtractionService.js
 // Phase G #137: Knowledge graph entity and relation extraction service.
 //
-// Uses an LLM (via the rass-engine-service) to extract structured entities and
-// relations from document chunks stored in OpenSearch. Results are persisted to
-// the Entity and Relation Prisma models.
-//
-// Extraction is incremental — chunks that have already been processed are skipped
-// (tracked by chunkId). This allows re-running extraction after adding new documents
-// without re-processing the entire knowledge base.
+// Uses the rass-engine-service as a prompt-only LLM proxy to extract
+// structured entities and relations from the chunk text already stored in
+// OpenSearch for a knowledge base.
 
 "use strict";
 
 const axios = require("axios");
 const { prisma } = require("../prisma");
 const logger = require("../logger");
+const { OPENSEARCH_HOST, OPENSEARCH_PORT } = require("../config");
 
 const RASS_ENGINE_BASE_URL =
   process.env.RASS_ENGINE_URL || "http://rass-engine-service:8000";
+const OPENSEARCH_BASE_URL = `http://${OPENSEARCH_HOST}:${OPENSEARCH_PORT}`;
 
 const ENTITY_EXTRACTION_PROMPT = `You are an expert information extraction system. Given the text passage below, extract all named entities and the relationships between them.
 
@@ -40,26 +38,19 @@ Rules:
 Text:
 `;
 
-/**
- * Calls the rass-engine-service /ask endpoint to perform entity extraction.
- * We re-use the rass-engine as an LLM proxy to avoid duplicating LLM client code.
- *
- * @param {string} text - The chunk text to extract from.
- * @returns {Promise<{entities: object[], relations: object[]}>}
- */
 async function extractFromText(text) {
   try {
     const response = await axios.post(
-      `${RASS_ENGINE_BASE_URL}/ask`,
+      `${RASS_ENGINE_BASE_URL}/generate`,
       {
-        query: ENTITY_EXTRACTION_PROMPT + text.substring(0, 2000),
-        top_k: 0, // No retrieval needed — we're passing the text directly
+        prompt: ENTITY_EXTRACTION_PROMPT + text.substring(0, 6000),
+        temperature: 0.1,
+        max_tokens: 800,
       },
       { timeout: 30000 }
     );
 
-    const answer = response.data?.answer || "";
-    // Try to parse the JSON from the LLM response
+    const answer = response.data?.text || "";
     const jsonMatch = answer.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       logger.warn("[KG] LLM did not return valid JSON for extraction");
@@ -72,24 +63,64 @@ async function extractFromText(text) {
   }
 }
 
-/**
- * Extracts knowledge graph entities and relations for all documents in a knowledge base.
- * Incremental — skips chunks already extracted (chunkId in Entity table).
- *
- * @param {string} kbId   - Knowledge base ID.
- * @param {string} userId - Owner user ID (for provenance).
- */
+async function buildExtractionText(indexName, doc) {
+  try {
+    const response = await axios.post(
+      `${OPENSEARCH_BASE_URL}/${indexName}/_search`,
+      {
+        size: 12,
+        _source: ["text"],
+        query: {
+          bool: {
+            should: [
+              { term: { "metadata.documentId.keyword": doc.id } },
+              { term: { "metadata.documentId": doc.id } },
+            ],
+            minimum_should_match: 1,
+          },
+        },
+      },
+      {
+        headers: { "Content-Type": "application/json" },
+        timeout: 10000,
+      }
+    );
+
+    const chunkTexts = (response.data?.hits?.hits || [])
+      .map((hit) => hit?._source?.text?.trim())
+      .filter(Boolean);
+
+    if (chunkTexts.length === 0) {
+      return `Document: ${doc.originalFilename}`;
+    }
+
+    return `${doc.originalFilename}\n\n${chunkTexts.join("\n\n")}`.slice(0, 6000);
+  } catch (err) {
+    logger.warn(`[KG] Could not fetch chunk text for doc ${doc.id}: ${err.message}`);
+    return `Document: ${doc.originalFilename}`;
+  }
+}
+
 async function extractKnowledgeGraph(kbId, userId) {
   logger.info(`[KG] Starting extraction for KB ${kbId}`);
 
-  // Fetch all documents in this KB
+  const kb = await prisma.knowledgeBase.findUnique({
+    where: { id: kbId },
+    select: { id: true, openSearchIndex: true },
+  });
+
+  if (!kb) {
+    logger.warn(`[KG] Knowledge base ${kbId} not found; skipping extraction`);
+    return;
+  }
+
   const documents = await prisma.document.findMany({
     where: { kbId, status: "READY" },
     select: { id: true, originalFilename: true },
   });
 
   if (documents.length === 0) {
-    logger.info("[KG] No ready documents found in KB — skipping extraction");
+    logger.info("[KG] No ready documents found in KB; skipping extraction");
     return;
   }
 
@@ -97,27 +128,17 @@ async function extractKnowledgeGraph(kbId, userId) {
   let totalRelations = 0;
 
   for (const doc of documents) {
-    // Fetch the document's provenance to find chunk text
-    const provenance = await prisma.documentProvenance.findFirst({
-      where: { documentId: doc.id },
-    });
-
-    if (!provenance) continue;
-
-    // Skip if already extracted for this document
     const existingCount = await prisma.entity.count({
       where: { documentId: doc.id, kbId },
     });
     if (existingCount > 0) {
-      logger.info(`[KG] Skipping doc ${doc.id} (already extracted ${existingCount} entities)`);
+      logger.info(
+        `[KG] Skipping doc ${doc.id} (already extracted ${existingCount} entities)`
+      );
       continue;
     }
 
-    // Use the document's stored chunks for extraction. We fetch the provenance
-    // text to ground entity extraction in the actual ingested content.
-    const extractionText = provenance.chunkText
-      ? `${doc.originalFilename}\n\n${provenance.chunkText}`
-      : `Document: ${doc.originalFilename}`;
+    const extractionText = await buildExtractionText(kb.openSearchIndex, doc);
     const { entities, relations } = await extractFromText(extractionText);
 
     if (entities.length === 0) {
@@ -125,7 +146,6 @@ async function extractKnowledgeGraph(kbId, userId) {
       continue;
     }
 
-    // Persist entities
     const entityMap = {};
     for (const e of entities) {
       if (!e.name || !e.type) continue;
@@ -146,7 +166,6 @@ async function extractKnowledgeGraph(kbId, userId) {
       }
     }
 
-    // Persist relations
     for (const r of relations) {
       const subjectId = entityMap[r.subject?.trim()];
       const objectId = entityMap[r.object?.trim()];
@@ -166,10 +185,14 @@ async function extractKnowledgeGraph(kbId, userId) {
       }
     }
 
-    logger.info(`[KG] Doc ${doc.id}: ${entities.length} entities, ${relations.length} relations`);
+    logger.info(
+      `[KG] Doc ${doc.id}: ${entities.length} entities, ${relations.length} relations`
+    );
   }
 
-  logger.info(`[KG] Extraction complete: ${totalEntities} entities, ${totalRelations} relations for KB ${kbId}`);
+  logger.info(
+    `[KG] Extraction complete: ${totalEntities} entities, ${totalRelations} relations for KB ${kbId} (requested by ${userId})`
+  );
 }
 
 module.exports = { extractKnowledgeGraph };

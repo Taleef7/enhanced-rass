@@ -14,6 +14,11 @@ const portRange = z
 const ConfigSchema = z.object({
   MCP_SERVER_PORT: portRange,
 
+  EMBEDDING_PROVIDER: z.enum(["openai", "gemini", "ollama"]).optional(),
+  OPENAI_EMBED_MODEL_NAME: z.string().min(1).optional(),
+  GEMINI_EMBED_MODEL_NAME: z.string().min(1).optional(),
+  OLLAMA_EMBED_MODEL: z.string().min(1).optional(),
+
   OPENSEARCH_HOST: z.string().min(1, "OPENSEARCH_HOST must not be empty"),
   OPENSEARCH_PORT: z
     .number()

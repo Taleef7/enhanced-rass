@@ -5,11 +5,10 @@ FROM node:20-slim
 # Set the working directory in the container
 WORKDIR /usr/src/app/embedding-service
 
-# Copy package.json and package-lock.json (or npm-shrinkwrap.json)
-# These are copied first to leverage Docker's layer caching.
-# If these files don't change, Docker won't re-run npm install.
-COPY package.json ./
-COPY package-lock.json ./
+# Copy npm manifests first to leverage Docker layer caching.
+# This service does not currently commit a package-lock.json, so copy whichever
+# matching manifest files are present.
+COPY package*.json ./
 
 # Install app dependencies
 # Using --omit=dev if you have devDependencies you don't want in production

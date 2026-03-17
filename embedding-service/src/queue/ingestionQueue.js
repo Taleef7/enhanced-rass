@@ -1,6 +1,6 @@
 // embedding-service/src/queue/ingestionQueue.js
 // Defines the BullMQ queue used for async document ingestion jobs.
-// The queue is named "rass:ingestion" and is backed by the shared Redis instance.
+// The queue is named "rass-ingestion" and is backed by the shared Redis instance.
 
 "use strict";
 
@@ -14,7 +14,7 @@ const connection = {
   db: REDIS_DB,
 };
 
-const ingestionQueue = new Queue("rass:ingestion", {
+const ingestionQueue = new Queue("rass-ingestion", {
   connection,
   defaultJobOptions: {
     attempts: 3,
