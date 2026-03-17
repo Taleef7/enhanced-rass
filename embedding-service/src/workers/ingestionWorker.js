@@ -258,6 +258,21 @@ async function processIngestionJob(job) {
           doc.metadata.originalFilename = parentChunks[i].metadata.originalFilename;
           doc.metadata.uploadedAt = parentChunks[i].metadata.uploadedAt;
           if (documentId) doc.metadata.documentId = documentId;
+
+          // Phase 2.3: Contextual Chunk Header — prepend file/page metadata before embedding.
+          // This gives the embedding model (and BM25 inverted index) additional context about
+          // where the chunk came from, dramatically improving recall for section-level queries.
+          // The original text is preserved in metadata.originalText for citation display.
+          const filename = doc.metadata.originalFilename || doc.metadata.source || "";
+          const page = doc.metadata.pageNumber || doc.metadata.page_number || doc.metadata.loc?.pageNumber || "";
+          const section = doc.metadata.section || "";
+          const headerParts = [`Document: ${filename}`];
+          if (section) headerParts.push(`Section: ${section}`);
+          if (page) headerParts.push(`Page: ${page}`);
+          const header = headerParts.join(" | ");
+          doc.metadata.originalText = doc.pageContent;
+          doc.pageContent = `${header}\n---\n${doc.pageContent}`;
+
           childChunks.push(doc);
         });
       }

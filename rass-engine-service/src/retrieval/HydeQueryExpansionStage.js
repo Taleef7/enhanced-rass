@@ -1,13 +1,16 @@
 // rass-engine-service/src/retrieval/HydeQueryExpansionStage.js
 // HyDE (Hypothetical Document Embeddings) query expansion stage.
-// When HYDE_ENABLED=true, generates a hypothetical document for the user's query
-// and uses it to augment the query text before embedding.
-// Falls back to the original query on LLM failure (no crash).
+// When HYDE_ENABLED=true, generates a hypothetical document for the user's query,
+// embeds it SEPARATELY, and stores the HyDE embedding in context.hydeEmbedding.
+// EmbedQueryStage then uses this embedding for KNN, while context.query (the
+// actual text) is still used for BM25 — this is the correct HyDE implementation.
+// Falls back gracefully on LLM or embedding failure (no crash).
 
 "use strict";
 
 const { Stage } = require("./Stage");
 const { generateHypotheticalDocument } = require("../planner/hydeGenerator");
+const { embedText } = require("../clients/embedder");
 const logger = require("../logger");
 
 class HydeQueryExpansionStage extends Stage {
@@ -34,27 +37,39 @@ class HydeQueryExpansionStage extends Stage {
         ? Number(rawMaxTokens)
         : 200;
 
+    // Use the current query (possibly reformulated) for HyDE generation
+    const queryForHyde = context.query || context.originalQuery;
+
     logger.info(
-      `[HydeQueryExpansionStage] Generating hypothetical document for: "${context.originalQuery}" (maxTokens=${hydeMaxTokens})`
+      `[HydeQueryExpansionStage] Generating hypothetical document for: "${queryForHyde.substring(0, 80)}..." (maxTokens=${hydeMaxTokens})`
     );
 
     let hypotheticalDoc = null;
     try {
-      hypotheticalDoc = await generateHypotheticalDocument(context.originalQuery, hydeMaxTokens);
+      hypotheticalDoc = await generateHypotheticalDocument(queryForHyde, hydeMaxTokens);
     } catch (err) {
       logger.warn(
-        `[HydeQueryExpansionStage] HyDE generation failed: ${err.message}. Falling back to original query.`
+        `[HydeQueryExpansionStage] HyDE generation failed: ${err.message}. Falling back to standard embedding.`
       );
+      return context;
     }
 
-    if (hypotheticalDoc && hypotheticalDoc !== context.originalQuery) {
-      // Concatenate original query + hypothetical document for richer embedding signal
-      context.query = `${context.originalQuery}\n\n${hypotheticalDoc}`;
+    if (!hypotheticalDoc || hypotheticalDoc === queryForHyde) {
+      logger.info("[HydeQueryExpansionStage] No useful hypothetical document generated; skipping HyDE embedding.");
+      return context;
+    }
+
+    // 1.3 Fix: Embed the hypothetical document SEPARATELY — do NOT concatenate with query.
+    // The HyDE embedding is used for KNN (dense retrieval) in EmbedQueryStage.
+    // The original query text stays in context.query for BM25 (sparse retrieval).
+    // This preserves the distinct signal from each retrieval modality.
+    try {
+      context.hydeEmbedding = await embedText(hypotheticalDoc);
       logger.info(
-        `[HydeQueryExpansionStage] Expanded query length: ${context.query.length} chars.`
+        `[HydeQueryExpansionStage] HyDE embedding computed (${context.hydeEmbedding?.length} dims) from ${hypotheticalDoc.length}-char hypothetical document.`
       );
-    } else {
-      logger.info("[HydeQueryExpansionStage] No expansion applied; using original query.");
+    } catch (embedErr) {
+      logger.warn(`[HydeQueryExpansionStage] HyDE embedding failed: ${embedErr.message}. EmbedQueryStage will embed the query directly.`);
     }
 
     return context;

@@ -16,6 +16,8 @@ const StreamAskBodySchema = z.object({
     .optional(),
   documents: z.array(z.string()).optional(),
   kbId: z.string().uuid("kbId must be a valid UUID").optional(),
+  // Phase 2.1: chatId for fetching conversation history to enable query reformulation
+  chatId: z.string().optional(),
 });
 
 module.exports = { StreamAskBodySchema };

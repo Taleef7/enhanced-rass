@@ -87,7 +87,7 @@ class HybridSearchStage extends Stage {
   }
 
   async run(context) {
-    const { query, queryEmbedding, userId, documents } = context;
+    const { query, queryEmbedding, userId, documents, kbId } = context;
     const k = DEFAULT_K_OPENSEARCH_HITS;
 
     if (!queryEmbedding) {
@@ -96,18 +96,25 @@ class HybridSearchStage extends Stage {
       return context;
     }
 
+    // 1.2: Per-KB index routing — each knowledge base gets its own isolated OpenSearch index.
+    // This prevents cross-contamination between different users' knowledge bases.
+    const targetIndex = kbId ? `rass-kb-${kbId}` : OPENSEARCH_INDEX_NAME;
+    if (kbId) {
+      logger.info(`[HybridSearchStage] Routing to per-KB index: ${targetIndex}`);
+    }
+
     const searchBody = buildHybridQuery(query, queryEmbedding, k, userId, documents);
 
-    return withSpan("retrieval.hybridSearch", { "search.k": k, "search.hasUserFilter": !!userId }, async () => {
+    return withSpan("retrieval.hybridSearch", { "search.k": k, "search.hasUserFilter": !!userId, "search.index": targetIndex }, async () => {
       try {
         const searchStart = Date.now();
-        const results = await osClient.search({ index: OPENSEARCH_INDEX_NAME, body: searchBody });
+        const results = await osClient.search({ index: targetIndex, body: searchBody });
         opensearchQueryDurationSeconds.observe({ operation: "hybrid_search" }, (Date.now() - searchStart) / 1000);
         const hits = results.body.hits.hits || [];
-        logger.info(`[HybridSearchStage] Found ${hits.length} candidate chunks (status: ${results.statusCode}).`);
+        logger.info(`[HybridSearchStage] Found ${hits.length} candidate chunks in index "${targetIndex}" (status: ${results.statusCode}).`);
         context.candidateChunks = hits;
       } catch (error) {
-        logger.warn(`[HybridSearchStage] Search failed: ${error.message}`);
+        logger.warn(`[HybridSearchStage] Search failed on index "${targetIndex}": ${error.message}`);
         context.candidateChunks = [];
       }
       return context;

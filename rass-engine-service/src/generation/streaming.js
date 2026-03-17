@@ -10,7 +10,7 @@ const {
   OLLAMA_LLM_MODEL,
   LLM_MAX_TOKENS,
 } = require("../config");
-const { buildGenerationPrompt } = require("./generator");
+const { buildGenerationPrompt, applyTokenBudget } = require("./generator");
 const { CitationSchema } = require("../schemas/retrievalSchemas");
 const logger = require("../logger");
 
@@ -149,8 +149,11 @@ function buildStructuredCitations(sourceDocuments, llmAnswer) {
  * @param {object[]} sourceDocuments - Array of {text, metadata, initial_score, rerank_score} objects.
  */
 async function streamAnswer(res, query, sourceDocuments) {
-  const context = sourceDocuments.map((doc) => doc.text).join("\n\n---\n\n");
-  const generationPrompt = buildGenerationPrompt(context, query);
+  // 1.5: Apply token budget before building the prompt — only include as many chunks
+  // as the model context window can accommodate.
+  const { docs: budgetDocs } = applyTokenBudget(sourceDocuments, query);
+
+  const generationPrompt = buildGenerationPrompt(budgetDocs, query);
   let fullAnswer = "";
 
   // Phase F (#129): Emit a 'context' event with the retrieved chunks before generation.

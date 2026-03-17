@@ -83,6 +83,13 @@ const ConfigSchema = z
     VISION_ENABLED: z.boolean().optional().default(false),
     VISION_LLM_PROVIDER: z.enum(["openai", "gemini", "ollama"]).optional().default("openai"),
     VISION_LLM_MODEL: z.string().optional().default("gpt-4o-mini"),
+
+    // Phase 3: Contextual retrieval — LLM-generated context prefix per chunk
+    CONTEXTUAL_RETRIEVAL_ENABLED: z.boolean().optional().default(false),
+    CONTEXTUAL_RETRIEVAL_PROVIDER: providerEnum.optional().default("gemini"),
+
+    // Phase 6: LightRAG entity extraction at ingestion
+    GRAPH_EXTRACTION_ENABLED: z.boolean().optional().default(false),
   })
   .superRefine((data, ctx) => {
     if (data.PARENT_CHUNK_OVERLAP >= data.PARENT_CHUNK_SIZE) {

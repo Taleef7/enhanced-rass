@@ -5,31 +5,79 @@ const { llmClient } = require("../clients/llmClient");
 const { LLM_PROVIDER, OPENAI_MODEL_NAME, OLLAMA_LLM_MODEL, LLM_MAX_TOKENS } = require("../config");
 const logger = require("../logger");
 
+// 1.5: Conservative model context window (tokens). Most models support 32k–128k+;
+// using 32k as the safe lower bound ensures compatibility across all providers.
+const MODEL_CONTEXT_TOKENS = 32768;
+const CHARS_PER_TOKEN = 4; // approximation: 1 token ≈ 4 characters
+
 /**
- * Builds the generation prompt from context documents and a user query.
+ * 1.5 Token Budget: Filters sourceDocuments to fit within the available context window.
+ * Reserves space for: system prompt, query, response (LLM_MAX_TOKENS), and a safety buffer.
+ *
+ * @param {object[]} sourceDocuments - Full list of {text, metadata} objects.
+ * @param {string}   query           - The user's query (needed to estimate its token cost).
+ * @param {number}   [maxResponseTokens] - Max tokens reserved for the LLM response.
+ * @returns {{ docs: object[], usedChars: number, availableChars: number }}
  */
-function buildGenerationPrompt(context, query) {
-  return `
-You are a knowledgeable assistant whose sole job is to answer the user's question by **only** using the information given in the Context. Do **not** hallucinate or bring in outside knowledge.
+function applyTokenBudget(sourceDocuments, query, maxResponseTokens = LLM_MAX_TOKENS) {
+  const SYSTEM_PROMPT_TOKENS = 150; // rough estimate for system instructions
+  const BUFFER_TOKENS = 500;
+  const queryTokens = Math.ceil((query || "").length / CHARS_PER_TOKEN);
+
+  const availableTokens =
+    MODEL_CONTEXT_TOKENS - maxResponseTokens - queryTokens - SYSTEM_PROMPT_TOKENS - BUFFER_TOKENS;
+  const availableChars = Math.max(availableTokens * CHARS_PER_TOKEN, 0);
+
+  let usedChars = 0;
+  const includedDocs = [];
+
+  for (const doc of sourceDocuments) {
+    const docChars = (doc.text || "").length;
+    if (usedChars + docChars > availableChars) {
+      logger.info(
+        `[TokenBudget] Budget exhausted at doc ${includedDocs.length + 1}/${sourceDocuments.length}. ` +
+        `Used ${usedChars}/${availableChars} chars (~${Math.ceil(usedChars / CHARS_PER_TOKEN)}/${Math.ceil(availableChars / CHARS_PER_TOKEN)} tokens).`
+      );
+      break;
+    }
+    includedDocs.push(doc);
+    usedChars += docChars;
+  }
+
+  return { docs: includedDocs, usedChars, availableChars };
+}
+
+/**
+ * 1.7 Inline Citations: Builds the generation prompt from numbered source documents.
+ * Documents are numbered [1], [2], ... and the model is instructed to cite inline.
+ *
+ * @param {object[]} sourceDocuments - Array of {text, metadata} objects (already budget-filtered).
+ * @param {string}   query           - The user's question.
+ */
+function buildGenerationPrompt(sourceDocuments, query) {
+  // Build numbered document list with filename headers
+  const numberedDocs = sourceDocuments
+    .map((doc, i) => {
+      const name = doc.metadata?.originalFilename || doc.metadata?.source || "Unknown";
+      return `[${i + 1}] Document: ${name}\n${doc.text || ""}`;
+    })
+    .join("\n\n---\n\n");
+
+  return `You are a knowledgeable assistant whose sole job is to answer the user's question by **only** using the information given in the numbered documents below. Do **not** hallucinate or bring in outside knowledge.
 
 Guidelines:
-1. Provide a concise, accurate answer in ideally 2–3 paragraphs or as per the users' request.
-2. If the Context does not contain enough information to answer, reply exactly: "I don't have enough information to answer that question."
-3. If the Context contains information that is not relevant to the question, do not include it in your answer.
-4. If the Context contains multiple documents, synthesize the information into a coherent answer.
-5. If the question is about a specific document, focus on that document's content.
-6. If the question is about a general topic, use the most relevant documents to provide a comprehensive answer.
-7. If the question is about a specific event or fact, ensure your answer is directly supported by the Context.
+1. After each factual claim, add an inline citation marker [N] citing the source document number (e.g., "The policy states X [1].").
+2. Provide a concise, accurate answer in 2–3 paragraphs or as requested.
+3. If the documents do not contain enough information to answer, reply exactly: "I don't have enough information to answer that question."
+4. Do not include information from documents that are not relevant to the question.
+5. If multiple documents contain relevant information, synthesize them into a coherent answer with citations.
 
+Documents:
+${numberedDocs}
 
-Context:
-${context}
+Question: ${query}
 
-Question:
-${query}
-
-Answer:
-`.trim();
+Answer:`.trim();
 }
 
 /**
@@ -66,8 +114,8 @@ async function generateFromPrompt(
  * @returns {Promise<string>} The generated answer text.
  */
 async function generateAnswer(query, sourceDocuments) {
-  const context = sourceDocuments.map((doc) => doc.text).join("\n\n---\n\n");
-  const generationPrompt = buildGenerationPrompt(context, query);
+  const { docs: budgetDocs } = applyTokenBudget(sourceDocuments, query);
+  const generationPrompt = buildGenerationPrompt(budgetDocs, query);
 
   let answer = "Sorry, I was unable to generate an answer.";
   try {
@@ -86,4 +134,5 @@ module.exports = {
   generateAnswer,
   buildGenerationPrompt,
   generateFromPrompt,
+  applyTokenBudget,
 };

@@ -35,6 +35,17 @@ const StreamAskBodySchema = z.object({
     .optional(),
   userId: z.string().optional(),
   documents: z.array(z.string()).optional(),
+  // 1.2: per-KB index routing — route search to the correct OpenSearch index
+  kbId: z.string().optional(),
+  // 2.1: conversation history for query reformulation
+  conversationHistory: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string(),
+      })
+    )
+    .optional(),
 });
 
 module.exports = { AskBodySchema, StreamAskBodySchema };

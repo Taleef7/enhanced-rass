@@ -27,9 +27,26 @@ const internalHeaders = INTERNAL_SERVICE_TOKEN
   ? { "x-internal-token": INTERNAL_SERVICE_TOKEN }
   : {};
 
-// Multipliers applied to relevance scores — the mcp-server /internal/feedback/boosts endpoint
-// returns the final multiplier value (tunable via POSITIVE_FEEDBACK_BOOST /
-// NEGATIVE_FEEDBACK_PENALTY env vars there).
+// 1.6: In-process cache for A/B group assignments and boost maps.
+// These values change infrequently; caching eliminates ~200–400ms per query
+// (2 HTTP calls to mcp-server → 0).
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const abGroupCache = new Map();  // userId → { group, expiresAt }
+const boostCache = new Map();    // userId → { boosts, expiresAt }
+
+function getCached(cache, userId) {
+  const entry = cache.get(userId);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    cache.delete(userId);
+    return null;
+  }
+  return entry.value;
+}
+
+function setCached(cache, userId, value) {
+  cache.set(userId, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+}
 
 class FeedbackBoostStage extends Stage {
   constructor(config) {
@@ -56,17 +73,23 @@ class FeedbackBoostStage extends Stage {
       return context;
     }
 
-    // Fetch user's A/B group from the mcp-server
-    let abGroup = "a";
-    try {
-      const groupRes = await axios.get(
-        `${MCP_SERVER_INTERNAL_URL}/internal/feedback/ab-group/${userId}`,
-        { timeout: 3000, headers: internalHeaders }
-      );
-      abGroup = groupRes.data?.abGroup || "a";
-    } catch (err) {
-      // Non-fatal: fall back to control group
-      logger.warn(`[FeedbackBoostStage] Could not fetch A/B group for ${userId}: ${err.message}`);
+    // Fetch user's A/B group from cache or mcp-server
+    let abGroup = getCached(abGroupCache, userId);
+    if (abGroup === null) {
+      abGroup = "a"; // default to control
+      try {
+        const groupRes = await axios.get(
+          `${MCP_SERVER_INTERNAL_URL}/internal/feedback/ab-group/${userId}`,
+          { timeout: 3000, headers: internalHeaders }
+        );
+        abGroup = groupRes.data?.abGroup || "a";
+        setCached(abGroupCache, userId, abGroup);
+      } catch (err) {
+        // Non-fatal: fall back to control group
+        logger.warn(`[FeedbackBoostStage] Could not fetch A/B group for ${userId}: ${err.message}`);
+      }
+    } else {
+      logger.debug(`[FeedbackBoostStage] A/B group cache hit for user ${userId}: "${abGroup}"`);
     }
 
     // Log group membership alongside the query
@@ -78,18 +101,24 @@ class FeedbackBoostStage extends Stage {
       return context;
     }
 
-    // Treatment group B — apply feedback boosts
-    let boostMap = {};
-    try {
-      const boostRes = await axios.get(
-        `${MCP_SERVER_INTERNAL_URL}/internal/feedback/boosts/${userId}`,
-        { timeout: 3000, headers: internalHeaders }
-      );
-      boostMap = boostRes.data?.boosts || {};
-    } catch (err) {
-      logger.warn(`[FeedbackBoostStage] Could not fetch feedback boosts for ${userId}: ${err.message}`);
-      // Gracefully degrade — proceed without boosts
-      return context;
+    // Treatment group B — apply feedback boosts (with cache)
+    let boostMap = getCached(boostCache, userId);
+    if (boostMap === null) {
+      boostMap = {};
+      try {
+        const boostRes = await axios.get(
+          `${MCP_SERVER_INTERNAL_URL}/internal/feedback/boosts/${userId}`,
+          { timeout: 3000, headers: internalHeaders }
+        );
+        boostMap = boostRes.data?.boosts || {};
+        setCached(boostCache, userId, boostMap);
+      } catch (err) {
+        logger.warn(`[FeedbackBoostStage] Could not fetch feedback boosts for ${userId}: ${err.message}`);
+        // Gracefully degrade — proceed without boosts
+        return context;
+      }
+    } else {
+      logger.debug(`[FeedbackBoostStage] Boost map cache hit for user ${userId} (${Object.keys(boostMap).length} entries)`);
     }
 
     if (Object.keys(boostMap).length === 0) {

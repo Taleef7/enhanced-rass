@@ -21,7 +21,7 @@ const pipeline = createPipeline(config);
 
 router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) => {
   try {
-    const { query, documents, userId, top_k } = req.validatedBody;
+    const { query, documents, userId, top_k, kbId, conversationHistory } = req.validatedBody;
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -35,15 +35,16 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
 
     req.log.info("---------------------------------");
     req.log.info(
-      `[API /stream-ask] Received query: "${query}", top_k: ${top_k}`
+      `[API /stream-ask] Received query: "${query}", top_k: ${top_k}, kbId: ${kbId || "default"}`
     );
     if (userId) req.log.info(`[API /stream-ask] Request from user: ${userId}`);
+    if (conversationHistory?.length) req.log.info(`[API /stream-ask] Conversation history: ${conversationHistory.length} messages`);
     req.log.info("---------------------------------");
 
     const topK = typeof top_k === "number" ? top_k : DEFAULT_TOP_K;
 
-    // Run the full retrieval pipeline (HyDE → Embed → Search → Fetch → Dedup → Rerank → TopK)
-    const context = createContext({ query, userId, documents, topK, config });
+    // Run the full retrieval pipeline
+    const context = createContext({ query, userId, documents, topK, kbId, conversationHistory, config });
     const pipelineStart = Date.now();
     const result = await pipeline.run(context);
     queryLatencySeconds.observe({ stage: "pipeline" }, (Date.now() - pipelineStart) / 1000);
@@ -94,7 +95,10 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
       `[Generation] Streaming with ${source_documents.length} documents...`
     );
 
-    await streamAnswer(res, query, source_documents);
+    // Use result.query (possibly reformulated by QueryReformulationStage) for generation.
+    // This ensures the LLM sees the standalone, context-enriched question, not the raw follow-up.
+    const effectiveQuery = result.query || query;
+    await streamAnswer(res, effectiveQuery, source_documents);
   } catch (e) {
     req.log.error({ err: e }, "[API /stream-ask] Endpoint error.");
     if (!res.headersSent) {

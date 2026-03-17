@@ -92,10 +92,10 @@ PARENT_CHUNK_SIZE: 2000
 PARENT_CHUNK_OVERLAP: 500
 
 # type: integer, positive — max characters per child chunk indexed in OpenSearch
-CHILD_CHUNK_SIZE: 200
+CHILD_CHUNK_SIZE: 500
 
 # type: integer, 0 to <CHILD_CHUNK_SIZE — overlap between adjacent child chunks
-CHILD_CHUNK_OVERLAP: 100
+CHILD_CHUNK_OVERLAP: 150
 
 # type: integer, positive — number of candidate chunks retrieved per KNN query
 DEFAULT_K_OPENSEARCH_HITS: 112
@@ -105,8 +105,40 @@ OPENSEARCH_SCORE_THRESHOLD: 0.1
 
 search:
   # type: integer, positive — maximum source documents passed to the LLM for generation
-  DEFAULT_TOP_K: 50
+  DEFAULT_TOP_K: 10
 
 # --- LLM Generation Limits ---
 # type: integer — maximum number of tokens the LLM may generate per response.
-LLM_MAX_TOKENS: 2048
+LLM_MAX_TOKENS: 8192
+
+# ─── Reranking (Phase 1) ─────────────────────────────────────────────────────
+# type: enum["none", "cohere", "local"] — reranking provider (set COHERE_API_KEY in .env)
+RERANK_PROVIDER: "none"
+# type: integer — number of documents to keep after reranking (should match DEFAULT_TOP_K)
+RERANK_TOP_N: 10
+
+# ─── HyDE (Phase 1) ──────────────────────────────────────────────────────────
+# type: boolean — enable HyDE query expansion (adds one LLM call per query)
+HYDE_ENABLED: true
+# type: integer — max tokens for the hypothetical document
+HYDE_MAX_TOKENS: 200
+
+# ─── Conversational Query Reformulation (Phase 2) ───────────────────────────
+# type: boolean — enable LLM-based query reformulation using conversation history
+QUERY_REFORMULATION_ENABLED: true
+
+# ─── Contextual Retrieval (Phase 3) ──────────────────────────────────────────
+# type: boolean — prepend LLM-generated context prefix to each child chunk
+# NOTE: Requires re-indexing all documents after enabling.
+CONTEXTUAL_RETRIEVAL_ENABLED: false
+# type: enum["openai", "gemini", "ollama"] — cheap model for context prefix generation
+CONTEXTUAL_RETRIEVAL_PROVIDER: "gemini"
+
+# ─── LightRAG Graph Layer (Phase 6) ──────────────────────────────────────────
+GRAPH_EXTRACTION_ENABLED: false
+GRAPH_EXPANSION_ENABLED: false
+
+# ─── Web Search Fallback (Phase 7) ───────────────────────────────────────────
+WEB_SEARCH_ENABLED: false
+WEB_SEARCH_PROVIDER: "tavily"
+WEB_SEARCH_THRESHOLD: 0.3

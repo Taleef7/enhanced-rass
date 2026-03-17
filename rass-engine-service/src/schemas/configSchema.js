@@ -85,6 +85,22 @@ const ConfigSchema = z
     // LLM generation limit
     LLM_MAX_TOKENS: z.number().int().positive().optional().default(2048),
 
+    // Phase 2: Conversational query reformulation
+    QUERY_REFORMULATION_ENABLED: z.boolean().optional().default(false),
+
+    // Phase 3: Contextual retrieval
+    CONTEXTUAL_RETRIEVAL_ENABLED: z.boolean().optional().default(false),
+    CONTEXTUAL_RETRIEVAL_PROVIDER: providerEnum.optional().default("gemini"),
+
+    // Phase 6: LightRAG graph layer
+    GRAPH_EXTRACTION_ENABLED: z.boolean().optional().default(false),
+    GRAPH_EXPANSION_ENABLED: z.boolean().optional().default(false),
+
+    // Phase 7: Web search fallback
+    WEB_SEARCH_ENABLED: z.boolean().optional().default(false),
+    WEB_SEARCH_PROVIDER: z.string().min(1).optional().default("tavily"),
+    WEB_SEARCH_THRESHOLD: z.number().min(0).max(1).optional().default(0.3),
+
     // RAG parameters
     EMBED_DIM: z
       .number()

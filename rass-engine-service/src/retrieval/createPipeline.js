@@ -5,6 +5,7 @@
 "use strict";
 
 const { Pipeline } = require("./Pipeline");
+const { QueryReformulationStage } = require("./QueryReformulationStage");
 const { HydeQueryExpansionStage } = require("./HydeQueryExpansionStage");
 const { EmbedQueryStage } = require("./EmbedQueryStage");
 const { HybridSearchStage } = require("./HybridSearchStage");
@@ -18,20 +19,22 @@ const { TopKSelectStage } = require("./TopKSelectStage");
  * Creates and returns the configured retrieval pipeline.
  *
  * Stage order:
- *   1. HydeQueryExpansionStage  — (optional) expand query with hypothetical document
- *   2. EmbedQueryStage          — embed the (possibly expanded) query
- *   3. HybridSearchStage        — KNN + BM25 search against OpenSearch
- *   4. ParentFetchStage         — fetch parent documents from embedding service
- *   5. DeduplicateStage         — remove duplicate parent documents
- *   6. RerankStage              — cross-encoder reranking (no-op if disabled)
- *   7. FeedbackBoostStage       — personalized score boost based on user feedback (Phase G)
- *   8. TopKSelectStage          — select top-K documents for generation
+ *   1. QueryReformulationStage  — (Phase 2.1) rewrite follow-up questions using conversation history
+ *   2. HydeQueryExpansionStage  — (Phase 1.3 fixed) embed hypothetical document separately for KNN
+ *   3. EmbedQueryStage          — use HyDE embedding if available, else embed query
+ *   4. HybridSearchStage        — KNN + BM25 search against per-KB OpenSearch index (Phase 1.2)
+ *   5. ParentFetchStage         — fetch parent documents from Redis
+ *   6. DeduplicateStage         — remove duplicate parent documents
+ *   7. RerankStage              — cross-encoder reranking (Phase 1.1: enabled via config)
+ *   8. FeedbackBoostStage       — personalized score boost with caching (Phase 1.6)
+ *   9. TopKSelectStage          — select top-K with lost-in-middle reordering (Phase 1.4)
  *
  * @param {object} config - Service config object (from src/config.js).
  * @returns {Pipeline} The configured retrieval pipeline.
  */
 function createPipeline(config) {
   return new Pipeline([
+    new QueryReformulationStage(config),
     new HydeQueryExpansionStage(config),
     new EmbedQueryStage(),
     new HybridSearchStage(),
