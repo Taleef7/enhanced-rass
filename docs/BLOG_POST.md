@@ -1,6 +1,6 @@
 # From Keywords to Conversations: How We Built a Production RAG System
 
-*A technical deep-dive into building Enhanced RASS — a self-hosted document intelligence platform powered by hybrid retrieval and streaming LLM generation.*
+*A technical deep-dive into building CoRAG — a self-hosted document intelligence platform powered by hybrid retrieval and streaming LLM generation.*
 
 ---
 
@@ -146,7 +146,7 @@ After 6 months in production with a 36-person regulatory affairs team:
 
 ## Try It Yourself
 
-Enhanced RASS is open source and self-hostable in under 5 minutes:
+CoRAG is open source and self-hostable in under 5 minutes:
 
 ```bash
 git clone https://github.com/Taleef7/enhanced-rass.git

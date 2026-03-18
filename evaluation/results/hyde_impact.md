@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document records the impact of HyDE (Hypothetical Document Embeddings) query expansion (`HYDE_ENABLED=true`) on retrieval recall, measured using the Enhanced RASS evaluation harness.
+This document records the impact of HyDE (Hypothetical Document Embeddings) query expansion (`HYDE_ENABLED=true`) on retrieval recall, measured using the CoRAG evaluation harness.
 
 ## Configuration
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document records the impact of cross-encoder reranking (`RERANK_PROVIDER=cohere`) on retrieval quality metrics, measured using the Enhanced RASS evaluation harness (`evaluation/run_eval.py`).
+This document records the impact of cross-encoder reranking (`RERANK_PROVIDER=cohere`) on retrieval quality metrics, measured using the CoRAG evaluation harness (`evaluation/run_eval.py`).
 
 ## Configuration
 

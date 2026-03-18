@@ -1,6 +1,6 @@
 version: '3.8'
 
-# Enhanced RASS — One-Click Demo Configuration
+# CoRAG — One-Click Demo Configuration
 # Inherits from the root docker-compose.yml and adds pre-seeded demo data.
 # Usage: ./scripts/demo.sh
 #

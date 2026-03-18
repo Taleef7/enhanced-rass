@@ -1,6 +1,6 @@
 # RASS Modernization Roadmap
 
-This document describes the phased roadmap for transforming the Enhanced RASS (Retrieval-Augmented Semantic Search) system into an interview-quality, enterprise-grade knowledge discovery platform.
+This document describes the phased roadmap for transforming the CoRAG (Retrieval-Augmented Semantic Search) system into an interview-quality, enterprise-grade knowledge discovery platform.
 
 ## Quick Start: Creating GitHub Issues
 

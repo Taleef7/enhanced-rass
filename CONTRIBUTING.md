@@ -1,4 +1,4 @@
-# Contributing to Enhanced RASS
+# Contributing to CoRAG
 
 ## Local setup
 
