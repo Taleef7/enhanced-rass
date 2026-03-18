@@ -265,9 +265,9 @@ services:
   #
   # First-run setup:
   #   1. Open http://localhost:3000 and register the first account (auto-promoted to admin).
-  #   2. The "RASS Knowledge Engine" model is pre-selected via DEFAULT_MODELS below.
+  #   2. The "CoRAG" model is pre-selected via DEFAULT_MODELS below.
   #   3. To add per-user OpenAI/Gemini keys: Settings → Account → API Keys (stored
-  #      encrypted in RASS via PUT /api/llm-keys/:provider).
+  #      encrypted in CoRAG via PUT /api/llm-keys/:provider).
   #   4. To adjust sources retrieved per query: in a chat session click the gear icon
   #      (⚙) → Advanced Parameters → Top K.
   openwebui:
@@ -279,11 +279,11 @@ services:
       # ── Backend connection ────────────────────────────────────────────────────
       # Point OpenWebUI at RASS's OpenAI-compatible adapter
       - OPENAI_API_BASE_URL=http://mcp-server:8080/v1
-      - OPENAI_API_KEY=rass-internal-key
+      - OPENAI_API_KEY=corag-internal-key
 
       # ── UI pre-configuration (Phase 5.4) ─────────────────────────────────────
-      # Show "RASS Knowledge Engine" in the title bar
-      - WEBUI_NAME=RASS Knowledge Engine
+      # Show "CoRAG" in the title bar
+      - WEBUI_NAME=CoRAG
       # Pre-select the base RASS model so users don't see a blank model picker
       - DEFAULT_MODELS=rass
       # Suggested starter prompts shown on the empty chat screen

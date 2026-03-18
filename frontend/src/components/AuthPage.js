@@ -271,7 +271,7 @@ const AuthPage = () => {
                   color: "#64748B",
                 }}
               >
-                Enhanced RASS
+                CoRAG
               </Typography>
             </Box>
 

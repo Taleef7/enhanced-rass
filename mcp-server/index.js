@@ -218,7 +218,7 @@ app.use("/api/chats", chatRoutes);
 
 // --- Health check ---
 app.get("/", (req, res) => {
-  res.status(200).send("RASS MCP Server is running.");
+  res.status(200).send("CoRAG MCP Server is running.");
 });
 
 const http = require("http");

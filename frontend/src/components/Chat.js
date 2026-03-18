@@ -36,7 +36,7 @@ import DocumentPanel from "./DocumentPanel";
 import GuidedTour from "./GuidedTour";
 
 const TOP_K_OPTIONS = [3, 5, 10, 20];
-const TOP_K_STORAGE_KEY = "rass_top_k";
+const TOP_K_STORAGE_KEY = "corag_top_k";
 
 function loadTopK() {
   try {
@@ -52,7 +52,6 @@ function Chat({ onToggleSidebar }) {
   useTheme(); // keep theme context active for child components
   const [query, setQuery] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [responseLength, setResponseLength] = useState("standard");
   const [topK, setTopK] = useState(loadTopK);
   const [anchorEl, setAnchorEl] = useState(null);
   const [isDocumentPanelOpen, setIsDocumentPanelOpen] = useState(false);
@@ -104,13 +103,6 @@ function Chat({ onToggleSidebar }) {
 
     if (!normalizedQuery || isTyping || !activeChat) return;
 
-    const lengthInstruction = {
-      brief: " (Please give a brief, concise answer in 1-2 sentences.)",
-      detailed: " (Please give a detailed, comprehensive answer.)",
-      standard: "",
-    }[responseLength] || "";
-    const queryWithLength = normalizedQuery + lengthInstruction;
-
     addMessageToChat(activeChat.id, { sender: "user", text: normalizedQuery });
     setQuery("");
     setIsTyping(true);
@@ -128,7 +120,7 @@ function Chat({ onToggleSidebar }) {
 
     try {
       await streamQuery(
-        queryWithLength,
+        normalizedQuery,
         activeChat.documents,
         (textChunk) => {
           updateLastMessage(activeChat.id, { textChunk });
@@ -288,6 +280,16 @@ function Chat({ onToggleSidebar }) {
     token,
   ]);
 
+  // Scroll to bottom whenever the active conversation changes
+  useEffect(() => {
+    if (!scrollContainerRef.current) return;
+    requestAnimationFrame(() => {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+      }
+    });
+  }, [activeChat?.id]);
+
   const handleProfileClick = (event) => setAnchorEl(event.currentTarget);
   const handleProfileClose = () => setAnchorEl(null);
   const handleLogout = () => {
@@ -303,10 +305,11 @@ function Chat({ onToggleSidebar }) {
       sx={{
         flex: 1,
         minWidth: 0,
-        minHeight: "100vh",
+        height: "100vh",
         display: "flex",
         flexDirection: "column",
         backgroundColor: "#FAFAFA",
+        overflow: "hidden",
       }}
     >
       {/* Header */}
@@ -332,7 +335,7 @@ function Chat({ onToggleSidebar }) {
               variant="overline"
               sx={{ color: "#64748B", display: "block", lineHeight: 1.2 }}
             >
-              Enhanced RASS
+              CoRAG
             </Typography>
             <Typography
               variant="subtitle1"
@@ -451,13 +454,14 @@ function Chat({ onToggleSidebar }) {
               flexDirection: "column",
             }}
           >
-            {/* Message area */}
+            {/* Message area — fills remaining space, scrolls independently */}
             <Box
               ref={scrollContainerRef}
               sx={{
                 flex: 1,
                 minHeight: 0,
                 overflowY: "auto",
+                scrollBehavior: "smooth",
               }}
             >
               <Box
@@ -465,8 +469,12 @@ function Chat({ onToggleSidebar }) {
                   width: "100%",
                   maxWidth: 860,
                   mx: "auto",
-                  px: { xs: 2.5, md: 5 },
-                  py: { xs: 3, md: 5 },
+                  px: { xs: 2, md: 4 },
+                  pt: { xs: 3, md: 4 },
+                  pb: { xs: 2, md: 3 },
+                  minHeight: "100%",
+                  display: "flex",
+                  flexDirection: "column",
                 }}
               >
                 {activeChat && activeChat.messages.length > 0 ? (
@@ -476,18 +484,20 @@ function Chat({ onToggleSidebar }) {
                     scrollContainerRef={scrollContainerRef}
                   />
                 ) : (
-                  <WelcomeScreen onSuggestion={(text) => handleSendQuery(text)} />
+                  <WelcomeScreen />
                 )}
               </Box>
             </Box>
 
-            {/* Input area */}
+            {/* Input area — sticky at bottom, never covers messages */}
             <Box
               sx={{
+                flexShrink: 0,
                 borderTop: "1px solid #E2E8F0",
-                px: { xs: 2.5, md: 5 },
-                py: { xs: 2, md: 2.5 },
+                px: { xs: 2, md: 4 },
+                py: { xs: 1.5, md: 2 },
                 backgroundColor: "#FAFAFA",
+                boxShadow: "0 -1px 6px rgba(15,23,42,0.04)",
               }}
             >
               <Box sx={{ width: "100%", maxWidth: 860, mx: "auto" }}>
@@ -500,9 +510,6 @@ function Chat({ onToggleSidebar }) {
                     setIsTyping(false);
                   }}
                   isTyping={isTyping}
-                  showSuggestions={messageCount === 0}
-                  responseLength={responseLength}
-                  onResponseLengthChange={setResponseLength}
                   topK={topK}
                   onTopKChange={(value) => {
                     setTopK(value);

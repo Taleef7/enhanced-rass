@@ -27,12 +27,6 @@ const STATUS_LABELS = {
   FAILED: "failed",
 };
 
-const RESPONSE_LENGTHS = [
-  { value: "brief", label: "Brief" },
-  { value: "standard", label: "Standard" },
-  { value: "detailed", label: "Detailed" },
-];
-
 const TOP_K_OPTIONS = [3, 5, 10, 20];
 
 const ChatInput = ({
@@ -41,9 +35,6 @@ const ChatInput = ({
   onSend,
   onStop,
   isTyping,
-  showSuggestions = true,
-  responseLength = "standard",
-  onResponseLengthChange,
   topK = 10,
   onTopKChange,
 }) => {
@@ -248,59 +239,8 @@ const ChatInput = ({
   return (
     <Box
       data-tour="chat-input"
-      sx={{ display: "grid", gap: 1.5 }}
+      sx={{ display: "grid", gap: 1 }}
     >
-      {/* Quick suggestion chips — only when no query typed */}
-      {showSuggestions && !query.trim() ? (
-        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-          {[
-            "Summarize the core claims in my uploaded documents.",
-            "Compare the evidence supporting the main recommendation.",
-            "List every deadline or action item mentioned.",
-          ].map((suggestion) => (
-            <Box
-              key={suggestion}
-              onClick={() => setQuery(suggestion)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  setQuery(suggestion);
-                }
-              }}
-              sx={{
-                px: 1.5,
-                py: 0.75,
-                border: "1px solid #E2E8F0",
-                borderRadius: "20px",
-                cursor: "pointer",
-                transition: "all 150ms",
-                "&:hover": {
-                  border: "1px solid #0052FF",
-                  backgroundColor: "rgba(0,82,255,0.04)",
-                },
-                "&:focus-visible": {
-                  outline: "3px solid #0052FF",
-                  outlineOffset: 2,
-                },
-              }}
-            >
-              <Typography
-                sx={{
-                  fontSize: "0.75rem",
-                  fontFamily: '"Inter", system-ui, sans-serif',
-                  color: "#64748B",
-                  lineHeight: 1.4,
-                }}
-              >
-                {suggestion}
-              </Typography>
-            </Box>
-          ))}
-        </Stack>
-      ) : null}
-
       {/* Document status chips */}
       {uploadedDocuments.length > 0 ? (
         <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
@@ -399,7 +339,7 @@ const ChatInput = ({
                 handleSend();
               }
             }}
-            placeholder="Ask a document-backed question…"
+            placeholder="Ask anything…"
             variant="standard"
             disabled={isTyping || isUploading}
             InputProps={{
@@ -420,7 +360,6 @@ const ChatInput = ({
                 "&::placeholder": {
                   color: "#94A3B8",
                   opacity: 1,
-                  fontStyle: "italic",
                 },
               },
             }}
@@ -450,7 +389,7 @@ const ChatInput = ({
           </Tooltip>
         </Box>
 
-        {/* Bottom bar */}
+        {/* Bottom bar: Top-K selector + status indicators + send */}
         <Box
           sx={{
             display: "flex",
@@ -464,69 +403,19 @@ const ChatInput = ({
           }}
         >
           <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-            <Typography
-              sx={{
-                fontSize: "0.62rem",
-                fontFamily: '"JetBrains Mono", monospace',
-                color: "#94A3B8",
-                letterSpacing: "0.04em",
-              }}
-            >
-              ↵ send · ⇧↵ newline
-            </Typography>
-
-            {/* Response length toggle */}
-            {onResponseLengthChange && (
-              <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
-                {RESPONSE_LENGTHS.map(({ value, label }) => (
-                  <Box
-                    key={value}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => onResponseLengthChange(value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") onResponseLengthChange(value);
-                    }}
-                    sx={{
-                      px: 0.75,
-                      py: 0.25,
-                      cursor: "pointer",
-                      borderRadius: "4px",
-                      backgroundColor: responseLength === value ? "rgba(0,82,255,0.10)" : "transparent",
-                      border: responseLength === value ? "1px solid rgba(0,82,255,0.3)" : "1px solid transparent",
-                      "&:hover": { backgroundColor: "rgba(0,82,255,0.06)" },
-                    }}
-                  >
-                    <Typography
-                      sx={{
-                        fontSize: "0.58rem",
-                        fontFamily: '"JetBrains Mono", monospace',
-                        color: responseLength === value ? "#0052FF" : "#94A3B8",
-                        letterSpacing: "0.04em",
-                        fontWeight: responseLength === value ? 600 : 400,
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      {label}
-                    </Typography>
-                  </Box>
-                ))}
-              </Box>
-            )}
-
-            {/* Top-K sources selector (Phase 8.2) */}
+            {/* Top-K sources selector */}
             {onTopKChange && (
               <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
                 <Typography
                   sx={{
-                    fontSize: "0.58rem",
+                    fontSize: "0.62rem",
                     fontFamily: '"JetBrains Mono", monospace',
                     color: "#94A3B8",
                     letterSpacing: "0.04em",
                     mr: 0.25,
                   }}
                 >
-                  src:
+                  sources:
                 </Typography>
                 {TOP_K_OPTIONS.map((k) => (
                   <Box
@@ -549,7 +438,7 @@ const ChatInput = ({
                   >
                     <Typography
                       sx={{
-                        fontSize: "0.58rem",
+                        fontSize: "0.62rem",
                         fontFamily: '"JetBrains Mono", monospace',
                         color: topK === k ? "#0052FF" : "#94A3B8",
                         letterSpacing: "0.04em",

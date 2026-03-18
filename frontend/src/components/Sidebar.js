@@ -152,7 +152,7 @@ const Sidebar = ({ isSidebarOpen, onClose }) => {
             mb: 2.5,
           }}
         >
-          Enhanced RASS
+          CoRAG
         </Typography>
 
         <Button
@@ -405,27 +405,6 @@ const Sidebar = ({ isSidebarOpen, onClose }) => {
         )}
       </List>
 
-      <Divider sx={{ borderColor: "#E2E8F0" }} />
-
-      {/* Footer note */}
-      <Box sx={{ px: 2.5, py: 2 }}>
-        <Typography
-          variant="overline"
-          sx={{ display: "block", color: "#64748B", mb: 0.5 }}
-        >
-          Evidence-first
-        </Typography>
-        <Typography
-          sx={{
-            fontSize: "0.7rem",
-            lineHeight: 1.5,
-            color: "#94A3B8",
-            fontFamily: '"JetBrains Mono", monospace',
-          }}
-        >
-          Upload documents, inspect retrieved context, and confirm citations before trusting an answer.
-        </Typography>
-      </Box>
 
       <Menu
         anchorEl={menuAnchor}
