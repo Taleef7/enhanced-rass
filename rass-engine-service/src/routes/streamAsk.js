@@ -21,7 +21,7 @@ const pipeline = createPipeline(config);
 
 router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) => {
   try {
-    const { query, documents, userId, top_k, kbId, conversationHistory } = req.validatedBody;
+    const { query, documents, userId, top_k, kbId, conversationHistory, llmApiKeyOverride } = req.validatedBody;
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -44,7 +44,7 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
     const topK = typeof top_k === "number" ? top_k : DEFAULT_TOP_K;
 
     // Run the full retrieval pipeline
-    const context = createContext({ query, userId, documents, topK, kbId, conversationHistory, config });
+    const context = createContext({ query, userId, documents, topK, kbId, conversationHistory, llmApiKeyOverride, config });
     const pipelineStart = Date.now();
     const result = await pipeline.run(context);
     queryLatencySeconds.observe({ stage: "pipeline" }, (Date.now() - pipelineStart) / 1000);
@@ -98,7 +98,7 @@ router.post("/stream-ask", validateBody(StreamAskBodySchema), async (req, res) =
     // Use result.query (possibly reformulated by QueryReformulationStage) for generation.
     // This ensures the LLM sees the standalone, context-enriched question, not the raw follow-up.
     const effectiveQuery = result.query || query;
-    await streamAnswer(res, effectiveQuery, source_documents);
+    await streamAnswer(res, effectiveQuery, source_documents, result.llmApiKeyOverride || null);
   } catch (e) {
     req.log.error({ err: e }, "[API /stream-ask] Endpoint error.");
     if (!res.headersSent) {

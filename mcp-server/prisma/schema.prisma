@@ -113,6 +113,7 @@ model User {
   annotations      Annotation[]
   sharedChats      SharedChat[]
   memories         Memory[]          // Phase 4: User memory facts extracted from conversations
+  llmKeys          UserLlmKey[]      // Phase 5.2: Per-user LLM provider API keys
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 }
@@ -368,6 +369,26 @@ model Memory {
 
   @@index([userId])
   @@index([userId, category])
+}
+
+// ─── Phase 5.2: Per-user LLM API Keys ────────────────────────────────────────
+// Stores users' personal LLM provider API keys (OpenAI, Gemini, etc.) encrypted
+// at rest with AES-256-GCM. Used by /v1/chat/completions to override the system key,
+// allowing users to use their own API quota for model selection.
+
+model UserLlmKey {
+  id        String   @id @default(cuid())
+  userId    String
+  provider  String                    // "openai" | "gemini" | "cohere" | "anthropic"
+  keyIv     String                    // AES-256-GCM initialization vector (hex)
+  keyTag    String                    // AES-256-GCM auth tag (hex)
+  keyCipher String   @db.Text         // AES-256-GCM ciphertext (hex)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  User      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([userId])
 }
 
 // ─── Phase G: Chat Sharing ────────────────────────────────────────────────────

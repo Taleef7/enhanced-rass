@@ -27,6 +27,7 @@ const express = require("express");
 const axios = require("axios");
 const { v4: uuidv4 } = require("uuid");
 const { RASS_ENGINE_BASE_URL } = require("../config");
+const { resolveUserLlmKey } = require("./llmKeys");
 const logger = require("../logger");
 
 const router = express.Router();
@@ -44,6 +45,18 @@ const SUPPORTED_MODELS = new Set([
   "rass-gpt-4o-mini",
   "rass-gemini-pro",
 ]);
+
+// ── Map model name to LLM provider for per-user key lookup ────────────────────
+// Model names follow the pattern "rass-{provider-hint}".
+function modelToProvider(model) {
+  if (!model) return null;
+  const m = model.toLowerCase();
+  if (m.includes("gemini")) return "gemini";
+  if (m.includes("gpt") || m.includes("openai")) return "openai";
+  if (m.includes("claude") || m.includes("anthropic")) return "anthropic";
+  if (m.includes("cohere")) return "cohere";
+  return null; // "rass" or "rass-local" → no per-user key needed
+}
 
 // ── Lightweight auth: extract userId from JWT or API key (best-effort) ─────────
 // Falls back to null if unauthenticated (global search, no personalization).
@@ -127,8 +140,20 @@ router.post("/v1/chat/completions", async (req, res) => {
   const userId = extractUserId(req);
   const topK = Number(top_k) > 0 ? Number(top_k) : DEFAULT_TOP_K;
 
+  // Phase 5.2: Resolve per-user LLM key with system key fallback.
+  // If the user has stored an API key for the selected provider, pass it to rass-engine
+  // as llmApiKeyOverride so it uses their personal quota.
+  const provider = modelToProvider(model);
+  let llmApiKeyOverride = null;
+  if (userId && provider) {
+    llmApiKeyOverride = await resolveUserLlmKey(userId, provider);
+    if (llmApiKeyOverride) {
+      logger.info(`[OpenAICompat] Using per-user ${provider} key for userId=${userId}`);
+    }
+  }
+
   logger.info(
-    `[OpenAICompat] model=${model || "rass"} userId=${userId || "anon"} kbId=${kbId || "default"} query="${query.slice(0, 60)}"`
+    `[OpenAICompat] model=${model || "rass"} provider=${provider || "default"} userId=${userId || "anon"} kbId=${kbId || "default"} query="${query.slice(0, 60)}"`
   );
 
   const streamAskPayload = {
@@ -137,6 +162,7 @@ router.post("/v1/chat/completions", async (req, res) => {
     userId: userId || undefined,
     kbId: kbId || undefined,
     conversationHistory: conversationHistory.length > 0 ? conversationHistory : undefined,
+    llmApiKeyOverride: llmApiKeyOverride || undefined,
   };
 
   if (stream !== false) {

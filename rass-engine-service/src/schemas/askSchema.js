@@ -46,6 +46,8 @@ const StreamAskBodySchema = z.object({
       })
     )
     .optional(),
+  // 5.2: per-user LLM API key override (passed from openaiCompat when user has stored their key)
+  llmApiKeyOverride: z.string().optional(),
 });
 
 module.exports = { AskBodySchema, StreamAskBodySchema };

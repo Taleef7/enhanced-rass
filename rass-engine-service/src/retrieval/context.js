@@ -14,10 +14,11 @@
  * @param {number} [params.topK]                   - Maximum number of source documents for generation.
  * @param {string} [params.kbId]                   - Optional knowledge base ID for per-KB index routing.
  * @param {object[]} [params.conversationHistory]  - Optional prior messages [{role, content}] for query reformulation.
+ * @param {string} [params.llmApiKeyOverride]      - Optional per-user LLM API key (Phase 5.2).
  * @param {object} [params.config]                 - Service config object.
  * @returns {object} The initial pipeline context.
  */
-function createContext({ query, userId, documents, topK, kbId, conversationHistory, config }) {
+function createContext({ query, userId, documents, topK, kbId, conversationHistory, llmApiKeyOverride, config }) {
   return {
     query,                  // raw query string — may be reformulated by QueryReformulationStage
     originalQuery: query,   // always the user's verbatim query, used for display/logging
@@ -26,6 +27,7 @@ function createContext({ query, userId, documents, topK, kbId, conversationHisto
     topK: topK || 5,
     kbId: kbId || null,                           // 1.2: per-KB index routing
     conversationHistory: conversationHistory || [], // 2.1: conversation context for query reformulation
+    llmApiKeyOverride: llmApiKeyOverride || null,   // 5.2: per-user LLM API key override
     config: config || {},
 
     // Stage outputs — populated as the pipeline progresses

@@ -56,6 +56,9 @@ const memoriesRoutes = require("./src/routes/memories.js");
 // Phase 5: OpenAI-compatible adapter (OpenWebUI)
 const openaiCompatRoutes = require("./src/routes/openaiCompat.js");
 
+// Phase 5.2: Per-user LLM API key management
+const llmKeysRoutes = require("./src/routes/llmKeys.js");
+
 // Phase 6.4: LightRAG graph REST API
 const knowledgeGraphAPIRoutes = require("./src/routes/knowledgeGraphAPI.js");
 
@@ -126,7 +129,7 @@ if (process.env.NODE_ENV !== "production") {
         validateRequests: true,
         validateResponses: false, // response validation disabled (perf)
         ignorePaths:
-          /^\/api\/docs|^\/metrics|^\/api\/health|^\/mcp|^\/api\/embed-upload|^\/api\/transcribe|^\/api\/feedback|^\/api\/annotations|^\/api\/shared|^\/api\/chats\/[^/]+\/share|^\/api\/knowledge-bases\/[^/]+\/graph|^\/api\/knowledge-bases\/[^/]+\/similarity-graph|^\/internal|^\/api\/memories|^\/api\/admin\/reindex|^\/v1\/|^\/api\/graph/,
+          /^\/api\/docs|^\/metrics|^\/api\/health|^\/mcp|^\/api\/embed-upload|^\/api\/transcribe|^\/api\/feedback|^\/api\/annotations|^\/api\/shared|^\/api\/chats\/[^/]+\/share|^\/api\/knowledge-bases\/[^/]+\/graph|^\/api\/knowledge-bases\/[^/]+\/similarity-graph|^\/internal|^\/api\/memories|^\/api\/admin\/reindex|^\/v1\/|^\/api\/graph|^\/api\/llm-keys/,
       })
     );
     logger.info("[API Validator] express-openapi-validator active");
@@ -178,6 +181,9 @@ app.use(memoriesRoutes);
 
 // --- Phase 5: OpenAI-compatible adapter ---
 app.use(openaiCompatRoutes);
+
+// --- Phase 5.2: Per-user LLM key management ---
+app.use(llmKeysRoutes);
 
 // --- Phase 6.4: LightRAG graph API ---
 app.use(knowledgeGraphAPIRoutes);

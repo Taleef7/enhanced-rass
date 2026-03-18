@@ -10,6 +10,20 @@ const {
   OLLAMA_LLM_MODEL,
   LLM_MAX_TOKENS,
 } = require("../config");
+
+// Lazy-loaded constructors for per-request client overrides (Phase 5.2).
+// We require these only when an override key is actually provided to avoid
+// loading heavy SDK modules on every request.
+function makeOpenAIClient(apiKey) {
+  const { default: OpenAI } = require("openai");
+  return new OpenAI({ apiKey });
+}
+
+function makeGeminiModel(apiKey, modelName) {
+  const { GoogleGenerativeAI } = require("@google/generative-ai");
+  const genAI = new GoogleGenerativeAI(apiKey);
+  return genAI.getGenerativeModel({ model: modelName });
+}
 const { buildGenerationPrompt, applyTokenBudget } = require("./generator");
 const { CitationSchema } = require("../schemas/retrievalSchemas");
 const logger = require("../logger");
@@ -147,8 +161,10 @@ function buildStructuredCitations(sourceDocuments, llmAnswer) {
  * @param {import('express').Response} res - The Express response object.
  * @param {string} query - The user's question.
  * @param {object[]} sourceDocuments - Array of {text, metadata, initial_score, rerank_score} objects.
+ * @param {string|null} [llmApiKeyOverride] - Optional per-user API key (Phase 5.2). When provided,
+ *   a temporary per-request LLM client is created instead of using the global singleton.
  */
-async function streamAnswer(res, query, sourceDocuments) {
+async function streamAnswer(res, query, sourceDocuments, llmApiKeyOverride = null) {
   // 1.5: Apply token budget before building the prompt — only include as many chunks
   // as the model context window can accommodate.
   const { docs: budgetDocs } = applyTokenBudget(sourceDocuments, query);
@@ -178,9 +194,11 @@ async function streamAnswer(res, query, sourceDocuments) {
 
   try {
     if (LLM_PROVIDER === "openai" || LLM_PROVIDER === "ollama") {
-      // Both OpenAI and Ollama use the OpenAI-compatible streaming API
+      // Both OpenAI and Ollama use the OpenAI-compatible streaming API.
+      // Phase 5.2: use per-user key when provided, else fall back to global client.
+      const client = llmApiKeyOverride ? makeOpenAIClient(llmApiKeyOverride) : llmClient;
       const model = LLM_PROVIDER === "ollama" ? (OLLAMA_LLM_MODEL || "llama3.2") : OPENAI_MODEL_NAME;
-      const completionStream = await llmClient.chat.completions.create({
+      const completionStream = await client.chat.completions.create({
         model,
         messages: [{ role: "user", content: generationPrompt }],
         temperature: 0.3,
@@ -197,8 +215,12 @@ async function streamAnswer(res, query, sourceDocuments) {
         }
       }
     } else {
-      // Gemini streaming
-      const result = await llmClient.generateContentStream(generationPrompt);
+      // Gemini streaming.
+      // Phase 5.2: use per-user key when provided, else fall back to global client.
+      const geminiModel = llmApiKeyOverride
+        ? makeGeminiModel(llmApiKeyOverride, GEMINI_MODEL_NAME)
+        : llmClient;
+      const result = await geminiModel.generateContentStream(generationPrompt);
       for await (const chunk of result.stream) {
         const token = chunk.text();
         if (token) {
