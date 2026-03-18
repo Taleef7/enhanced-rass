@@ -58,6 +58,11 @@ export const AuthProvider = ({ children }) => {
 
   /**
    * Attempt a silent token refresh using the HTTP-only cookie.
+   *
+   * Only clears the session on explicit auth failures (401 / 403).
+   * Network errors and server errors (5xx) are transient — we leave the
+   * existing session intact so a temporarily unavailable backend does not
+   * log the user out unexpectedly.
    */
   const silentRefresh = async () => {
     try {
@@ -74,11 +79,17 @@ export const AuthProvider = ({ children }) => {
         setIsAuthenticated(true);
         scheduleRefresh(newToken);
       }
-    } catch (_) {
-      // Refresh token expired / invalid — log out silently
-      setToken(null);
-      setUser(null);
-      setIsAuthenticated(false);
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status === 401 || status === 403) {
+        // Refresh token is genuinely expired or invalid — log out.
+        setToken(null);
+        setUser(null);
+        setIsAuthenticated(false);
+      }
+      // For network errors (no response) or 5xx server errors: transient failure.
+      // Do not log the user out — the session cookie is still valid; it will work
+      // once the backend recovers. isLoading is still set to false by the caller.
     }
   };
 

@@ -44,6 +44,8 @@ const ChatInput = ({
   const [recordingError, setRecordingError] = useState("");
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [partialTranscript, setPartialTranscript] = useState("");
+  // null = unknown, true = available, false = unavailable (no API key configured)
+  const [transcriptionAvailable, setTranscriptionAvailable] = useState(null);
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
   const mediaStreamRef = useRef(null);
@@ -132,13 +134,16 @@ const ChatInput = ({
           let text = "";
           try {
             text = await transcribeAudio(blob, token);
+            setTranscriptionAvailable(true);
           } catch (error) {
-            // Show the real error; 503 means the transcription service is temporarily
-            // unavailable — not an auth issue, so don't suggest logging in.
-            const friendlyMsg = error.message?.includes("503")
-              ? "Transcription service is temporarily unavailable. Please try again shortly."
-              : `Transcription failed: ${error.message}`;
-            setRecordingError(friendlyMsg);
+            if (error.message?.includes("503")) {
+              // 503 = OPENAI_API_KEY not configured on the server — permanently disable
+              // the mic button for this session rather than showing a transient error.
+              setTranscriptionAvailable(false);
+              setRecordingError("Voice input requires an OpenAI API key (OPENAI_API_KEY) to be set on the server.");
+            } else {
+              setRecordingError(`Transcription failed: ${error.message}`);
+            }
             return; // stop here; don't rethrow so cleanup still runs
           }
 
@@ -365,11 +370,15 @@ const ChatInput = ({
             }}
           />
 
-          <Tooltip title={isRecording ? "Stop recording" : "Voice input"}>
+          <Tooltip title={
+            transcriptionAvailable === false
+              ? "Voice input unavailable — set OPENAI_API_KEY on the server to enable"
+              : isRecording ? "Stop recording" : "Voice input"
+          }>
             <span>
               <IconButton
                 onClick={isRecording ? stopRecording : startRecording}
-                disabled={isTyping || isUploading}
+                disabled={isTyping || isUploading || transcriptionAvailable === false}
                 aria-label={isRecording ? "Stop recording" : "Start voice input"}
                 size="small"
                 sx={{
