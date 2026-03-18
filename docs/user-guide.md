@@ -83,7 +83,7 @@ Streaming answers can include:
 - retrieved context chunks before generation
 - structured citations after generation
 
-This is what powers the "What RASS is thinking" style transparency panel in the UI.
+This is what powers the "What CoRAG is thinking" style transparency panel in the UI.
 
 ## API Keys
 

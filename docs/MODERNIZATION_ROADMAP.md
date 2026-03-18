@@ -131,7 +131,7 @@ python3 scripts/create_github_issues.py \
 **Goal:** Create an impressive, demo-ready system that communicates its value immediately to technical evaluators and enterprise buyers.
 
 ### Issues
-1. **Demo UX redesign** — Knowledge graph visualization, source attribution timeline, \"RASS is thinking\" panel, demo mode
+1. **Demo UX redesign** — Knowledge graph visualization, source attribution timeline, \"CoRAG is thinking\" panel, demo mode
 2. **OpenAPI documentation** — OpenAPI 3.1 spec, Swagger UI, generated TypeScript client
 3. **One-click demo setup** — `bash scripts/demo.sh` → working RASS with seeded data in < 5 minutes
 4. **Developer and architecture docs** — ADRs, enhanced README, contributing guide, cloud deployment guides

@@ -98,7 +98,7 @@ RASS runs on your own infrastructure. Documents never leave your network. The on
 - Answers questions; keyword search only returns documents
 
 ### vs. Microsoft Copilot / SharePoint AI
-- RASS is open-source and self-hostable — no Microsoft 365 dependency or data egress
+- CoRAG is open-source and self-hostable — no Microsoft 365 dependency or data egress
 - Full source visibility; no black-box AI
 
 ### vs. Anthropic Claude / ChatGPT with file upload

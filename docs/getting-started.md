@@ -279,7 +279,7 @@ Expected behavior:
 
 ## Step 11: Inspect Context And Citations
 
-Use the sparkle icon in chat to open the "What RASS is thinking" panel.
+Use the sparkle icon in chat to open the "What CoRAG is thinking" panel.
 
 That panel shows:
 

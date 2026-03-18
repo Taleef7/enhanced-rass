@@ -1,6 +1,6 @@
 # RASS (Retrieval-Augmented Semantic Search)
 
-RASS is a multi-service RAG platform for document ingestion, retrieval, and grounded chat. The current codebase is centered around three backend services plus a React frontend:
+CoRAG is a multi-service RAG platform for document ingestion, retrieval, and grounded chat. The current codebase is centered around three backend services plus a React frontend:
 
 - `mcp-server`: auth, API gateway, chat persistence, document registry, knowledge bases, workspaces, admin APIs, and MCP transport
 - `rass-engine-service`: retrieval pipeline and answer generation

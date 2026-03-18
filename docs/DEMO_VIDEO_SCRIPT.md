@@ -58,7 +58,7 @@
 4. Click the sparkle icon (✨) to open the Context Panel
 
 **Narration (during Context Panel):**
-> "This is the 'What RASS is Thinking' panel. It shows exactly which document passages were retrieved before generation, with relevance scores. No black box — you can verify every source."
+> "This is the 'What CoRAG is Thinking' panel. It shows exactly which document passages were retrieved before generation, with relevance scores. No black box — you can verify every source."
 
 ---
 
@@ -79,7 +79,7 @@
 ## Scene 7: API and Integration (3:45 – 4:15)
 
 **Narration:**
-> "RASS is fully API-first. The complete REST API is documented in OpenAPI 3.1 format — just navigate to /api/docs. And because RASS uses OpenAI-compatible streaming format, you can integrate it with LangChain, LibreChat, or any existing OpenAI client with a simple base URL change."
+> "CoRAG is fully API-first. The complete REST API is documented in OpenAPI 3.1 format — just navigate to /api/docs. And because RASS uses OpenAI-compatible streaming format, you can integrate it with LangChain, LibreChat, or any existing OpenAI client with a simple base URL change."
 
 **Screen:**
 1. Open `http://localhost:8080/api/docs` (Swagger UI)

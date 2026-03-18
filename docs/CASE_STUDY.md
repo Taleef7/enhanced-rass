@@ -110,7 +110,7 @@ The team deployed RASS on an internal Linux server with:
 
 2. **Table-heavy documents**: Regulatory documents with complex tables were chunked poorly by the text splitter. Solved by using `sentence_window` chunking for table-heavy documents.
 
-3. **User trust**: Initial scepticism about AI accuracy. Resolved by enabling the "What RASS is Thinking" context panel, which showed users exactly which passages supported each answer.
+3. **User trust**: Initial scepticism about AI accuracy. Resolved by enabling the "What CoRAG is Thinking" context panel, which showed users exactly which passages supported each answer.
 
 ---
 

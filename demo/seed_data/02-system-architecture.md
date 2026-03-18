@@ -2,7 +2,7 @@
 
 ## System Components
 
-RASS is a distributed system consisting of four microservices that communicate over a private Docker network:
+CoRAG is a distributed system consisting of four microservices that communicate over a private Docker network:
 
 ### 1. MCP Server (Port 8080)
 The API gateway and central coordinator. Responsibilities:

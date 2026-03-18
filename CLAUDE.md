@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture Overview
 
-RASS is a multi-service RAG (Retrieval-Augmented Generation) platform. Four services communicate over a shared Docker network (`shared_rass_network`):
+CoRAG is a multi-service RAG (Retrieval-Augmented Generation) platform. Four services communicate over a shared Docker network (`shared_rass_network`):
 
 ```
 Browser → mcp-server :8080 → rass-engine-service :8000 → OpenSearch :9200

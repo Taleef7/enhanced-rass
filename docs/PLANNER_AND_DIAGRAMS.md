@@ -4,7 +4,7 @@ This document describes the current architecture in code. The older "agentic pla
 
 ## Current System Shape
 
-RASS is composed of four main application pieces:
+CoRAG is composed of four main application pieces:
 
 - `frontend`: React client for auth, chat, uploads, and document management
 - `mcp-server`: API gateway and application control plane
