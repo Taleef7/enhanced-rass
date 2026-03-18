@@ -33,6 +33,8 @@ const RESPONSE_LENGTHS = [
   { value: "detailed", label: "Detailed" },
 ];
 
+const TOP_K_OPTIONS = [3, 5, 10, 20];
+
 const ChatInput = ({
   query,
   setQuery,
@@ -42,6 +44,8 @@ const ChatInput = ({
   showSuggestions = true,
   responseLength = "standard",
   onResponseLengthChange,
+  topK = 10,
+  onTopKChange,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -504,6 +508,56 @@ const ChatInput = ({
                       }}
                     >
                       {label}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            )}
+
+            {/* Top-K sources selector (Phase 8.2) */}
+            {onTopKChange && (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
+                <Typography
+                  sx={{
+                    fontSize: "0.58rem",
+                    fontFamily: '"JetBrains Mono", monospace',
+                    color: "#94A3B8",
+                    letterSpacing: "0.04em",
+                    mr: 0.25,
+                  }}
+                >
+                  src:
+                </Typography>
+                {TOP_K_OPTIONS.map((k) => (
+                  <Box
+                    key={k}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onTopKChange(k)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") onTopKChange(k);
+                    }}
+                    sx={{
+                      px: 0.75,
+                      py: 0.25,
+                      cursor: "pointer",
+                      borderRadius: "4px",
+                      backgroundColor: topK === k ? "rgba(0,82,255,0.10)" : "transparent",
+                      border: topK === k ? "1px solid rgba(0,82,255,0.3)" : "1px solid transparent",
+                      "&:hover": { backgroundColor: "rgba(0,82,255,0.06)" },
+                    }}
+                  >
+                    <Typography
+                      sx={{
+                        fontSize: "0.58rem",
+                        fontFamily: '"JetBrains Mono", monospace',
+                        color: topK === k ? "#0052FF" : "#94A3B8",
+                        letterSpacing: "0.04em",
+                        fontWeight: topK === k ? 600 : 400,
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {k}
                     </Typography>
                   </Box>
                 ))}

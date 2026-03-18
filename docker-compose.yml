@@ -259,6 +259,36 @@ services:
     restart: unless-stopped
 
 
+  # ── Phase 5: OpenWebUI — OpenAI-compatible chat frontend ─────────────────────
+  # Connects to mcp-server's /v1 endpoint for model discovery and completions.
+  # Access the UI at http://localhost:3000
+  # Admin setup: first user to register becomes admin automatically.
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: openwebui
+    ports:
+      - "3000:8080"
+    environment:
+      # Point OpenWebUI at RASS's OpenAI-compatible adapter
+      - OPENAI_API_BASE_URL=http://mcp-server:8080/v1
+      - OPENAI_API_KEY=rass-internal-key
+      # Disable OpenWebUI's built-in RAG (RASS handles retrieval)
+      - ENABLE_RAG_WEB_SEARCH=false
+      - RAG_EMBEDDING_ENGINE=
+      # Disable community sharing to keep installation private
+      - ENABLE_COMMUNITY_SHARING=false
+      # Use RASS as the only model source (no Ollama direct connection)
+      - ENABLE_OLLAMA_API=false
+      # Persist user data
+      - DATA_DIR=/app/backend/data
+    volumes:
+      - openwebui-data:/app/backend/data
+    depends_on:
+      - mcp-server
+    networks:
+      - rass_network
+    restart: unless-stopped
+
   # ── Phase G #135: Ollama (local LLM + embedding — fully offline) ──────────────
   # Set EMBEDDING_PROVIDER: ollama and LLM_PROVIDER: ollama in config.yml to use.
   # GPU support: uncomment the `deploy` section below if you have NVIDIA drivers.
@@ -300,4 +330,6 @@ volumes:
   loki-data:
     driver: local
   ollama-models:
+    driver: local
+  openwebui-data:
     driver: local

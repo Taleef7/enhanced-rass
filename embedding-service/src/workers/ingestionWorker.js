@@ -35,7 +35,11 @@ const {
   OPENSEARCH_INDEX_NAME,
   EMBED_DIM,
   VISION_ENABLED,
+  CONTEXTUAL_RETRIEVAL_ENABLED,
+  CONTEXTUAL_RETRIEVAL_PROVIDER,
+  GRAPH_EXTRACTION_ENABLED,
 } = require("../config");
+const { applyContextualPrefixes } = require("../providers/contextualRetrieval");
 
 // Internal mcp-server base URL for service-to-service calls (DB updates).
 const MCP_SERVER_INTERNAL_URL =
@@ -87,6 +91,102 @@ async function writeAuditLog(entry) {
     });
   } catch (_) {
     // audit log failure is never fatal
+  }
+}
+
+// ── Phase 6.2: Entity extraction via LLM ─────────────────────────────────────
+// Extracts named entities and relations from a parent chunk using a cheap LLM.
+// Non-fatal: if extraction fails, ingestion continues without graph data.
+
+const ENTITY_EXTRACTION_CONCURRENCY = 3;
+
+async function extractEntitiesFromChunk(chunkText, documentTitle) {
+  const prompt =
+    `Extract named entities and their relationships from the following document passage.\n` +
+    `Return ONLY a valid JSON object with this exact structure:\n` +
+    `{"entities":[{"name":"string","type":"PERSON|ORG|CONCEPT|LOCATION|EVENT|PRODUCT"}],"relations":[{"subjectName":"string","predicate":"string","objectName":"string"}]}\n\n` +
+    `Document: ${documentTitle}\n` +
+    `Passage:\n${chunkText.slice(0, 1500)}\n\n` +
+    `Rules: Only include clearly mentioned entities. Keep relations to direct statements in the text. Return empty arrays if nothing notable.`;
+
+  const openaiKey = process.env.OPENAI_API_KEY;
+  const geminiKey = process.env.GEMINI_API_KEY;
+
+  try {
+    if (openaiKey) {
+      const resp = await axios.post(
+        "https://api.openai.com/v1/chat/completions",
+        {
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: prompt }],
+          max_tokens: 500,
+          temperature: 0,
+          response_format: { type: "json_object" },
+        },
+        { headers: { Authorization: `Bearer ${openaiKey}` }, timeout: 20000 }
+      );
+      return JSON.parse(resp.data.choices[0].message.content);
+    } else if (geminiKey) {
+      const model = "gemini-2.0-flash-lite";
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+      const resp = await axios.post(
+        url,
+        {
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 500, temperature: 0 },
+        },
+        { timeout: 20000 }
+      );
+      const text = resp.data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      return jsonMatch ? JSON.parse(jsonMatch[0]) : { entities: [], relations: [] };
+    }
+  } catch (err) {
+    logger.warn(`[Worker/Graph] Entity extraction failed: ${err.message}`);
+  }
+  return { entities: [], relations: [] };
+}
+
+async function runGraphExtraction({ parentChunks, documentId, kbId, originalName }) {
+  if (!kbId) {
+    logger.info("[Worker/Graph] Skipping graph extraction: no kbId provided");
+    return;
+  }
+
+  const allEntities = [];
+  const allRelations = [];
+
+  // Process parent chunks in batches to respect rate limits
+  for (let i = 0; i < parentChunks.length; i += ENTITY_EXTRACTION_CONCURRENCY) {
+    const batch = parentChunks.slice(i, i + ENTITY_EXTRACTION_CONCURRENCY);
+    await Promise.all(
+      batch.map(async (chunk) => {
+        const result = await extractEntitiesFromChunk(chunk.pageContent, originalName);
+        if (result.entities?.length > 0) {
+          // Tag entities with documentId for graph expansion retrieval
+          result.entities.forEach((e) => { e.documentId = documentId; });
+          allEntities.push(...result.entities);
+          if (result.relations?.length > 0) {
+            allRelations.push(...result.relations);
+          }
+        }
+      })
+    );
+  }
+
+  if (allEntities.length === 0) return;
+
+  try {
+    await axios.post(
+      `${MCP_SERVER_INTERNAL_URL}/internal/graph/entities`,
+      { entities: allEntities, relations: allRelations, kbId },
+      { timeout: 15000, headers: internalHeaders }
+    );
+    logger.info(
+      `[Worker/Graph] Extracted ${allEntities.length} entities, ${allRelations.length} relations from "${originalName}"`
+    );
+  } catch (err) {
+    logger.warn(`[Worker/Graph] Failed to post entities to mcp-server: ${err.message}`);
   }
 }
 
@@ -276,6 +376,29 @@ async function processIngestionJob(job) {
           childChunks.push(doc);
         });
       }
+
+      // Phase 3.1: Contextual Retrieval — LLM-generated context prefix per child chunk.
+      // Anthropic research shows this reduces retrieval failures by 49-67%.
+      // Disabled by default (CONTEXTUAL_RETRIEVAL_ENABLED: false) due to LLM call cost.
+      if (CONTEXTUAL_RETRIEVAL_ENABLED && childChunks.length > 0) {
+        // Build parent text lookup map for efficient per-child context retrieval
+        const parentTextMap = new Map();
+        for (let i = 0; i < parentChunks.length; i++) {
+          parentTextMap.set(parentDocIds[i], parentChunks[i].pageContent);
+        }
+        logger.info(
+          `[Worker] Contextual retrieval: generating prefixes for ${childChunks.length} chunks via ${CONTEXTUAL_RETRIEVAL_PROVIDER}...`
+        );
+        const { successCount, failCount } = await applyContextualPrefixes(
+          childChunks,
+          parentTextMap,
+          CONTEXTUAL_RETRIEVAL_PROVIDER,
+          originalName
+        );
+        logger.info(
+          `[Worker] Contextual retrieval complete: ${successCount} prefixed, ${failCount} skipped.`
+        );
+      }
     });
 
     stagesMs.chunk = Math.round(performance.now() - t1);
@@ -291,6 +414,15 @@ async function processIngestionJob(job) {
   }
 
   await job.updateProgress(50);
+
+  // ── Phase 6.2: Graph Extraction ─────────────────────────────────────────────
+  // Fire-and-forget entity extraction on parent chunks. Non-blocking — ingestion
+  // continues regardless of extraction success. Disabled by default.
+  if (GRAPH_EXTRACTION_ENABLED) {
+    runGraphExtraction({ parentChunks, documentId, kbId, originalName }).catch((err) =>
+      logger.warn("[Worker/Graph] Graph extraction error:", err.message)
+    );
+  }
 
   // ── Stage 3: Embed + Index ──────────────────────────────────────────────────
   const t2 = performance.now();
@@ -363,11 +495,24 @@ async function processIngestionJob(job) {
     },
   });
 
-  // Clean up temp file
+  // Phase 3.2: Persist a copy of the processed file for future re-indexing.
+  // After successful ingestion we move (not just delete) the temp file to
+  // ./uploads/{documentId}{ext} so the /internal/reindex endpoint can requeue it.
+  const UPLOADS_DIR = process.env.UPLOADS_DIR || "./uploads";
+  const fileExt = path.extname(originalName).toLowerCase();
+  const storedFilePath = path.join(UPLOADS_DIR, `${documentId}${fileExt}`);
   try {
-    await fs.unlink(filePath);
-  } catch (_) {
-    // ignore cleanup errors
+    await fs.ensureDir(UPLOADS_DIR);
+    await fs.move(filePath, storedFilePath, { overwrite: true });
+    logger.info(`[Worker] File persisted for re-indexing: ${storedFilePath}`);
+  } catch (moveErr) {
+    // If move fails, fall back to deletion so temp dir doesn't fill up
+    logger.warn(`[Worker] Could not persist file for re-indexing: ${moveErr.message}`);
+    try {
+      await fs.unlink(filePath);
+    } catch (_) {
+      // ignore
+    }
   }
 
   await job.updateProgress(100);

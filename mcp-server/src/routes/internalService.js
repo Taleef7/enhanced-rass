@@ -198,4 +198,183 @@ router.get("/internal/feedback/boosts/:userId", async (req, res) => {
   }
 });
 
+// ── Phase 4: Internal memories endpoint for rass-engine-service ───────────────
+
+/**
+ * GET /internal/memories
+ * Returns recent memories for a user, optionally filtered by keyword query.
+ * Called by rass-engine-service/QueryReformulationStage to inject user context.
+ *
+ * Query params:
+ *   userId  (required) — user ID
+ *   query   (optional) — keyword filter
+ *   limit   (optional) — default 5, max 20
+ */
+router.get("/internal/memories", async (req, res) => {
+  const { userId, query, limit: limitStr } = req.query;
+
+  if (!userId) return res.status(400).json({ error: "userId is required." });
+
+  const limit = Math.min(20, Math.max(1, parseInt(limitStr, 10) || 5));
+
+  const where = { userId };
+  if (query) where.fact = { contains: query, mode: "insensitive" };
+
+  try {
+    const memories = await prisma.memory.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      select: { id: true, fact: true, category: true, createdAt: true },
+    });
+    res.json({ userId, memories });
+  } catch (err) {
+    logger.error("[Internal/Memories] Failed to fetch memories:", err.message);
+    res.status(500).json({ error: "Failed to fetch memories." });
+  }
+});
+
+// ── Phase 6.2: Internal graph entity ingestion endpoint ───────────────────────
+//
+// POST /internal/graph/entities
+// Called by embedding-service after ingestion (when GRAPH_EXTRACTION_ENABLED: true).
+// Accepts extracted entities + relations and upserts them into Postgres.
+//
+// Body:
+//   {
+//     entities: [{ name, type, description?, documentId?, chunkId?, kbId }],
+//     relations: [{ subjectName, predicate, objectName, kbId, chunkId? }]
+//   }
+
+router.post("/internal/graph/entities", async (req, res) => {
+  const { entities = [], relations = [], kbId } = req.body;
+
+  if (!Array.isArray(entities) || !kbId) {
+    return res.status(400).json({ error: "entities array and kbId are required." });
+  }
+
+  try {
+    const upsertedEntities = {};
+
+    // Upsert entities (match on name + kbId)
+    for (const e of entities) {
+      if (!e.name || !e.type) continue;
+      const entity = await prisma.entity.upsert({
+        where: { id: `${kbId}::${e.name.toLowerCase()}` },
+        update: {
+          type: e.type,
+          description: e.description || undefined,
+          documentId: e.documentId || undefined,
+          chunkId: e.chunkId || undefined,
+        },
+        create: {
+          id: `${kbId}::${e.name.toLowerCase()}`,
+          name: e.name,
+          type: e.type,
+          kbId,
+          description: e.description || undefined,
+          documentId: e.documentId || undefined,
+          chunkId: e.chunkId || undefined,
+        },
+      });
+      upsertedEntities[e.name.toLowerCase()] = entity.id;
+    }
+
+    // Create relations between upserted entities
+    let relationCount = 0;
+    for (const r of relations) {
+      if (!r.subjectName || !r.predicate || !r.objectName) continue;
+      const subjectId = upsertedEntities[r.subjectName.toLowerCase()];
+      const objectId = upsertedEntities[r.objectName.toLowerCase()];
+      if (!subjectId || !objectId) continue;
+
+      // Skip duplicate relations (idempotent via try/catch)
+      try {
+        await prisma.relation.create({
+          data: {
+            subjectId,
+            predicate: r.predicate,
+            objectId,
+            kbId,
+            chunkId: r.chunkId || undefined,
+          },
+        });
+        relationCount++;
+      } catch (_) {
+        // Ignore duplicate relations
+      }
+    }
+
+    logger.info(
+      `[Internal/Graph] Upserted ${Object.keys(upsertedEntities).length} entities, ${relationCount} relations for kbId=${kbId}`
+    );
+    res.status(201).json({
+      entities: Object.keys(upsertedEntities).length,
+      relations: relationCount,
+    });
+  } catch (err) {
+    logger.error("[Internal/Graph] Error upserting entities:", err.message);
+    res.status(500).json({ error: "Failed to upsert graph entities." });
+  }
+});
+
+// ── Phase 6.3: Internal graph query endpoint for rass-engine ──────────────────
+//
+// GET /internal/graph/neighbors
+// Called by GraphExpansionStage to find entity neighbors for retrieved docs.
+//
+// Query params:
+//   kbId     (required) — knowledge base scope
+//   terms    (required) — comma-separated search terms
+//   limit    (optional) — max entities to return (default: 10)
+
+router.get("/internal/graph/neighbors", async (req, res) => {
+  const { kbId, terms: termsStr, limit: limitStr } = req.query;
+
+  if (!kbId || !termsStr) {
+    return res.status(400).json({ error: "kbId and terms are required." });
+  }
+
+  const terms = termsStr.split(",").map((t) => t.trim()).filter(Boolean);
+  const limit = Math.min(50, Math.max(1, parseInt(limitStr, 10) || 10));
+
+  try {
+    // Find entities matching any of the search terms
+    const entities = await prisma.entity.findMany({
+      where: {
+        kbId,
+        OR: terms.map((t) => ({ name: { contains: t, mode: "insensitive" } })),
+      },
+      take: limit,
+      include: {
+        subjectOf: {
+          take: 5,
+          include: { Object: { select: { id: true, name: true, type: true, documentId: true } } },
+        },
+        objectOf: {
+          take: 5,
+          include: { Subject: { select: { id: true, name: true, type: true, documentId: true } } },
+        },
+      },
+    });
+
+    // Collect document IDs from matched entities + their neighbors
+    const docIds = new Set();
+    for (const e of entities) {
+      if (e.documentId) docIds.add(e.documentId);
+      for (const r of e.subjectOf) {
+        if (r.Object?.documentId) docIds.add(r.Object.documentId);
+      }
+      for (const r of e.objectOf) {
+        if (r.Subject?.documentId) docIds.add(r.Subject.documentId);
+      }
+    }
+
+    res.json({ entities: entities.length, documentIds: [...docIds] });
+  } catch (err) {
+    logger.error("[Internal/Graph] Error querying neighbors:", err.message);
+    res.status(500).json({ error: "Failed to query graph neighbors." });
+  }
+});
+
 module.exports = router;

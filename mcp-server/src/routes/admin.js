@@ -9,12 +9,15 @@
 
 "use strict";
 
+const path = require("path");
 const express = require("express");
+const axios = require("axios");
 const authMiddleware = require("../authMiddleware");
 const { writeAuditLog } = require("../services/auditService");
 const { purgeUserData, runRetentionSweep } = require("../services/PurgeService");
 const { prisma } = require("../prisma");
 const { apiLimiter, deleteLimiter } = require("../middleware/rateLimits");
+const { EMBEDDING_SERVICE_BASE_URL } = require("../config");
 const logger = require("../logger");
 
 const router = express.Router();
@@ -308,6 +311,95 @@ router.get("/api/admin/users", apiLimiter, authMiddleware, requireAdmin, async (
     logger.error("[Admin] Error listing users:", err.message);
     res.status(500).json({ error: "Failed to list users." });
   }
+});
+
+// ── POST /api/admin/reindex-all ───────────────────────────────────────────────
+// Phase 3.2: Re-triggers ingestion for all READY (or optionally FAILED) documents.
+// Useful after config changes like CONTEXTUAL_RETRIEVAL_ENABLED or CHILD_CHUNK_SIZE.
+// Accepts optional query params:
+//   ?kbId=<id>         — restrict to a specific knowledge base
+//   ?includeFailed=1   — also reindex documents with status FAILED
+
+router.post("/api/admin/reindex-all", apiLimiter, authMiddleware, requireAdmin, async (req, res) => {
+  const { kbId, includeFailed } = req.query;
+
+  const statusFilter = ["READY"];
+  if (includeFailed === "1" || includeFailed === "true") {
+    statusFilter.push("FAILED");
+  }
+
+  const where = { status: { in: statusFilter } };
+  if (kbId) where.kbId = kbId;
+
+  let documents;
+  try {
+    documents = await prisma.document.findMany({
+      where,
+      include: { provenance: { select: { fileType: true } } },
+      orderBy: { uploadedAt: "asc" },
+    });
+  } catch (err) {
+    logger.error("[Admin] reindex-all: DB query failed:", err.message);
+    return res.status(500).json({ error: "Failed to query documents." });
+  }
+
+  if (documents.length === 0) {
+    return res.json({ message: "No documents to re-index.", queued: 0, failed: [] });
+  }
+
+  // Build reindex payload for the embedding-service
+  const payload = documents.map((doc) => ({
+    documentId: doc.id,
+    originalName: doc.originalFilename,
+    mimeType: doc.mimeType,
+    fileSizeBytes: doc.fileSizeBytes,
+    userId: doc.userId,
+    kbId: doc.kbId || null,
+    targetIndex: doc.openSearchIndex || null,
+    fileType: doc.provenance?.fileType || path.extname(doc.originalFilename).slice(1).toLowerCase(),
+  }));
+
+  let embeddingResponse;
+  try {
+    embeddingResponse = await axios.post(
+      `${EMBEDDING_SERVICE_BASE_URL}/internal/reindex`,
+      { documents: payload },
+      {
+        timeout: 60000,
+        headers: { "x-correlation-id": "admin-reindex-all" },
+      }
+    );
+  } catch (err) {
+    logger.error("[Admin] reindex-all: Embedding-service call failed:", err.message);
+    return res.status(502).json({ error: "Failed to contact embedding-service." });
+  }
+
+  const { queued = [], failed = [] } = embeddingResponse.data;
+
+  // Mark requeued documents back to QUEUED status in Postgres
+  if (queued.length > 0) {
+    const queuedIds = queued.map((q) => q.documentId);
+    await prisma.document.updateMany({
+      where: { id: { in: queuedIds } },
+      data: { status: "QUEUED", errorMessage: null },
+    }).catch((err) => logger.warn("[Admin] reindex-all: Could not update document statuses:", err.message));
+  }
+
+  await writeAuditLog({
+    userId: req.userId,
+    action: "REINDEX_ALL",
+    outcome: "SUCCESS",
+    metadata: { queued: queued.length, failed: failed.length, kbId: kbId || "all" },
+    req,
+  });
+
+  logger.info(`[Admin] reindex-all: ${queued.length} queued, ${failed.length} failed (kbId: ${kbId || "all"})`);
+
+  res.json({
+    message: `Re-indexing started: ${queued.length} queued, ${failed.length} failed.`,
+    queued: queued.length,
+    failed,
+  });
 });
 
 module.exports = router;

@@ -50,6 +50,15 @@ const annotationRoutes = require("./src/routes/annotations.js");
 const knowledgeGraphRoutes = require("./src/routes/knowledgeGraph.js");
 const chatShareRoutes = require("./src/routes/chatShare.js");
 
+// Phase 4: User Memory System
+const memoriesRoutes = require("./src/routes/memories.js");
+
+// Phase 5: OpenAI-compatible adapter (OpenWebUI)
+const openaiCompatRoutes = require("./src/routes/openaiCompat.js");
+
+// Phase 6.4: LightRAG graph REST API
+const knowledgeGraphAPIRoutes = require("./src/routes/knowledgeGraphAPI.js");
+
 const app = express();
 
 // Security headers — applied before all routes
@@ -117,7 +126,7 @@ if (process.env.NODE_ENV !== "production") {
         validateRequests: true,
         validateResponses: false, // response validation disabled (perf)
         ignorePaths:
-          /^\/api\/docs|^\/metrics|^\/api\/health|^\/mcp|^\/api\/embed-upload|^\/api\/transcribe|^\/api\/feedback|^\/api\/annotations|^\/api\/shared|^\/api\/chats\/[^/]+\/share|^\/api\/knowledge-bases\/[^/]+\/graph|^\/api\/knowledge-bases\/[^/]+\/similarity-graph|^\/internal/,
+          /^\/api\/docs|^\/metrics|^\/api\/health|^\/mcp|^\/api\/embed-upload|^\/api\/transcribe|^\/api\/feedback|^\/api\/annotations|^\/api\/shared|^\/api\/chats\/[^/]+\/share|^\/api\/knowledge-bases\/[^/]+\/graph|^\/api\/knowledge-bases\/[^/]+\/similarity-graph|^\/internal|^\/api\/memories|^\/api\/admin\/reindex|^\/v1\/|^\/api\/graph/,
       })
     );
     logger.info("[API Validator] express-openapi-validator active");
@@ -163,6 +172,15 @@ app.use(feedbackRoutes);
 app.use(annotationRoutes);
 app.use(knowledgeGraphRoutes);
 app.use(chatShareRoutes);
+
+// --- Phase 4: User Memory System ---
+app.use(memoriesRoutes);
+
+// --- Phase 5: OpenAI-compatible adapter ---
+app.use(openaiCompatRoutes);
+
+// --- Phase 6.4: LightRAG graph API ---
+app.use(knowledgeGraphAPIRoutes);
 
 // --- Legacy simple-ask (deprecated) ---
 // @deprecated Use /api/stream-ask instead.

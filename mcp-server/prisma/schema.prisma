@@ -112,6 +112,7 @@ model User {
   refreshTokens    RefreshToken[]
   annotations      Annotation[]
   sharedChats      SharedChat[]
+  memories         Memory[]          // Phase 4: User memory facts extracted from conversations
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 }
@@ -349,6 +350,24 @@ model Annotation {
   @@index([documentId])
   @@index([userId])
   @@index([workspaceId])
+}
+
+// ─── Phase 4: User Memory System ─────────────────────────────────────────────
+// Memorable facts about a user extracted from conversation turns.
+// Used to personalize responses and inject user context into future queries.
+
+model Memory {
+  id        String   @id @default(cuid())
+  userId    String
+  fact      String   @db.Text         // e.g. "User is a PhD researcher in machine learning"
+  category  String                    // preference | expertise | context | goal
+  chatId    String?                   // source chat session (nullable — manual entries have no chatId)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  User      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, category])
 }
 
 // ─── Phase G: Chat Sharing ────────────────────────────────────────────────────

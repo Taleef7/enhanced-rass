@@ -2,6 +2,7 @@
 const { Router } = require("express");
 const { prisma } = require("./prisma");
 const authMiddleware = require("./authMiddleware.js");
+const { extractAndSaveMemories } = require("./services/memoryService");
 const logger = require("./logger");
 const router = Router();
 
@@ -199,6 +200,25 @@ router.post("/:chatId/messages", async (req, res) => {
       where: { id: chatId },
       data: { updatedAt: new Date() },
     });
+
+    // Phase 4: Asynchronously extract memorable facts from assistant turns.
+    // Fire-and-forget — never blocks the response.
+    if (sender === "assistant") {
+      (async () => {
+        try {
+          // Fetch the most recent user message to pair with this assistant response
+          const lastUserMsg = await prisma.message.findFirst({
+            where: { chatId, sender: "user", id: { not: message.id } },
+            orderBy: { createdAt: "desc" },
+          });
+          if (lastUserMsg) {
+            await extractAndSaveMemories(userId, chatId, lastUserMsg.text, text);
+          }
+        } catch (_) {
+          // Non-fatal — never surface to user
+        }
+      })();
+    }
 
     res.status(201).json(message);
   } catch (error) {

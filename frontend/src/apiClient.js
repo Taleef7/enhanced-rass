@@ -202,7 +202,8 @@ export const streamQuery = async (
   token = null,
   onContext = null,
   onReconnecting = null,
-  kbId = null
+  kbId = null,
+  topK = null
 ) => {
   let attempt = 0;
 
@@ -225,6 +226,7 @@ export const streamQuery = async (
     try {
       const body = { query };
       if (kbId) body.kbId = kbId;
+      if (topK && topK > 0) body.top_k = topK;
 
       const response = await fetch("/api/stream-ask", {
         method: "POST",

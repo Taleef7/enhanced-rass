@@ -1,5 +1,4 @@
 import React, {
-  startTransition,
   useEffect,
   useMemo,
   useRef,
@@ -11,7 +10,6 @@ import {
   Badge,
   Box,
   Divider,
-  Drawer,
   IconButton,
   Menu,
   MenuItem,
@@ -19,7 +17,6 @@ import {
   Toolbar,
   Tooltip,
   Typography,
-  useMediaQuery,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import MenuIcon from "@mui/icons-material/Menu";
@@ -28,7 +25,6 @@ import FolderSpecialOutlinedIcon from "@mui/icons-material/FolderSpecialOutlined
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import LogoutIcon from "@mui/icons-material/Logout";
 import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
-import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import { useChat } from "../context/ChatContext";
 import { useAuth } from "../context/AuthContext";
 import { fetchDocuments, streamQuery } from "../apiClient";
@@ -37,19 +33,29 @@ import MessageList from "./MessageList";
 import ChatInput from "./ChatInput";
 import WelcomeScreen from "./WelcomeScreen";
 import DocumentPanel from "./DocumentPanel";
-import ContextPanel from "./ContextPanel";
 import GuidedTour from "./GuidedTour";
 
+const TOP_K_OPTIONS = [3, 5, 10, 20];
+const TOP_K_STORAGE_KEY = "rass_top_k";
+
+function loadTopK() {
+  try {
+    const saved = localStorage.getItem(TOP_K_STORAGE_KEY);
+    const parsed = parseInt(saved, 10);
+    return TOP_K_OPTIONS.includes(parsed) ? parsed : 10;
+  } catch {
+    return 10;
+  }
+}
+
 function Chat({ onToggleSidebar }) {
-  const theme = useTheme();
-  const showPersistentRail = useMediaQuery(theme.breakpoints.up("xl"));
+  useTheme(); // keep theme context active for child components
   const [query, setQuery] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [responseLength, setResponseLength] = useState("standard");
+  const [topK, setTopK] = useState(loadTopK);
   const [anchorEl, setAnchorEl] = useState(null);
   const [isDocumentPanelOpen, setIsDocumentPanelOpen] = useState(false);
-  const [isContextPanelOpen, setIsContextPanelOpen] = useState(false);
-  const [contextChunks, setContextChunks] = useState([]);
   const [runTour, setRunTour] = useState(false);
   const [libraryDocuments, setLibraryDocuments] = useState([]);
   const abortControllerRef = useRef(null);
@@ -134,14 +140,10 @@ function Chat({ onToggleSidebar }) {
         },
         abortControllerRef.current.signal,
         token,
-        (chunks) => {
-          setContextChunks(chunks);
-          if (!showPersistentRail) {
-            startTransition(() => setIsContextPanelOpen(true));
-          }
-        },
-        null, // onReconnecting — future: show reconnecting indicator
-        activeKbId
+        null, // onContext — context panel removed (Phase 8.1)
+        null, // onReconnecting
+        activeKbId,
+        topK
       );
 
       if (finalBotText || finalBotSources.length > 0) {
@@ -369,38 +371,6 @@ function Chat({ onToggleSidebar }) {
               </Badge>
             </Tooltip>
 
-            <Tooltip
-              title={
-                showPersistentRail
-                  ? "Evidence panel visible"
-                  : isContextPanelOpen
-                  ? "Close evidence panel"
-                  : "Open evidence panel"
-              }
-            >
-              <IconButton
-                onClick={() => {
-                  if (!showPersistentRail) {
-                    startTransition(() =>
-                      setIsContextPanelOpen((previous) => !previous)
-                    );
-                  }
-                }}
-                aria-label="Toggle evidence panel"
-                data-tour="evidence-toggle"
-                sx={{
-                  backgroundColor: (isContextPanelOpen || showPersistentRail)
-                    ? "rgba(0,82,255,0.10)"
-                    : "transparent",
-                  border: (isContextPanelOpen || showPersistentRail)
-                    ? "1px solid rgba(0,82,255,0.4)"
-                    : "1px solid transparent",
-                }}
-              >
-                <AutoAwesomeOutlinedIcon sx={{ fontSize: 20 }} />
-              </IconButton>
-            </Tooltip>
-
             <Tooltip title="Take a guided tour">
               <IconButton
                 onClick={() => setRunTour(true)}
@@ -470,9 +440,7 @@ function Chat({ onToggleSidebar }) {
             flex: 1,
             minHeight: 0,
             display: "grid",
-            gridTemplateColumns: showPersistentRail
-              ? "minmax(0, 1fr) 340px"
-              : "minmax(0, 1fr)",
+            gridTemplateColumns: "minmax(0, 1fr)",
           }}
         >
           {/* Chat column */}
@@ -481,7 +449,6 @@ function Chat({ onToggleSidebar }) {
               minHeight: 0,
               display: "flex",
               flexDirection: "column",
-              borderRight: showPersistentRail ? "1px solid #E2E8F0" : "none",
             }}
           >
             {/* Message area */}
@@ -536,17 +503,15 @@ function Chat({ onToggleSidebar }) {
                   showSuggestions={messageCount === 0}
                   responseLength={responseLength}
                   onResponseLengthChange={setResponseLength}
+                  topK={topK}
+                  onTopKChange={(value) => {
+                    setTopK(value);
+                    try { localStorage.setItem(TOP_K_STORAGE_KEY, String(value)); } catch (_) {}
+                  }}
                 />
               </Box>
             </Box>
           </Box>
-
-          {/* Evidence rail */}
-          {showPersistentRail ? (
-            <Box sx={{ minHeight: 0, display: "flex" }}>
-              <ContextPanel chunks={contextChunks} isStreaming={isTyping} />
-            </Box>
-          ) : null}
         </Box>
       </Box>
 
@@ -555,28 +520,6 @@ function Chat({ onToggleSidebar }) {
         open={isDocumentPanelOpen}
         onClose={() => setIsDocumentPanelOpen(false)}
       />
-
-      {/* Evidence drawer (non-XL) */}
-      <Drawer
-        anchor="right"
-        open={!showPersistentRail && isContextPanelOpen}
-        onClose={() => setIsContextPanelOpen(false)}
-        ModalProps={{ keepMounted: true }}
-        sx={{
-          "& .MuiDrawer-paper": {
-            width: { xs: "100%", sm: 380 },
-            maxWidth: "100%",
-            borderLeft: "1px solid #E2E8F0",
-          },
-        }}
-      >
-        <ContextPanel
-          chunks={contextChunks}
-          isStreaming={isTyping}
-          onClose={() => setIsContextPanelOpen(false)}
-          showCloseButton
-        />
-      </Drawer>
 
       <GuidedTour run={runTour} onFinish={() => setRunTour(false)} />
     </Box>
