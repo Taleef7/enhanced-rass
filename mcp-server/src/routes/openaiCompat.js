@@ -1,24 +1,24 @@
 // mcp-server/src/routes/openaiCompat.js
 // Phase 5.1: OpenAI-compatible /v1/chat/completions endpoint.
 //
-// Enables OpenWebUI and any OpenAI-API-compatible client to use RASS as a backend.
-// Maps the OpenAI chat completions request format to the RASS stream-ask pipeline.
+// Enables OpenWebUI and any OpenAI-API-compatible client to use CoRAG as a backend.
+// Maps the OpenAI chat completions request format to the CoRAG stream-ask pipeline.
 //
-// Request → RASS mapping:
+// Request → CoRAG mapping:
 //   messages[-1] (user role)      → query
 //   messages[0..-2]               → conversationHistory for QueryReformulationStage
-//   model "rass-*"                → accepted (routing is config-driven in rass-engine)
-//   stream: true/false            → RASS always streams; we buffer for non-streaming
+//   model "corag-*"               → accepted (routing is config-driven in rass-engine)
+//   stream: true/false            → CoRAG always streams; we buffer for non-streaming
 //   top_k                         → passed directly
 //   X-KB-ID / x-kb-id header      → kbId for per-KB index routing
 //
 // Authentication:
-//   Accepts RASS JWT Bearer token  OR  API key (x-api-key header).
+//   Accepts CoRAG JWT Bearer token  OR  API key (x-api-key header).
 //   If neither is present: unauthenticated (searches global index, no per-user filtering).
 //
 // Response format:
-//   RASS already emits OpenAI-compatible SSE (chat.completion.chunk objects),
-//   so we pipe the rass-engine stream directly with no translation required.
+//   CoRAG already emits OpenAI-compatible SSE (chat.completion.chunk objects),
+//   so we pipe the engine stream directly with no translation required.
 //   For non-streaming requests we buffer all chunks and return a single object.
 
 "use strict";
@@ -35,19 +35,19 @@ const router = express.Router();
 const DEFAULT_TOP_K = Number(process.env.OPENAI_COMPAT_DEFAULT_TOP_K) || 10;
 
 // ── Model registry ─────────────────────────────────────────────────────────────
-// Maps display model names to rass-engine accepted identifiers.
+// Maps display model names to engine accepted identifiers.
 // Actual LLM routing is config-driven in rass-engine; these are pass-through.
 const SUPPORTED_MODELS = new Set([
-  "rass",
-  "rass-gpt4o",
-  "rass-gemini",
-  "rass-local",
-  "rass-gpt-4o-mini",
-  "rass-gemini-pro",
+  "corag",
+  "corag-gpt4o",
+  "corag-gemini",
+  "corag-local",
+  "corag-gpt-4o-mini",
+  "corag-gemini-pro",
 ]);
 
 // ── Map model name to LLM provider for per-user key lookup ────────────────────
-// Model names follow the pattern "rass-{provider-hint}".
+// Model names follow the pattern "corag-{provider-hint}".
 function modelToProvider(model) {
   if (!model) return null;
   const m = model.toLowerCase();
@@ -55,7 +55,7 @@ function modelToProvider(model) {
   if (m.includes("gpt") || m.includes("openai")) return "openai";
   if (m.includes("claude") || m.includes("anthropic")) return "anthropic";
   if (m.includes("cohere")) return "cohere";
-  return null; // "rass" or "rass-local" → no per-user key needed
+  return null; // "corag" or "corag-local" → no per-user key needed
 }
 
 // ── Lightweight auth: extract userId from JWT or API key (best-effort) ─────────
@@ -79,7 +79,7 @@ function extractUserId(req) {
   return null;
 }
 
-// ── GET /v1/models — returns RASS model list ───────────────────────────────────
+// ── GET /v1/models — returns CoRAG model list ──────────────────────────────────
 // Required by OpenWebUI model discovery.
 
 router.get("/v1/models", (req, res) => {
@@ -87,7 +87,7 @@ router.get("/v1/models", (req, res) => {
     id,
     object: "model",
     created: 1704067200, // 2024-01-01
-    owned_by: "rass",
+    owned_by: "corag",
   }));
   res.json({ object: "list", data: models });
 });
@@ -153,7 +153,7 @@ router.post("/v1/chat/completions", async (req, res) => {
   }
 
   logger.info(
-    `[OpenAICompat] model=${model || "rass"} provider=${provider || "default"} userId=${userId || "anon"} kbId=${kbId || "default"} query="${query.slice(0, 60)}"`
+    `[OpenAICompat] model=${model || "corag"} provider=${provider || "default"} userId=${userId || "anon"} kbId=${kbId || "default"} query="${query.slice(0, 60)}"`
   );
 
   const streamAskPayload = {
@@ -182,28 +182,28 @@ router.post("/v1/chat/completions", async (req, res) => {
       rassResponse.data.pipe(res);
 
       req.on("close", () => {
-        logger.info("[OpenAICompat] Client disconnected — aborting RASS stream.");
+        logger.info("[OpenAICompat] Client disconnected — aborting CoRAG stream.");
         rassResponse.data.destroy();
       });
     } catch (err) {
-      logger.error("[OpenAICompat] RASS stream error:", err.message);
+      logger.error("[OpenAICompat] CoRAG stream error:", err.message);
       if (!res.headersSent) {
-        res.status(502).json({ error: { message: "RASS engine unavailable", type: "server_error" } });
+        res.status(502).json({ error: { message: "CoRAG engine unavailable", type: "server_error" } });
       } else {
         // Send an error delta then terminate the stream
         const errChunk = JSON.stringify({
           id: `chatcmpl-${uuidv4()}`,
           object: "chat.completion.chunk",
           created: Math.floor(Date.now() / 1000),
-          model: model || "rass",
-          choices: [{ index: 0, delta: { content: "\n[Error: RASS engine failed]" }, finish_reason: "stop" }],
+          model: model || "corag",
+          choices: [{ index: 0, delta: { content: "\n[Error: CoRAG engine failed]" }, finish_reason: "stop" }],
         });
         res.write(`data: ${errChunk}\n\ndata: [DONE]\n\n`);
         res.end();
       }
     }
   } else {
-    // ── Non-streaming: buffer the entire RASS stream and return a single object ──
+    // ── Non-streaming: buffer the entire CoRAG stream and return a single object ──
     try {
       const rassResponse = await axios.post(
         `${RASS_ENGINE_BASE_URL}/stream-ask`,
@@ -244,7 +244,7 @@ router.post("/v1/chat/completions", async (req, res) => {
         id: completionId,
         object: "chat.completion",
         created: Math.floor(Date.now() / 1000),
-        model: model || "rass",
+        model: model || "corag",
         choices: [
           {
             index: 0,
@@ -266,8 +266,8 @@ router.post("/v1/chat/completions", async (req, res) => {
 
       res.json(response);
     } catch (err) {
-      logger.error("[OpenAICompat] Non-streaming RASS error:", err.message);
-      res.status(502).json({ error: { message: "RASS engine unavailable", type: "server_error" } });
+      logger.error("[OpenAICompat] Non-streaming CoRAG error:", err.message);
+      res.status(502).json({ error: { message: "CoRAG engine unavailable", type: "server_error" } });
     }
   }
 });

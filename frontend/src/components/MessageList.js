@@ -7,8 +7,9 @@ const MessageList = ({ messages, isTyping }) => {
   const bottomRef = useRef(null);
 
   useEffect(() => {
+    // Use instant scroll so switching conversations doesn't animate from the top.
     requestAnimationFrame(() => {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
     });
   }, [messages, isTyping]);
 

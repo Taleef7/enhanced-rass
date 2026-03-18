@@ -3,7 +3,7 @@
 // Used by LibreChat and similar OpenAI-API-compatible clients.
 //
 // Note: This endpoint is for the LibreChat integration which has its own auth system
-// separate from RASS JWTs. Calls are forwarded without a userId so simpleSearch runs
+// separate from CoRAG JWTs. Calls are forwarded without a userId so simpleSearch runs
 // unscoped (searches all documents in the knowledge base).
 
 const express = require("express");
@@ -59,13 +59,13 @@ router.post("/api/chat/completions", validateBody(ChatCompletionsBodySchema), as
     });
   } catch (e) {
     logger.error(
-      "[LibreChat Proxy] Error calling RASS engine stream:",
+      "[LibreChat Proxy] Error calling CoRAG engine stream:",
       e.message
     );
     if (!res.headersSent) {
       res
         .status(500)
-        .json({ error: "Failed to process stream in RASS engine." });
+        .json({ error: "Failed to process stream in CoRAG engine." });
     } else {
       res.end();
     }

@@ -280,14 +280,22 @@ function Chat({ onToggleSidebar }) {
     token,
   ]);
 
-  // Scroll to bottom whenever the active conversation changes
+  // Scroll to bottom whenever the active conversation changes.
+  // Double rAF: first frame lets React commit + paint the new messages,
+  // second frame reads the updated scrollHeight and jumps instantly to the bottom.
   useEffect(() => {
-    if (!scrollContainerRef.current) return;
-    requestAnimationFrame(() => {
-      if (scrollContainerRef.current) {
-        scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
-      }
+    let frame1, frame2;
+    frame1 = requestAnimationFrame(() => {
+      frame2 = requestAnimationFrame(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+        }
+      });
     });
+    return () => {
+      cancelAnimationFrame(frame1);
+      cancelAnimationFrame(frame2);
+    };
   }, [activeChat?.id]);
 
   const handleProfileClick = (event) => setAnchorEl(event.currentTarget);

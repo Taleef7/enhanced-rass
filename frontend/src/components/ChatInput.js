@@ -133,13 +133,13 @@ const ChatInput = ({
           try {
             text = await transcribeAudio(blob, token);
           } catch (error) {
-            if (activeChat) {
-              addMessageToChat(activeChat.id, {
-                sender: "system",
-                text: `Transcription failed (${error.message}). Please log in again and retry.`,
-              });
-            }
-            throw error;
+            // Show the real error; 503 means the transcription service is temporarily
+            // unavailable — not an auth issue, so don't suggest logging in.
+            const friendlyMsg = error.message?.includes("503")
+              ? "Transcription service is temporarily unavailable. Please try again shortly."
+              : `Transcription failed: ${error.message}`;
+            setRecordingError(friendlyMsg);
+            return; // stop here; don't rethrow so cleanup still runs
           }
 
           if (text) {

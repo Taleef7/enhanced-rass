@@ -277,22 +277,22 @@ services:
       - "3000:8080"
     environment:
       # ── Backend connection ────────────────────────────────────────────────────
-      # Point OpenWebUI at RASS's OpenAI-compatible adapter
+      # Point OpenWebUI at CoRAG's OpenAI-compatible adapter
       - OPENAI_API_BASE_URL=http://mcp-server:8080/v1
       - OPENAI_API_KEY=corag-internal-key
 
       # ── UI pre-configuration (Phase 5.4) ─────────────────────────────────────
       # Show "CoRAG" in the title bar
       - WEBUI_NAME=CoRAG
-      # Pre-select the base RASS model so users don't see a blank model picker
-      - DEFAULT_MODELS=rass
+      # Pre-select the base CoRAG model so users don't see a blank model picker
+      - DEFAULT_MODELS=corag
       # Suggested starter prompts shown on the empty chat screen
       - DEFAULT_PROMPT_SUGGESTIONS=[{"title":"Summarise a document","content":"Please summarise the key points of [document name]."},{"title":"Compare two topics","content":"What are the main differences between [topic A] and [topic B] based on the knowledge base?"},{"title":"Find evidence","content":"What evidence does the knowledge base contain about [topic]?"},{"title":"Follow-up questions","content":"What questions should I ask to learn more about [topic]?"}]
       # Disable sign-up after the first admin account is created (set to false to allow open registration)
       - ENABLE_SIGNUP=true
 
       # ── Disable features that overlap with RASS ───────────────────────────────
-      # Disable OpenWebUI's built-in RAG (RASS handles all retrieval)
+      # Disable OpenWebUI's built-in RAG (CoRAG handles all retrieval)
       - ENABLE_RAG_WEB_SEARCH=false
       - RAG_EMBEDDING_ENGINE=
       # Disable community sharing to keep installation private

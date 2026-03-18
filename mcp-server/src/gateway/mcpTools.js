@@ -1,10 +1,10 @@
 // mcp-server/src/gateway/mcpTools.js
-// MCP tool definitions for RASS.
+// MCP tool definitions for CoRAG.
 // Phase 7.1: Expanded tool set — web search, document management, memory, graph, KB.
 //
 // Available tools:
-//   queryRASS              — Query the knowledge base (existing)
-//   addDocumentToRASS      — Upload a file from shared volume (existing)
+//   queryCoRAG              — Query the knowledge base (existing)
+//   addDocumentToCoRAG      — Upload a file from shared volume (existing)
 //   webSearch              — Live web search via Tavily (new)
 //   listDocuments          — List documents in a knowledge base (new)
 //   getDocumentSummary     — Retrieve document metadata + provenance (new)
@@ -30,7 +30,7 @@ const logger = require("../logger");
 const { ResourceTemplate } = require("@modelcontextprotocol/sdk/server/mcp.js");
 
 const server = new McpServer({
-  name: "RASS-MCP-Server",
+  name: "CoRAG-MCP-Server",
   version: "2.0.0",
 });
 
@@ -43,31 +43,31 @@ function textResult(obj) {
 // EXISTING TOOLS (preserved)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Tool: queryRASS — queries the knowledge base via the RASS engine
+// Tool: queryCoRAG — queries the knowledge base via the CoRAG engine
 server.tool(
-  "queryRASS",
+  "queryCoRAG",
   {
     query: z.string().describe("The natural language question to ask the knowledge base."),
     top_k: z.optional(z.number()).describe("Optional. Max document chunks to retrieve."),
     kbId: z.optional(z.string()).describe("Optional. Knowledge base ID to scope the search."),
   },
   async (tool_args) => {
-    logger.info("[MCP Tool 'queryRASS'] Executing with args:", tool_args);
+    logger.info("[MCP Tool 'queryCoRAG'] Executing with args:", tool_args);
     const { query, top_k, kbId } = tool_args;
     const response = await axios.post(`${RASS_ENGINE_BASE_URL}/ask`, { query, top_k, kbId });
     return textResult(response.data);
   }
 );
 
-// Tool: addDocumentToRASS — uploads a file from the shared volume to the embedding service
+// Tool: addDocumentToCoRAG — uploads a file from the shared volume to the embedding service
 server.tool(
-  "addDocumentToRASS",
+  "addDocumentToCoRAG",
   {
-    source_uri: z.string().describe("Filename in the shared uploads volume to add to RASS."),
+    source_uri: z.string().describe("Filename in the shared uploads volume to add to CoRAG."),
     kbId: z.optional(z.string()).describe("Optional. Target knowledge base ID."),
   },
   async ({ source_uri, kbId }) => {
-    logger.info("[MCP Tool 'addDocumentToRASS'] Executing with uri:", source_uri);
+    logger.info("[MCP Tool 'addDocumentToCoRAG'] Executing with uri:", source_uri);
     const UPLOAD_DIR_MCP = "/usr/src/app/uploads";
     const fullPath = path.join(UPLOAD_DIR_MCP, source_uri);
 
@@ -176,7 +176,7 @@ server.tool(
 server.tool(
   "getDocumentSummary",
   {
-    documentId: z.string().describe("The RASS document ID to retrieve details for."),
+    documentId: z.string().describe("The CoRAG document ID to retrieve details for."),
   },
   async ({ documentId }) => {
     logger.info("[MCP Tool 'getDocumentSummary'] documentId:", documentId);
@@ -366,7 +366,7 @@ server.tool(
   }
 );
 
-// Tool: switchKnowledgeBase — returns the kbId to use in queryRASS
+// Tool: switchKnowledgeBase — returns the kbId to use in queryCoRAG
 server.tool(
   "switchKnowledgeBase",
   {
@@ -385,7 +385,7 @@ server.tool(
     }
 
     return textResult({
-      message: `To query "${kb.name}", pass kbId: "${kbId}" in your queryRASS calls.`,
+      message: `To query "${kb.name}", pass kbId: "${kbId}" in your queryCoRAG calls.`,
       kbId: kb.id,
       name: kb.name,
       description: kb.description,
@@ -397,7 +397,7 @@ server.tool(
 // ─────────────────────────────────────────────────────────────────────────────
 // PHASE 7.3: MCP RESOURCES — Knowledge Bases as MCP resources
 //
-// Exposes RASS knowledge bases as MCP resources so any MCP-compatible client
+// Exposes CoRAG knowledge bases as MCP resources so any MCP-compatible client
 // (OpenWebUI, Claude Desktop, etc.) can discover and browse them via
 // resources/list and resources/read protocol methods.
 //

@@ -429,7 +429,7 @@ const MessageBubble = ({ message, index }) => {
                     color: "#94A3B8",
                   }}
                 >
-                  RASS response
+                  CoRAG response
                 </Typography>
 
                 <Tooltip title={copied ? "Copied" : "Copy response"}>

@@ -80,12 +80,12 @@ router.post("/api/stream-ask", authMiddleware, validateBody(StreamAskBodySchema)
       response.data.destroy();
     });
   } catch (e) {
-    req.log.error({ err: e }, "[Stream Proxy] Error calling RASS engine stream.");
+    req.log.error({ err: e }, "[Stream Proxy] Error calling CoRAG engine stream.");
     llmApiErrorsTotal.inc({ provider: "rass-engine" });
     if (!res.headersSent) {
       res
         .status(500)
-        .json({ error: "Failed to process stream in RASS engine." });
+        .json({ error: "Failed to process stream in CoRAG engine." });
     } else {
       res.end();
     }
