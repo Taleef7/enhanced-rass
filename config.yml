@@ -82,7 +82,7 @@ OPENSEARCH_SCORE_THRESHOLD: 0.1
 # type: enum["none", "cohere", "local"] — reranking provider (default: none)
 # Set COHERE_API_KEY in .env when using "cohere".
 # Set RERANKER_URL or RERANKER_PORT when using "local" (local Python cross-encoder service).
-RERANK_PROVIDER: "none"
+RERANK_PROVIDER: "cohere"
 # type: integer — number of documents to keep after reranking
 RERANK_TOP_N: 10
 # type: string — Cohere rerank model name (only used when RERANK_PROVIDER=cohere)

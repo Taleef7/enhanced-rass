@@ -7,6 +7,7 @@ x-environment:
   &default-env
   OPENAI_API_KEY: ${OPENAI_API_KEY}
   GEMINI_API_KEY: ${GEMINI_API_KEY}
+  COHERE_API_KEY: ${COHERE_API_KEY}
   # Non-secret configs are now read from the mounted config.yml
   # The services will need to be updated to read these from env vars
   # which we will populate below.
@@ -150,6 +151,10 @@ services:
     restart: unless-stopped
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - COHERE_API_KEY=${COHERE_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - REFRESH_TOKEN_SECRET=${REFRESH_TOKEN_SECRET:-}
       - MCP_DEFAULT_TOP_K=50
       - DATABASE_URL=postgresql://rass_user:rass_password@db:5432/rass_db
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
