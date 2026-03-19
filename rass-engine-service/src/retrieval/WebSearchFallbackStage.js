@@ -33,7 +33,7 @@ class WebSearchFallbackStage {
   }
 
   async run(context) {
-    if (!this.enabled) return;
+    if (!this.enabled) return context;
 
     // Check if top chunk score meets the threshold
     const docs = context.documents || [];
@@ -43,7 +43,7 @@ class WebSearchFallbackStage {
       logger.info(
         `[WebSearchFallbackStage] Top chunk score ${topScore.toFixed(3)} >= threshold ${this.threshold} — skipping web search`
       );
-      return;
+      return context;
     }
 
     const query = context.reformulatedQuery || context.query;
@@ -80,6 +80,8 @@ class WebSearchFallbackStage {
         logger.warn(`[WebSearchFallbackStage] Web search failed: ${err.message}`);
       }
     });
+
+    return context;
   }
 
   async _search(query) {

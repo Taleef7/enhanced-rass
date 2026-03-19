@@ -51,14 +51,14 @@ class GraphExpansionStage {
   }
 
   async run(context) {
-    if (!this.enabled) return;
+    if (!this.enabled) return context;
 
     const query = context.reformulatedQuery || context.query;
     const kbId = context.kbId;
 
     if (!kbId) {
       // Graph expansion requires a KB scope — skip silently
-      return;
+      return context;
     }
 
     await withSpan("retrieval.graphExpansion", { "query.kbId": kbId }, async () => {
@@ -119,6 +119,8 @@ class GraphExpansionStage {
         logger.warn(`[GraphExpansionStage] Error: ${err.message}`);
       }
     });
+
+    return context;
   }
 }
 
