@@ -20,17 +20,17 @@ const AUTH_PILLARS = [
   {
     icon: <ArticleOutlinedIcon sx={{ fontSize: 16 }} />,
     title: "Document grounded",
-    body: "Keep uploads, chats, and retrieved evidence connected in one workspace.",
+    body: "Upload PDFs, Word docs, and text files — CoRAG retrieves the most relevant passages for every question.",
   },
   {
     icon: <VerifiedOutlinedIcon sx={{ fontSize: 16 }} />,
-    title: "Traceable answers",
-    body: "Inspect citations, retrieved chunks, and message-level feedback without leaving the flow.",
+    title: "Cited answers",
+    body: "Every response includes inline [N] citations and source metadata so you always know where the answer came from.",
   },
   {
     icon: <AutoAwesomeOutlinedIcon sx={{ fontSize: 16 }} />,
-    title: "Operationally ready",
-    body: "Move from uploads to shared chats and knowledge views with one consistent interface.",
+    title: "Conversation memory",
+    body: "CoRAG reformulates follow-up questions using conversation history for coherent multi-turn dialogue.",
   },
 ];
 
@@ -259,7 +259,7 @@ const AuthPage = () => {
                     letterSpacing: "0.05em",
                   }}
                 >
-                  R
+                  C
                 </Typography>
               </Box>
               <Typography
@@ -284,7 +284,7 @@ const AuthPage = () => {
                 fontSize: { xs: "1.75rem", md: "2.2rem" },
               }}
             >
-              Retrieval-augmented answers with a complete evidence trail.
+              Ask questions. Get cited answers from your documents.
             </Typography>
 
             {/* Thick rule */}
@@ -298,8 +298,8 @@ const AuthPage = () => {
                 maxWidth: 460,
               }}
             >
-              Upload files, ask focused questions, inspect retrieved evidence,
-              and keep the reasoning trail visible while you work.
+              Upload documents, ask questions in natural language, and get
+              answers with inline source citations — no setup required.
             </Typography>
           </Box>
 
@@ -385,7 +385,7 @@ const AuthPage = () => {
             }}
           >
             {value === 0
-              ? "Return to your chats, document library, and evidence panels."
+              ? "Return to your chats and document library."
               : "Set up an account to start uploading documents and querying with citations."}
           </Typography>
 

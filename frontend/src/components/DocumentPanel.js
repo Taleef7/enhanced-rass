@@ -134,7 +134,7 @@ const DocumentPanel = ({ open, isOpen, onClose }) => {
               fontFamily: '"Inter", system-ui, sans-serif',
             }}
           >
-            Review upload status and chunk coverage before asking document-backed questions.
+            Manage uploaded documents and monitor ingestion status.
           </Typography>
         </Box>
 
@@ -217,7 +217,7 @@ const DocumentPanel = ({ open, isOpen, onClose }) => {
                   maxWidth: 360,
                 }}
               >
-                Upload a PDF, Markdown, or text file from the composer to start retrieving evidence-backed answers.
+                Upload a PDF, Markdown, or text file from the chat input to start asking questions about your documents.
               </Typography>
             </Box>
           </Box>

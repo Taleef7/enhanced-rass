@@ -8,9 +8,9 @@ const TOUR_STEPS = [
   {
     target: "body",
     placement: "center",
-    title: "Welcome to RASS",
+    title: "Welcome to CoRAG",
     content:
-      "This workspace is built for document-grounded analysis. Ask questions, inspect evidence, and keep the retrieval trail visible while you work.",
+      "CoRAG is a document-grounded Q&A workspace. Upload files, ask questions, and get cited answers powered by RAG retrieval.",
     disableBeacon: true,
   },
   {
@@ -26,23 +26,15 @@ const TOUR_STEPS = [
     placement: "bottom",
     title: "Check document readiness",
     content:
-      "Open the document library to confirm whether uploads are queued, processing, or ready before you rely on them in answers.",
-    disableBeacon: true,
-  },
-  {
-    target: '[data-tour="evidence-toggle"]',
-    placement: "bottom",
-    title: "Inspect retrieved context",
-    content:
-      "Open the evidence panel to review the chunks and relevance signals RASS retrieved for the current answer.",
+      "Open the document library to confirm whether uploads are queued, processing, or ready before you ask questions about them.",
     disableBeacon: true,
   },
   {
     target: '[data-tour="chat-input"]',
     placement: "top",
-    title: "Ask for synthesis or extraction",
+    title: "Ask questions",
     content:
-      "Use the composer for document-backed questions, comparisons, and follow-up requests. Press Enter to send and Shift+Enter for a new line.",
+      "Type any question here. CoRAG retrieves the most relevant passages from your documents and generates a cited answer. Press Enter to send.",
     disableBeacon: true,
   },
   {
@@ -50,7 +42,7 @@ const TOUR_STEPS = [
     placement: "top",
     title: "Upload source material",
     content:
-      "Attach PDF, Markdown, text, or Word files here. RASS will ingest them asynchronously while you continue working.",
+      "Attach PDF, Markdown, text, or Word files here. CoRAG will ingest them asynchronously while you continue working.",
     disableBeacon: true,
   },
 ];

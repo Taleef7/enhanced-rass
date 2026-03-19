@@ -45,7 +45,7 @@ const LoadingFallback = () => (
     >
       <CircularProgress />
       <Typography variant="body2" color="text.secondary">
-        Loading the RASS workspace...
+        Loading CoRAG...
       </Typography>
     </Box>
   </Box>

@@ -6,7 +6,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   Drawer,
   IconButton,
   InputAdornment,

@@ -115,7 +115,7 @@ function SharedChatView({ token }) {
             <ShareOutlinedIcon />
           </Avatar>
           <Box>
-            <Typography variant="subtitle1">Shared RASS conversation</Typography>
+            <Typography variant="subtitle1">Shared CoRAG conversation</Typography>
             <Typography variant="body2" color="text.secondary">
               Read-only transcript with document-backed answers and context.
             </Typography>

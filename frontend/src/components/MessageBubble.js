@@ -367,7 +367,7 @@ const MessageBubble = ({ message, index }) => {
                 color: "#0052FF",
               }}
             >
-              R
+              C
             </Typography>
           </Box>
         ) : null}
